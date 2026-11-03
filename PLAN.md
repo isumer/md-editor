@@ -167,7 +167,12 @@ main process (Node)                    renderer (sandboxed, no Node)
 Any text file opens, not only Markdown. The preview pane exists only for
 Markdown tabs; other tabs are editor-only and the view-mode controls hide.
 - **Highlighting:** language chosen from the extension (then shebang /
-  first line), overridable from the status bar. `@codemirror/language-data`
+  first line), overridable from the status bar and from a Notepad++-style
+  **Language** menu (alphabetical, grouped by letter). Full grammars —
+  highlighting, folding, auto-indent, bracket matching, toggle comment —
+  for at least Java, Python, JavaScript/TypeScript, JSON, XML/HTML, CSS,
+  SQL, shell, YAML, C/C++, C#, Go, Rust, PHP, Markdown; the rest of
+  `language-data` gets highlighting at least. `@codemirror/language-data`
   lazy-loads each language's parser the first time it is needed, so ~100
   languages cost nothing at startup. Lezer parsing is incremental and
   limited to the viewport, so it stays fast on big files.
@@ -325,7 +330,9 @@ a commit.
 5. **Text editing (R12).** Any text file, lazy language highlighting,
    find/replace, Find in Files, editing tools, encodings + line endings,
    binary detection, changed-on-disk handling. Tests: a Windows-1254
-   file with `ğüşıöç` round-trips byte-identical; a CRLF file stays
+   file with `ğüşıöç` round-trips byte-identical; a `.java` and a `.py`
+   fixture each show keyword/string/comment tokens, fold a method
+   block, and toggle comment with the right marker (`//`, `#`); a CRLF file stays
    CRLF after edit+save; Find in Files over 5,000 files streams first
    results < 300 ms and cancels; a binary file is refused; editing a
    20 MB `.log` keeps the keystroke budget.
