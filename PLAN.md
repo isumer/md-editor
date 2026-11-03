@@ -373,6 +373,8 @@ a commit.
    minutes count 10×). `release.yml` per "Releases". The repository
    layout above: README, CHANGELOG, SECURITY, AGENTS/CLAUDE.md, issue and
    PR templates, dependabot, .editorconfig/.gitattributes, app icon.
+   Windows classic "Edit with …" / "Open folder in …" entries and
+   macOS Open With per "Shell integration".
    Ends with the v0.0.1 draft release (slice 1's editor) checked and
    handed to the user to publish.
 3. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
@@ -514,6 +516,41 @@ GitHub settings: description, topics (`markdown-editor`, `text-editor`,
 `electron`, `notepad-plus-plus-alternative`), branch protection on
 `main` requiring CI green. The licence is the user's decision (the repo
 is private today; `UNLICENSED` / all rights reserved until chosen).
+
+## Shell integration ("Edit with …" like Notepad++)
+**Windows — classic context menu (v0.0.x):** the NSIS installer
+(electron-builder `nsis.include` script) writes per-user keys, no admin
+needed, and the uninstaller removes them:
+- `HKCU\Software\Classes\*\shell\<App>Edit` — "Edit with <App>" on
+  every file, with the app icon, command `"<exe>" "%1"`.
+- `…\Directory\shell\<App>Open` and `…\Directory\Background\shell\…`
+  — "Open folder in <App>" (opens it as the workspace).
+- Optional, chosen on an installer page (all off by default except
+  the context menu): register as an "Open with" handler for `.md`,
+  `.txt`, `.log`, `.json`, …; make it the default for `.md`.
+- Multi-selection: Explorer starts one process per file; the single-
+  instance lock forwards every path to the running window, which opens
+  them as tabs (one window, never N windows).
+- On Windows 11 the classic entry sits under "Show more options".
+
+**Windows 11 top-level menu (later, needs signing):** an
+`IExplorerCommand` shell extension DLL (small C++ project, built in CI on
+windows-latest) registered through a signed sparse MSIX package — the
+mechanism Notepad++ 8.4+ uses. Blocked on a code-signing certificate;
+until then the classic entry is the only one.
+
+**macOS:** `fileAssociations` / `CFBundleDocumentTypes` put the app in
+Finder's "Open With" for the same types (Viewer role for most, Editor
+for text and Markdown); a bundled Quick Action ("Edit with <App>")
+appears in the Finder context menu and Services. Opening a file while
+the app runs arrives as `open-file` and becomes a tab.
+
+**Tests:** unit — the registry entries the installer script writes are
+generated from one table and compared to a golden file; e2e on the
+windows CI runner — after a silent install, the keys exist with the
+right command and icon, launching `"<exe>" a.md` then `"<exe>" b.md`
+yields one window with two tabs, and a silent uninstall removes every
+key.
 
 ## Releases (GitHub Releases, per-platform downloads)
 Modelled on github.com/anthropics/claude-code/releases: each version is a
