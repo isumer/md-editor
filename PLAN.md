@@ -432,6 +432,50 @@ a commit.
 - Unsigned builds show a Gatekeeper / SmartScreen warning on first open;
   signing needs an Apple Developer ID and a Windows code-signing cert.
 
+## Test standards (also in AGENTS.md; Claude rejects a slice that breaks them)
+- **Red before green.** Every test is shown to fail on code without the
+  behaviour (or with it deliberately broken) before it counts. Claude
+  re-checks a sample of each slice's tests by breaking the code under
+  them and confirming they go red.
+- **Names state the rule**, e.g. `save keeps the original file when the
+  write fails`, not `test atomicWrite 2`. One behaviour per test,
+  arrange / act / assert in order.
+- **No sleeps.** Waiting is polling on a condition (`expect.poll`,
+  `toHaveText`) with a timeout; `waitForTimeout` is banned outside
+  performance measurement windows.
+- **Independent and deterministic.** Each test owns its temp dir and
+  fixtures and removes them; time and randomness are injected; no test
+  depends on another's order or on the network.
+- **No flake tolerated.** Playwright `retries: 0` in CI. A flaky test is
+  fixed or deleted, never retried into green.
+- **Test what a user would notice.** E2E drives the real app through its
+  real surfaces (menus via their ids, DOM via roles/test ids, files on
+  disk); unit tests cover pure logic with fakes only for collaborators
+  (fs, clock), never for the unit itself.
+- **Performance tests are statistics, not single runs:** warm-up, N ≥ 30
+  samples, assert on p95, print the distribution in the report. Budgets
+  are absolute; if a CI runner class is slower, its factor is a named,
+  committed constant per platform, not a widened assertion.
+- **Coverage means failure modes:** each slice lists the failure modes it
+  guards (crash, data loss, freeze, wrong output) and the test for each.
+  A line-coverage number is reported, not targeted.
+- **Fixtures are real:** encoding fixtures are byte files checked in with
+  `-text`; large fixtures (5 MB, 20 MB, 5,000-file folders) are generated
+  deterministically by a seeded script at test time, not committed.
+
+## CI (`.github/workflows/ci.yml`)
+- On every push and PR: `npm ci` (lockfile exact) → typecheck → unit →
+  build → e2e, on `ubuntu-latest` (under xvfb) and `windows-latest`;
+  `macos-latest` on tags and manual dispatch.
+- Fail fast is off, so one platform's failure still shows the others.
+- On failure: Playwright traces, screenshots and the app's stderr log are
+  uploaded as artifacts; a JUnit report feeds the job summary, which
+  also prints the performance distributions.
+- Actions pinned by commit SHA; `permissions: contents: read` (release
+  workflow alone gets `contents: write`); npm cache keyed on the
+  lockfile; concurrency group cancels superseded runs on the same branch.
+- `main` is protected: merge requires CI green.
+
 ## Repository layout (modelled on github.com/anthropics/claude-code)
 ```
 README.md            badges (release, CI, platforms), one-paragraph pitch,
