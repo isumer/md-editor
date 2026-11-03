@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; worker-src 'self'; script-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Untitled — MD Editor</title>
+  </head>
+  <body>
+    <main id="workspace">
+      <section id="editor" data-testid="editor" aria-label="Markdown editor"></section>
+      <section id="preview" data-testid="preview" aria-label="Markdown preview"></section>
+    </main>
+    <footer id="status" data-testid="status" role="status" aria-live="polite"></footer>
+    <script type="module" src="/app.ts"></script>
+  </body>
+</html>
