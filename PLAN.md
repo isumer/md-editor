@@ -878,7 +878,7 @@ README.md            badges (release, CI, platforms), one-paragraph pitch,
                      demo GIF, Download (per OS, from Releases), Features,
                      Build from source, Reporting bugs, License
 CHANGELOG.md         Keep a Changelog; each release's notes come from here
-LICENSE.md           the user's choice (see below)
+LICENSE.md           GPL-3.0-or-later (see below)
 SECURITY.md          how to report a vulnerability; the app's security
                      model in brief (sandboxed renderer, sanitised preview)
 CLAUDE.md, AGENTS.md working rules for AI contributors (Friday, Vision):
@@ -902,8 +902,22 @@ scripts/  src/  test/
 ```
 GitHub settings: description, topics (`markdown-editor`, `text-editor`,
 `electron`, `notepad-plus-plus-alternative`), branch protection on
-`main` requiring CI green. The licence is the user's decision (the repo
-is private today; `UNLICENSED` / all rights reserved until chosen).
+`main` requiring CI green.
+
+**Licence: GPL-3.0-or-later** (user, 2026-11-04), as Notepad++.
+- `LICENSE.md` is the verbatim GPL-3.0 text; `package.json` `license`
+  is `GPL-3.0-or-later`; the README, the About dialog and the Windows
+  installer's licence page say so.
+- Every dependency must be GPL-3-compatible (MIT, BSD, ISC, Apache-2.0,
+  MPL-2.0, LGPL, GPL-3). A CI check (`license-checker` style, over the
+  production dependency tree) fails on anything else; today's tree is
+  MIT/BSD/Apache-2.0.
+- Releases ship `THIRD_PARTY_NOTICES.txt` (every production dependency's
+  licence text) plus Electron's `LICENSES.chromium.html`.
+- GPL obligation: whoever receives a binary must be able to get the
+  corresponding source. While the repo is private, giving a build to
+  someone means also offering them the source (or making the repo
+  public).
 
 ## Shell integration ("Edit with …" like Notepad++)
 **Windows — classic context menu (v0.0.x):** the NSIS installer
