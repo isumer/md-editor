@@ -101,6 +101,9 @@ How the budgets are kept:
 - Startup runs in the background only after the window is interactive:
   draft recovery check, workspace restore, watchers.
 | Open a 5 MB file | Editable in < 1 s |
+| Open a 20 MB file | Editable < 1.5 s; first preview screen < 1 s |
+| Keystroke → preview, 20 MB doc | p95 < 100 ms (incremental parse) |
+| Scroll / resize, 20 MB doc | Same frame budget as 500 KB |
 | Crash recovery | Kill the renderer mid-edit → reopened window has the unsaved text |
 
 ## Architecture
@@ -158,6 +161,36 @@ main process (Node)                    renderer (sandboxed, no Node)
 - **Measured.** A dev overlay (View > Performance, off by default) shows
   the last render time, patch time and blocks patched, and the e2e suite
   asserts the budget rows above.
+
+### Large files
+Target: a **20 MB / ~400k-line** document behaves like a small one —
+typing and scrolling stay inside the normal budgets. The cost of an edit
+must depend on the size of the change, not of the document.
+- **Incremental parse.** The worker splits the source into top-level
+  chunks at blank lines outside fenced code / HTML blocks, keyed by
+  content hash. An edit re-parses only the chunks it touched (plus one
+  neighbour each side for merged/split blocks); unchanged chunks reuse
+  their cached blocks. Reference-link definitions are collected in a
+  cheap document-wide pre-pass, and a change to one invalidates only the
+  chunks that use that label.
+- **First screen first.** On open, the editor is editable immediately; the
+  worker renders the chunks around the visible position first, then the
+  rest in slices that yield between batches, so the preview fills in
+  without ever blocking.
+- **The hang guard is per chunk**, not per document: a single chunk
+  taking > 2 s is the hung case; a big document that is simply long is
+  never killed.
+- **Bounded memory.** Inactive tabs keep their CodeMirror state but their
+  preview block cache is evicted LRU beyond a 200 MB total budget, and
+  rebuilt (first screen first) when the tab is shown.
+- **Bounded side work.** Draft autosave for documents > 5 MB runs every
+  10 s instead of 2 s and only when changed; the atomic save streams the
+  write rather than building a second copy in memory.
+- **Pathological input.** A line longer than 100k characters (minified
+  or generated text) switches that tab's editor wrapping off and shows a
+  notice — CodeMirror lays out a wrapped giant line on every edit.
+  Documents > 50 MB open in large-file mode: preview paused until the user
+  turns it on, with a notice. Stated limits rather than a freeze.
 
 ### Full screen and window resizing
 - **Full screen:** View > Full Screen (F11 on Windows, Ctrl+Cmd+F on
@@ -240,8 +273,10 @@ a commit.
 2. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
    sanitise, `content-visibility`, preview virtualisation for big docs,
    the performance overlay. Replaces
-   slice 1's fixed debounce. Tests: the latency and scroll budget rows
-   (50 KB and 500 KB fixtures); typing in paragraph 3 leaves every other
+   slice 1's fixed debounce. Incremental chunk parse and first-screen-
+   first rendering for large files. Tests: the latency and scroll budget rows
+   (50 KB, 500 KB and 20 MB fixtures; editing a 20 MB doc re-parses
+   only the touched chunks — counted, not timed); typing in paragraph 3 leaves every other
    preview element the same DOM node (identity check); an image elsewhere
    is not re-requested.
 3. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
