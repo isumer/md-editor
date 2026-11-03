@@ -1,8 +1,12 @@
 # MD Editor — plan
 
-A standalone Markdown editor for Windows and macOS. The overriding
-requirement is that it is **fast and never freezes or crashes**; every
-feature below is subordinate to that.
+A standalone **Notepad++-class text editor with first-class Markdown**:
+it should cover everyday text and code editing the way Notepad++ does,
+and add a live Markdown preview, export and a workspace view on top.
+Windows and macOS for v1; Linux later (Electron runs there already —
+development and tests run on Linux — so it is a packaging step). The
+overriding requirement is that it is **fast and never freezes or
+crashes**; every feature below is subordinate to that.
 
 ## Requirements (from the user, 2026-11-04)
 
@@ -16,10 +20,11 @@ feature below is subordinate to that.
 | R6 | Export preview | HTML (self-contained) and PDF, matching what the preview shows |
 | R7 | Background colour | User-chosen background for editor and preview, persisted |
 | R8 | Themes | Light, dark, follow system |
-| R9 | Windows + macOS | Installers for both from CI |
+| R9 | Windows + macOS (Linux later) | Installers for both from CI; Linux AppImage/deb added later as a packaging target |
 | R10 | Fast, stable | See "Stability budget" — measured, not asserted |
 | R11 | Workspace sidebar | Open a folder; the left panel lists its folders and `.md` files as a tree; click opens in a tab; toggle the panel; updates when files change on disk |
 | R12 | Plain text and code files, Notepad++-style | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
+| R13 | Notepad++ toolset | The everyday Notepad++ tools listed in "Power tools" |
 
 ## Stack and why
 
@@ -210,6 +215,43 @@ Markdown tabs; other tabs are editor-only and the view-mode controls hide.
   dirty.
 - **Sidebar:** a toggle between "Markdown only" and "All text files".
 
+### Power tools (R13) — the rest of what Notepad++ is used for
+- **Line operations** (Edit > Line Operations): sort asc/desc (case
+  options, numeric), remove duplicate lines, remove empty lines, trim
+  leading/trailing whitespace, join lines, split lines, reverse order;
+  UPPER / lower / Title / iNVERT case; tabs ↔ spaces.
+- **Search extras:** highlight all occurrences of the selected word
+  (smart highlight); Mark All with a colour; bookmark lines (toggle,
+  next/previous, copy/cut/delete bookmarked lines); find in all open
+  tabs; **Replace in Files** with a preview of every change before it is
+  written, and atomic writes per file; a docked search-results panel.
+- **Column editor:** insert text or an incrementing number sequence down
+  a column selection.
+- **Macros:** record, play back, play N times / to end of file, save
+  named macros.
+- **Word completion** from the words in open documents, plus language
+  keywords.
+- **Outline panel (Function List):** symbols for code via the Lezer
+  tree, headings for Markdown; click jumps, follows the cursor.
+- **Document map (minimap)** toggle.
+- **Second view:** move or clone a tab into a side-by-side second editor
+  view (clone = same document, two cursors).
+- **Tab menu:** copy path / name / folder path, open containing folder,
+  reveal in sidebar, pin tab, close others / to the right / unchanged;
+  recent files and recent folders (File menu); read-only toggle.
+- **Formatters:** pretty-print / minify JSON and XML (built-in, no
+  external tool), with a clear error position on invalid input.
+- **Tail mode** (Notepad++'s "Monitoring"): a `.log` tab follows
+  appended lines, reading only the new bytes.
+- **Print** the editor text (with highlighting) or the Markdown preview.
+- **Compare two files** (side-by-side diff with change navigation) —
+  Notepad++ needs a plugin for this; it is the last power-tools item and
+  may move to v1.1 if the slice runs long.
+Every action is in a menu and in a **command palette** (CmdOrCtrl+Shift+P)
+and has a rebindable shortcut; defaults follow Notepad++ on Windows
+(Ctrl+D duplicate, Ctrl+Shift+Up/Down move line, Ctrl+F2 bookmark, …)
+and platform conventions on macOS.
+
 ### Large files
 Target: a **20 MB / ~400k-line** document behaves like a small one —
 typing and scrolling stay inside the normal budgets. The cost of an edit
@@ -350,16 +392,23 @@ a commit.
    CRLF after edit+save; Find in Files over 5,000 files streams first
    results < 300 ms and cancels; a binary file is refused; editing a
    20 MB `.log` keeps the keystroke budget.
-6. **Views + sync scroll.** Split / editor-only / preview-only, divider,
+6. **Power tools (R13).** Line operations, search extras and Replace in
+   Files, column editor, macros, word completion, outline, document map,
+   second view, tab menu, formatters, tail mode, print, command palette,
+   rebindable shortcuts. Compare last. Tests per tool on fixtures (e.g.
+   sort + dedupe on a 100k-line file < 300 ms and undoable in one step;
+   a recorded macro replays identically; Replace in Files previews then
+   writes atomically and skips files changed since the preview).
+7. **Views + sync scroll.** Split / editor-only / preview-only, divider,
    full screen, focus mode, resize stability, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
-7. **Themes + colours + settings.** Light/dark/system, background pickers,
+8. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-8. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+9. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-9. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+10. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), CI workflow building Windows and macOS installers.
 
 ## Verification and build
@@ -374,5 +423,9 @@ a commit.
   signing needs an Apple Developer ID and a Windows code-signing cert.
 
 ## Out of scope for v1
-Live collaboration, plugins, Vim mode, cloud sync, spell check beyond the
+Live collaboration, a plugin system, Vim mode, hex editing, cloud sync, spell check beyond the
 OS default, Mermaid/KaTeX (candidates for v1.1, rendered in the worker).
+
+Linux packaging (AppImage, deb) is planned after v1: the app is already
+developed and tested on Linux, so it is an electron-builder target and a
+CI job, not a port.
