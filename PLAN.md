@@ -26,6 +26,7 @@ crashes**; every feature below is subordinate to that.
 | R12 | Plain text and code files, Notepad++-style | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
 | R13 | Notepad++ toolset | The everyday Notepad++ tools listed in "Power tools" |
 | R14 | Compare files and folders, IntelliJ-style | See "Compare files and folders" |
+| R15 | Three-way merge view: left · editable result · right | See "Merge view" under R14 |
 
 ## Stack and why
 
@@ -323,8 +324,41 @@ sidebar:
 - Re-compare on demand, and automatically for entries the file watcher
   reports changed.
 
-**Later (v1.x):** three-way merge (base / ours / theirs), as IntelliJ's
-merge tool, useful for git conflicts.
+**Merge view (three panes, IntelliJ's merge tool):**
+- **Left** (ours / local, read-only) · **Centre** (the result, editable)
+  · **Right** (theirs / remote, read-only). The centre starts from the
+  common **base** when one exists, otherwise from the left side.
+- Every change from either side is a chunk with arrows into the centre:
+  accept left, accept right, accept both (left then right / right then
+  left), ignore. A chunk changed on **both** sides differently is a
+  **conflict**, marked red, and needs an explicit choice or a manual
+  edit in the centre.
+- **Apply all non-conflicting changes** in one click (IntelliJ's magic
+  wand), from left, right or both; afterwards only conflicts remain.
+- Counters ("3 changes, 1 conflict left"), next/previous change and
+  conflict (F7 / Shift+F7), word-level highlighting, the same ignore
+  options as file compare, synchronised scrolling of all three panes.
+- **Sources:**
+  - two files, with an optional third as base (*Merge…* dialog);
+  - a file containing git conflict markers (`<<<<<<<` … `>>>>>>>`)
+    opens as a merge with sides split from the markers;
+  - **git mergetool:** `<App> --merge LOCAL REMOTE BASE MERGED` writes the
+    result to MERGED and exits 0 on *Apply*, 1 on *Abort*, so it can be
+    configured with `git config merge.tool <app>` (setup documented in
+    docs/). `--diff a b` likewise works as `git difftool`.
+- *Apply* is refused while unresolved conflicts remain unless the user
+  confirms; the result is saved atomically.
+- Implementation: diff3 (base→left and base→right line diffs, then
+  overlap detection) in the worker; three CodeMirror views reusing
+  `@codemirror/merge`'s chunk rendering and the alignment code from file
+  compare.
+- **Tests:** a fixture set of (base, left, right, expected) — clean
+  merges, adjacent edits, same edit both sides (not a conflict), real
+  conflicts, insert-at-end, deleted-vs-modified — each auto-merged and
+  compared to the expected result; conflict counts asserted; the git
+  mergetool round trip run against a scripted conflicting git repo
+  (exit codes and MERGED content); merging two 5 MB files with 200
+  conflicts stays responsive.
 
 **Budgets / tests:** two 20 MB files with 1% changed lines → first
 diff shown < 2 s, the window responsive throughout; applying a chunk
@@ -503,13 +537,17 @@ a commit.
    above (side-by-side/unified, word-level, editable, chunk arrows,
    ignore options) and folder compare (streamed, cancellable, copy/sync
    actions). Tests: the R14 budget list.
-10. **Themes + colours + settings.** Light/dark/system, background pickers,
+10. **Merge view (R15).** Three-pane merge per "Merge view": chunk
+   arrows, conflicts, apply-non-conflicting, conflict-marker files, git
+   mergetool/difftool mode. Tests: the merge fixture set and the git
+   round trip.
+11. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-11. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+12. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-12. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+13. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), the stability budget asserted on all CI platforms, auto-update and
     signing if decided, v1.0.0.
 
