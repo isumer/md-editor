@@ -486,6 +486,10 @@ a commit.
    macOS Open With per "Shell integration".
    Ends with the v0.0.1 draft release (slice 1's editor) checked and
    handed to the user to publish.
+   Also the stability harness: test/regression/ with the PR rule, crash-
+   free log gate, CommonMark/GFM conformance, golden render corpus,
+   fault-injection basics for save/open, nightly.yml skeleton (soak +
+   perf trend + auto-issue). Later slices add to each suite.
 3. **Security baseline.** Everything in "Security testing" that applies
    to what exists: hardening assertions, permission/navigation lockdown,
    senderFrame checks + IPC fuzzing, XSS corpus + fast-check fuzzing,
@@ -613,6 +617,38 @@ a commit.
   workflow alone gets `contents: write`); npm cache keyed on the
   lockfile; concurrency group cancels superseded runs on the same branch.
 - `main` is protected: merge requires CI green.
+
+## Stability and regression testing — what "stable" means
+A build may be called **stable** only when every gate below is green for
+that exact commit on Windows, macOS and Linux. Until then releases are
+published as GitHub **pre-releases** (`v0.0.x-beta.N`); a stable tag is a
+beta that passed the full gate unchanged.
+
+| Suite | What it proves | When |
+|---|---|---|
+| **Regression** (`test/regression/`) | Every bug ever fixed stays fixed: each fix lands with a test named after its issue (`gh-42 save keeps CRLF`) that failed before the fix. Never deleted; a PR that fixes a bug without one is rejected. | every push |
+| **Conformance** | The renderer matches the **CommonMark spec** (~650 examples) and the **GFM spec** (tables, task lists, strikethrough, autolinks) example by example; known deviations listed with reasons. | every push |
+| **Golden render** | A corpus of real-world documents (READMEs, docs, long notes) renders to committed HTML snapshots; any change in output is a reviewed diff, not an accident. | every push |
+| **Visual regression** | Playwright screenshots of editor, preview, themes, compare and merge views against per-OS baselines (fonts differ per OS); small threshold, reviewed updates. | every push (Linux, Windows), tags (macOS) |
+| **Fault injection** | Disk full (`ENOSPC`), read-only file, permission denied, file deleted / renamed / changed while open, folder removed under the sidebar, network path gone, **process killed during save** (file is old or new, never torn), renderer and worker crashes (recovered, no data lost). | every push |
+| **Crash-free gate** | During every e2e run the app's log is scanned: any `uncaughtException`, `unhandledRejection`, `render-process-gone`, `unresponsive` or console error fails the run, even if all assertions passed. | every push |
+| **Performance regression** | The budget suite's p95 numbers are stored per platform per commit; a change > 10 % slower than the rolling baseline fails, even if still under the absolute budget. | every push; trend on main |
+| **Soak** | A scripted 2-hour session (open, edit, save, switch tabs, search, compare, resize, theme switch, ~50k operations) with RSS / JS heap / handle counts sampled: growth must plateau (no leak > 5 % per hour after warm-up), zero crashes. | nightly on main |
+| **Upgrade** | Install the previous release, create settings/session/drafts, install the new one over it: everything carries over; settings migrations tested both ways (an older build ignores newer keys). Same for portable folders. | tags |
+| **Install / uninstall** | Silent install, launch, file associations and context-menu entries present, uninstall leaves nothing behind (per platform). | tags |
+| **Accessibility smoke** | axe-core over the main views: no critical violations; full keyboard reachability of menus, tabs, sidebar, dialogs. | every push |
+
+Mechanics:
+- **Bugs found by any suite become regression tests** before the fix is
+  accepted — the soak or fuzzers find it once, the regression suite keeps
+  it found.
+- **Nightly workflow** (`nightly.yml`, scheduled on main): soak, the full
+  fuzz budget (longer fast-check runs), the complete DoS and XSS corpora,
+  performance trend report into the job summary.
+- A failing nightly opens a GitHub issue automatically with the logs
+  attached, so a regression is never only a red badge.
+- Flake policy from "Test standards" applies to every suite: no retries;
+  a flaky test is a bug and gets fixed or deleted.
 
 ## Security testing (advanced)
 The threat: a **document is hostile input**. Someone sends a `.md`,
@@ -831,6 +867,9 @@ GitHub Release with notes and one download per platform/architecture.
 - **Notes:** the release body is the version's section of `CHANGELOG.md`
   (Keep a Changelog format), written as part of each change, not at
   release time.
+- **Channels:** tags `vX.Y.Z-beta.N` publish GitHub pre-releases; a plain
+  `vX.Y.Z` (stable) is only cut from a commit that passed the full gate in
+  "Stability and regression testing".
 - **Draft first:** the workflow leaves the release as a draft; Claude
   smoke-checks the assets (installers present, checksums match, the
   macOS app's architecture is right) and the user publishes it.
