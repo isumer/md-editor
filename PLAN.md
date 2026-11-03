@@ -205,8 +205,8 @@ Markdown tabs; other tabs are editor-only and the view-mode controls hide.
   languages cost nothing at startup. Lezer parsing is incremental and
   limited to the viewport, so it stays fast on big files.
 - **Find / replace:** in-file with regex, case, whole word, replace all,
-  match count; **Find in Files** across the workspace, run in main in
-  batches with a cancel button and results streamed in, skipping binary
+  match count; **Find in Files** across the workspace, run in the io-worker in
+  killable per-job threads with a cancel button and results streamed in, skipping binary
   files and the sidebar's ignore list.
 - **Editing:** line numbers, go to line (CmdOrCtrl+G), code folding,
   multi-cursor and column (rectangular) selection, duplicate / move /
@@ -322,7 +322,7 @@ sidebar:
 - Double-click a changed file → file compare in a tab. Copy left→right /
   right→left / delete (to trash) for selected entries, each confirmed,
   each write atomic.
-- Runs in main in batches off the UI thread, results streamed into the
+- Runs in the io-worker (hashing in a per-job thread), off the UI thread, results streamed into the
   tree as they come, with progress and Cancel; a 50,000-file pair never
   blocks the window.
 - Re-compare on demand, and automatically for entries the file watcher
@@ -441,7 +441,7 @@ File > Open Folder (CmdOrCtrl+Shift+O) sets the workspace; the last one
 is restored. The tree lists folders and Markdown files (`.md`,
 `.markdown`); other files are hidden. Rules that keep it fast on a big
 folder:
-- **Lazy:** a folder's children are read (async, in main) only when it is
+- **Lazy:** a folder's children are read (async, in the io-worker) only when it is
   expanded. Nothing scans the whole tree up front.
 - **Skipped:** `.git`, `node_modules`, and dot-folders are not listed.
 - **Capped:** a folder with more than 2,000 entries shows the first 2,000
@@ -494,21 +494,15 @@ a commit.
    free log gate, CommonMark/GFM conformance, golden render corpus,
    fault-injection basics for save/open, nightly.yml skeleton (soak +
    perf trend + auto-issue). Later slices add to each suite.
-3. **Architecture refactor + security baseline.** First, behaviour-
-   preserving: move slice 1 code into the layout of docs/architecture.md
-   §11 (core / features / platform / workers, services, shared/ipc
-   contracts, command registry, menu model) with the e2e suite as the
-   safety net, and switch on the import-boundary lint. Then: Everything in "Security testing" that applies
-   to what exists: hardening assertions, permission/navigation lockdown,
-   senderFrame checks + IPC fuzzing, XSS corpus + fast-check fuzzing,
-   DoS corpus, malformed files, remote-image setting, fuses in the
-   packaging test, security.yml (audit, OSV, lockfile-lint, gitleaks,
-   CodeQL, weekly schedule), threat model. Later slices extend the
-   corpus and boundary tests for what they add (workspace FS ops,
-   Replace in Files, compare/merge writes).
-   Plus the quality gates and test-integrity checks (ESLint strict,
-   boundaries, Prettier, knip, jscpd, bundle budget, check-red,
-   protected files), e2e coverage merge, Stryker nightly.
+3. **Architecture migration + security baseline** (per
+   docs/architecture.md §13), in four steps, each its own PR-sized
+   commit set: (0) characterisation tests for slice 1 behaviour, each
+   shown red; (3a) pure move into the §3 layout + dependency-cruiser
+   rules; (3b) contracts, grants, io-worker FileService, `app://` /
+   `doc-asset://`, the security baseline from "Security testing",
+   e2e coverage merge, quality gates and test-integrity checks,
+   Stryker nightly; (3c) command registry, context keys, keymap
+   ownership, menu skeleton + contributions, message keys.
 4. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
    sanitise, `content-visibility`, preview virtualisation for big docs,
    the performance overlay. Replaces

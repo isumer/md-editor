@@ -1,5 +1,5 @@
 # 0007 — Typed, validated IPC contracts in `shared/ipc`
-Status: proposed (2026-11-04)
+Status: proposed, revised (2026-11-04)
 
 **Context.** The renderer renders hostile documents; if it were ever
 compromised, IPC is the only door to the file system. Today channel names
@@ -19,3 +19,11 @@ generic function), so names cannot drift.
 iterate the contracts automatically.
 
 **Reverse if** never expected for a security boundary.
+
+**Amendment (review finding 2).** Capability grants: services accept
+`DocumentGrant`/`RootGrant` handles issued by main for user-chosen paths,
+never raw paths. The io-worker is a second validation boundary and
+resolves grants from a table main pushes on its control channel. One
+port per webContents, posted to the verified main frame, kept inside the
+preload, re-issued on reload/crash. The preload enumerates a fixed list
+of contracts and never accepts a channel name.

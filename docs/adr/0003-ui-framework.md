@@ -1,5 +1,5 @@
 # 0003 — SolidJS for UI chrome
-Status: proposed (2026-11-04)
+Status: accepted (2026-11-04, with amendment)
 
 **Context.** Beyond editor and preview, the app has tab bars, a sidebar
 tree, panels, dialogs, settings, a command palette, compare/merge
@@ -21,3 +21,7 @@ patcher own their own DOM; Solid only hosts them.
 
 **Reverse if** a measured chrome interaction misses its budget because of
 the framework, or the dependency becomes unmaintained.
+
+**Amendment (review finding 9).** Core stores are framework-free
+observables; Solid adapts them in `ui/`; `solid-js/web` is banned outside
+`ui/` and `features/`. The shared virtual list is ARIA-complete.
