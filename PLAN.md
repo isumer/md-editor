@@ -364,7 +364,9 @@ a commit.
    slice is tested on real Windows and macOS, and the user can install
    builds early. `ci.yml`: verify on ubuntu and windows for every push
    (macOS on tags and on manual dispatch — a private repo's macOS
-   minutes count 10×). `release.yml` per "Releases". `CHANGELOG.md`.
+   minutes count 10×). `release.yml` per "Releases". The repository
+   layout above: README, CHANGELOG, SECURITY, AGENTS/CLAUDE.md, issue and
+   PR templates, dependabot, .editorconfig/.gitattributes, app icon.
    Ends with the v0.0.1 draft release (slice 1's editor) checked and
    handed to the user to publish.
 3. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
@@ -429,6 +431,39 @@ a commit.
   needs the user's go-ahead.
 - Unsigned builds show a Gatekeeper / SmartScreen warning on first open;
   signing needs an Apple Developer ID and a Windows code-signing cert.
+
+## Repository layout (modelled on github.com/anthropics/claude-code)
+```
+README.md            badges (release, CI, platforms), one-paragraph pitch,
+                     demo GIF, Download (per OS, from Releases), Features,
+                     Build from source, Reporting bugs, License
+CHANGELOG.md         Keep a Changelog; each release's notes come from here
+LICENSE.md           the user's choice (see below)
+SECURITY.md          how to report a vulnerability; the app's security
+                     model in brief (sandboxed renderer, sanitised preview)
+CLAUDE.md, AGENTS.md working rules for AI contributors (Friday, Vision):
+                     the stability rules, budgets, verify command, scope
+                     discipline — Vision reads AGENTS.md automatically
+.editorconfig        indentation / final newline / charset
+.gitattributes       LF in the repo; encoding and line-ending fixtures
+                     marked -text so git never rewrites them
+.github/
+  ISSUE_TEMPLATE/    bug_report.yml (OS, version, steps, file size),
+                     feature_request.yml, config.yml
+  PULL_REQUEST_TEMPLATE.md
+  workflows/         ci.yml, release.yml
+  dependabot.yml     weekly npm + actions updates, one PR per package
+assets/              app icon (all sizes), demo.gif, screenshots
+docs/                architecture.md (this plan, once settled),
+                     languages.md, shortcuts.md, dev/briefs/ (the Vision
+                     briefs, kept as history)
+examples/            sample documents exercising every feature
+scripts/  src/  test/
+```
+GitHub settings: description, topics (`markdown-editor`, `text-editor`,
+`electron`, `notepad-plus-plus-alternative`), branch protection on
+`main` requiring CI green. The licence is the user's decision (the repo
+is private today; `UNLICENSED` / all rights reserved until chosen).
 
 ## Releases (GitHub Releases, per-platform downloads)
 Modelled on github.com/anthropics/claude-code/releases: each version is a
