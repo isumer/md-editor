@@ -498,6 +498,9 @@ a commit.
    CodeQL, weekly schedule), threat model. Later slices extend the
    corpus and boundary tests for what they add (workspace FS ops,
    Replace in Files, compare/merge writes).
+   Plus the quality gates and test-integrity checks (ESLint strict,
+   boundaries, Prettier, knip, jscpd, bundle budget, check-red,
+   protected files), e2e coverage merge, Stryker nightly.
 4. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
    sanitise, `content-visibility`, preview virtualisation for big docs,
    the performance overlay. Replaces
@@ -643,7 +646,8 @@ Coverage is measured on everything and **enforced as a floor that only
 rises** — while remembering it counts executed lines, not proven
 behaviour; mutation testing is the check on that.
 - **Unit:** Vitest + V8 (`@vitest/coverage-v8`). Thresholds: ≥ 90 %
-  lines and ≥ 85 % branches globally; **≥ 95 % lines / 90 % branches for
+  lines and ≥ 85 % branches globally (85 / 80 until e2e coverage is
+  merged in slice 3); **≥ 95 % lines / 90 % branches for
   core logic** (atomic write, render, sanitise, scheduler, diff/merge,
   encodings, path confinement). Baseline on 2026-11-04: 89.5 %
   statements, 87.1 % branches.
@@ -662,6 +666,77 @@ behaviour; mutation testing is the check on that.
   coverage badge in the README.
 - Exclusions are explicit and justified in the config (generated code,
   type-only files); no blanket ignores.
+
+## Test integrity — an AI-written suite must not be able to fake it
+Codex writes most tests. A model under pressure to go green can mock the
+thing under test, assert nothing, skip, special-case the test
+environment, or regenerate a golden file from wrong output. Each of
+those is blocked mechanically:
+- **Doubles only at boundaries.** Allowed: fs, clock, randomness, IPC
+  transport, `shell`, dialogs — injected explicitly. Forbidden:
+  `vi.mock` / `vi.spyOn(...).mockImplementation` of any module under
+  `src/` from a test of that module, and mocking our own modules in
+  e2e. Enforced by a lint rule (`no-restricted-syntax` on `vi.mock`
+  paths into `src/`, with a short reviewed allowlist).
+- **Every test asserts.** Lint: `vitest/expect-expect`,
+  `playwright/expect-expect`, `no-conditional-expect`,
+  `valid-expect`, `no-standalone-expect`; `expect.hasAssertions()` in
+  the Vitest setup. Assertions that prove nothing (`toBeDefined()`,
+  `toBeTruthy()` on an object, `expect(true)`) are lint errors as the
+  only assertion.
+- **Nothing skipped or focused.** `.skip`, `.only`, `.todo`, `fixme`,
+  `test.fail` are lint errors; `forbidOnly` in CI; the JUnit reports are
+  checked for skipped tests (any skip fails CI).
+- **No test-environment branches in production code.** `src/` may not
+  read `CI`, `NODE_ENV === "test"`, `PLAYWRIGHT*`, `VITEST*` or similar;
+  lint rule. Test hooks the app needs (e.g. a fixed clock) go through the
+  same injection the app uses.
+- **Red is proven, by CI, not by trust.** `scripts/check-red.mjs`: for
+  every test added or changed in a commit, run it against the parent
+  commit's `src/` — it must fail there (or the commit message must carry
+  `Red-exempt: <reason>` for refactors, which Claude reviews). A test
+  that passes on the code before the change proves nothing about the
+  change.
+- **Mutation testing** (nightly, Stryker) catches tests that execute
+  code without checking it; surviving mutants in core logic are issues.
+- **Protected files.** Thresholds, `coverage-baseline.json`,
+  `docs/acceptance/**`, golden/visual baselines, workflow files, lint and
+  test configs may not change in the same commit as `src/` unless the
+  brief says so; CI lists any protected file touched and requires a
+  `Protected-change: <reason>` trailer. Snapshot/golden updates are never
+  generated in CI (`-u` forbidden there) and every update is a reviewed
+  diff.
+- **Independent re-verification.** Claude does not take Codex's "tests
+  pass": it re-runs everything, mutates code under a sample of new tests
+  to watch them go red, and reads every assertion of a new test file.
+
+## Code quality gates (CI `quality` job, every push)
+- **TypeScript strictest:** `strict`, `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, `noImplicitOverride`,
+  `noPropertyAccessFromIndexSignature`, `useUnknownInCatchVariables`.
+- **ESLint** with `typescript-eslint` *strict-type-checked* and
+  *stylistic-type-checked*: no `any`, no non-null `!`, no floating or
+  misused promises, exhaustive `switch`, no unnecessary conditions;
+  `max-lines-per-function` 50, `complexity` 10, `max-depth` 4,
+  `max-params` 4, `max-lines` 400 per file (exceptions need a
+  one-line reason in an `eslint-disable-next-line` comment, counted and
+  reported); test-integrity rules above; Playwright and Vitest plugins.
+- **Architecture boundaries** (lint `no-restricted-imports`): renderer
+  cannot import `electron`, `node:*` or `src/main`; main cannot import
+  `src/renderer`; only `src/shared` is shared; preload imports nothing
+  but `electron` and types.
+- **Prettier** formatting check (no style debates in review).
+- **Dead code and dependencies:** `knip` — unused files, exports,
+  dependencies and devDependencies fail the build.
+- **Duplication:** `jscpd`, threshold 3 % of lines, tests excluded.
+- **Bundle budget:** renderer entry ≤ 400 KB gzip, render worker ≤
+  300 KB gzip at first load (languages lazy-loaded); a size report in
+  the job summary; growth > 5 % needs a reason in the commit.
+- **Commit messages:** subject ≤ 72 chars, imperative, body says why;
+  checked by a small script, no tool lock-in.
+- Tools are dev-only, pinned exactly, added by Claude with the usual
+  dependency checks (licence, maintenance) in the slice that introduces
+  the gate.
 
 ## Stability and regression testing — what "stable" means
 A build may be called **stable** only when every gate below is green for
