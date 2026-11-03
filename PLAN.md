@@ -73,6 +73,31 @@ that symptom, each closed by a rule here:
 | Preview DOM patch per keystroke | Touches only changed blocks; p95 < 8 ms on the UI thread |
 | Scrolling the preview (500 KB doc, fling) | No frame > 32 ms; no `longtask` |
 | Sync scroll follow lag | The other pane moves in the same animation frame |
+
+### Response time — every interaction has a budget
+Response time is the product's first feature. Each row is an e2e
+assertion; **a slice whose rows fail is not accepted**, and the suite runs
+in CI so a later change cannot silently regress one.
+
+| Interaction | p95 target |
+|---|---|
+| Keystroke → character painted in the editor | < 16 ms (one frame) |
+| Switch tab | < 50 ms, preview shown from that tab's cached blocks, no re-render |
+| Click a file in the sidebar → editable | < 100 ms for a 100 KB file |
+| Toggle view mode / sidebar / theme | < 50 ms |
+| Open a menu or context menu | < 50 ms |
+| Window shown at startup | `ready-to-show`, never a blank or white flash |
+
+How the budgets are kept:
+- Nothing heavy at startup: highlight.js registers ~20 common languages
+  and lazy-loads the rest in the worker; the sidebar and settings UI load
+  after the first paint.
+- Each tab keeps its CodeMirror state and its rendered preview blocks, so
+  switching swaps them rather than re-parsing.
+- Dark/light/background changes are CSS variables on the root — one
+  style recalculation, no re-render.
+- Startup runs in the background only after the window is interactive:
+  draft recovery check, workspace restore, watchers.
 | Open a 5 MB file | Editable in < 1 s |
 | Crash recovery | Kill the renderer mid-edit → reopened window has the unsaved text |
 
