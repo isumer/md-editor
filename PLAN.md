@@ -41,9 +41,9 @@ The earlier attempt's source is not on disk; these are the usual causes of
 that symptom, each closed by a rule here:
 
 1. **Re-rendering the whole preview on the UI thread per keystroke.**
-   → Markdown is parsed in a **Web Worker**, debounced (150 ms idle, max
-   500 ms wait), and a stale result is dropped (render ids). The UI thread
-   only patches the preview DOM.
+   → Markdown is parsed in a **Web Worker** and a stale result is dropped
+   (render ids). The UI thread only patches the changed blocks — see
+   "Preview pipeline".
 2. **Whole-document text widget.** → CodeMirror 6 virtualises lines.
 3. **Synchronous file / IPC calls.** → No `sendSync`, no `*Sync` fs calls
    in the main process after startup. All IPC is `invoke`/`handle`.
@@ -68,7 +68,11 @@ that symptom, each closed by a rule here:
 |---|---|
 | Cold start to editable window | < 1.5 s on the dev machine |
 | Typing into a 5 MB document | No main-thread task > 100 ms (PerformanceObserver `longtask`) during 200 keystrokes |
-| Preview update after typing stops | < 300 ms for a 500 KB document |
+| Keystroke → preview shows it, 50 KB doc (typical) | p95 < 50 ms |
+| Keystroke → preview shows it, 500 KB doc | p95 < 150 ms |
+| Preview DOM patch per keystroke | Touches only changed blocks; p95 < 8 ms on the UI thread |
+| Scrolling the preview (500 KB doc, fling) | No frame > 32 ms; no `longtask` |
+| Sync scroll follow lag | The other pane moves in the same animation frame |
 | Open a 5 MB file | Editable in < 1 s |
 | Crash recovery | Kill the renderer mid-edit → reopened window has the unsaved text |
 
@@ -92,6 +96,31 @@ main process (Node)                    renderer (sandboxed, no Node)
 - Links in the preview open in the system browser (`http`, `https`,
   `mailto` only); in-document anchors scroll the preview.
 - Relative image paths resolve against the document's folder.
+
+### Preview pipeline (low latency while editing, fast scroll)
+- **Adaptive scheduling, not a fixed debounce.** A render starts on the
+  next animation frame after an edit if none is running; edits arriving
+  while one runs coalesce into a single follow-up. A small doc therefore
+  updates within one or two frames; a big doc renders as fast as the
+  worker can, never queueing a backlog.
+- **Block diffing.** The worker returns top-level blocks as
+  `{key, line, html}`, where `key` is a hash of the block's source. The UI
+  thread keeps the blocks already in the DOM and replaces, inserts or
+  removes only those whose key changed. Typing in one paragraph touches
+  one element — images elsewhere do not reload, scroll does not jump.
+- **Sanitise only what changed.** DOMPurify runs per new block, not on the
+  whole document.
+- **Skip off-screen work.** Preview blocks use `content-visibility: auto`
+  with `contain-intrinsic-size`, so the browser does not lay out or paint
+  blocks far outside the viewport. Images get `loading="lazy"` and
+  `decoding="async"`.
+- **Scroll handlers never block.** Listeners are passive; work is
+  rAF-throttled to one per frame; block offsets are cached and refreshed
+  by `ResizeObserver`, so a scroll event does a binary search, not a DOM
+  walk.
+- **Measured.** A dev overlay (View > Performance, off by default) shows
+  the last render time, patch time and blocks patched, and the e2e suite
+  asserts the budget rows above.
 
 ### Sync scroll
 The worker adds `data-line` (from markdown-it `token.map`) to every block
@@ -149,27 +178,33 @@ a commit.
    worker-rendered preview side by side, open/save one file, atomic save,
    e2e harness. Tests: atomic save leaves the old file intact when the
    write fails; preview shows rendered Markdown; stale render dropped.
-2. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
+2. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
+   sanitise, `content-visibility`, the performance overlay. Replaces
+   slice 1's fixed debounce. Tests: the latency and scroll budget rows
+   (50 KB and 500 KB fixtures); typing in paragraph 3 leaves every other
+   preview element the same DOM node (identity check); an image elsewhere
+   is not re-requested.
+3. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
    drafts + crash recovery, session restore, single instance + open-with,
    drag-and-drop, preview-error resilience (rule 5). Tests: kill renderer
    → text recovered; close dirty tab → prompt; a render that throws keeps
    the previous preview + badge; a worker stuck in a loop is restarted
    within 2.5 s and the editor stays responsive throughout.
-3. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
+4. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
    file actions, toggle (CmdOrCtrl+B). Tests: a folder fixture with 5,000
    files lists in < 500 ms and the editor stays responsive; creating a
    `.md` file on disk appears in the tree within 1 s; deleting an open
    clean file closes its tab; `node_modules` is not listed.
-4. **Views + sync scroll.** Split / editor-only / preview-only, divider,
+5. **Views + sync scroll.** Split / editor-only / preview-only, divider,
    full screen, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
-5. **Themes + colours + settings.** Light/dark/system, background pickers,
+6. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-6. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+7. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-7. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+8. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), CI workflow building Windows and macOS installers.
 
 ## Verification and build
