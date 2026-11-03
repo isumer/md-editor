@@ -19,6 +19,7 @@ feature below is subordinate to that.
 | R9 | Windows + macOS | Installers for both from CI |
 | R10 | Fast, stable | See "Stability budget" — measured, not asserted |
 | R11 | Workspace sidebar | Open a folder; the left panel lists its folders and `.md` files as a tree; click opens in a tab; toggle the panel; updates when files change on disk |
+| R12 | Plain text and code files, Notepad++-style | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
 
 ## Stack and why
 
@@ -162,6 +163,37 @@ main process (Node)                    renderer (sandboxed, no Node)
   the last render time, patch time and blocks patched, and the e2e suite
   asserts the budget rows above.
 
+### Text editing (R12)
+Any text file opens, not only Markdown. The preview pane exists only for
+Markdown tabs; other tabs are editor-only and the view-mode controls hide.
+- **Highlighting:** language chosen from the extension (then shebang /
+  first line), overridable from the status bar. `@codemirror/language-data`
+  lazy-loads each language's parser the first time it is needed, so ~100
+  languages cost nothing at startup. Lezer parsing is incremental and
+  limited to the viewport, so it stays fast on big files.
+- **Find / replace:** in-file with regex, case, whole word, replace all,
+  match count; **Find in Files** across the workspace, run in main in
+  batches with a cancel button and results streamed in, skipping binary
+  files and the sidebar's ignore list.
+- **Editing:** line numbers, go to line (CmdOrCtrl+G), code folding,
+  multi-cursor and column (rectangular) selection, duplicate / move /
+  delete line, toggle comment, indent with tabs or spaces (detected per
+  file), show whitespace and line endings, word-wrap toggle per tab, zoom.
+- **Encoding and line endings** (status bar, per file): detected on open —
+  UTF-8 (with/without BOM), UTF-16 LE/BE, and legacy single-byte code
+  pages such as Windows-1254 (Turkish) and Windows-1252. Saved back in the
+  same encoding and line endings unless the user converts them. A file
+  that cannot be decoded cleanly opens read-only with a notice instead of
+  being silently corrupted on save. New dependencies for this
+  (`iconv-lite` to encode legacy code pages, `chardet` to detect) are
+  added by Claude in this slice with the usual dependency checks.
+- **Binary files** (NUL bytes in the first 8 KB) are not opened as text;
+  the user gets a notice.
+- **Changed on disk:** a file modified by another program is reloaded
+  automatically if the tab is clean, or offers Reload / Keep mine if
+  dirty.
+- **Sidebar:** a toggle between "Markdown only" and "All text files".
+
 ### Large files
 Target: a **20 MB / ~400k-line** document behaves like a small one —
 typing and scrolling stay inside the normal budgets. The cost of an edit
@@ -290,16 +322,23 @@ a commit.
    files lists in < 500 ms and the editor stays responsive; creating a
    `.md` file on disk appears in the tree within 1 s; deleting an open
    clean file closes its tab; `node_modules` is not listed.
-5. **Views + sync scroll.** Split / editor-only / preview-only, divider,
+5. **Text editing (R12).** Any text file, lazy language highlighting,
+   find/replace, Find in Files, editing tools, encodings + line endings,
+   binary detection, changed-on-disk handling. Tests: a Windows-1254
+   file with `ğüşıöç` round-trips byte-identical; a CRLF file stays
+   CRLF after edit+save; Find in Files over 5,000 files streams first
+   results < 300 ms and cancels; a binary file is refused; editing a
+   20 MB `.log` keeps the keystroke budget.
+6. **Views + sync scroll.** Split / editor-only / preview-only, divider,
    full screen, focus mode, resize stability, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
-6. **Themes + colours + settings.** Light/dark/system, background pickers,
+7. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-7. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+8. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-8. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+9. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), CI workflow building Windows and macOS installers.
 
 ## Verification and build
