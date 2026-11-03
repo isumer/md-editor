@@ -566,13 +566,34 @@ GitHub Release with notes and one download per platform/architecture.
   real Windows and macOS, not only on the Pi.
 - **Assets** (electron-builder, `--publish always` into a draft release):
 
-  | Platform | Files |
-  |---|---|
-  | Windows x64 / arm64 | `MD-Editor-Setup-X.Y.Z-x64.exe`, `-arm64.exe` (NSIS installer), `MD-Editor-X.Y.Z-win-x64.zip` (portable) |
-  | macOS Apple Silicon / Intel | `MD-Editor-X.Y.Z-arm64.dmg`, `-x64.dmg`, plus `.zip` of each |
-  | Linux x64 / arm64 (later) | `.AppImage`, `.deb` |
-  | All | `SHA256SUMS.txt` |
+  | Platform | Installer | Standalone (no install) |
+  |---|---|---|
+  | Windows x64 / arm64 | `<App>-Setup-X.Y.Z-x64.exe`, `-arm64.exe` (NSIS) | `<App>-X.Y.Z-win-x64-portable.zip`, `-arm64-portable.zip` |
+  | macOS Apple Silicon / Intel | `<App>-X.Y.Z-arm64.dmg`, `-x64.dmg` | `<App>-X.Y.Z-mac-arm64.zip`, `-x64.zip` (the `.app`, runs from anywhere) |
+  | Linux x64 / arm64 (later) | `.deb` | `.AppImage` |
+  | All | `SHA256SUMS.txt` | |
 
+- **Standalone means truly portable, and fast.** The Windows standalone
+  build is the unpacked app in a zip — not electron-builder's `portable`
+  target, which self-extracts to a temp folder on every launch and adds
+  seconds to startup. Portable mode is detected by a `portable` marker
+  file next to the exe (shipped in the zip): settings, session, drafts
+  and recent files then live in `.\data\` beside the exe, so the folder
+  can travel on a USB stick and leaves nothing in `%APPDATA%` or the
+  registry. If `data\` is not writable (e.g. under Program Files), the
+  app says so and falls back to the normal profile rather than failing.
+- **Portable builds don't touch the registry on their own.** Settings >
+  Windows integration offers "Add / remove 'Edit with <App>' in the
+  context menu" (per-user keys, no admin), pointing at wherever the
+  portable exe currently is; the installer build manages the same keys
+  itself.
+- **Installer and standalone can coexist:** they use different data
+  locations, and the installer's context-menu entries are not
+  overwritten by a portable copy unless the user asks.
+- **Tests (windows CI):** unzip the standalone build to a temp dir, run
+  it, change a setting → it lands in `data\settings.json` and nothing is
+  written under `%APPDATA%\<App>`; cold start of the standalone build
+  meets the same < 1.5 s budget as the installed one.
 - **Notes:** the release body is the version's section of `CHANGELOG.md`
   (Keep a Changelog format), written as part of each change, not at
   release time.
