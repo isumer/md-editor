@@ -139,6 +139,16 @@ main process (Node)                    renderer (sandboxed, no Node)
   with `contain-intrinsic-size`, so the browser does not lay out or paint
   blocks far outside the viewport. Images get `loading="lazy"` and
   `decoding="async"`.
+- **Virtualise big documents.** Above a block-count threshold (start at
+  2,000 blocks; tune it in slice 2 by measurement) the preview keeps only
+  the visible blocks ± 1 screen of overscan in the DOM. Heights are
+  measured once and cached per block key, unmeasured ones estimated from
+  their source size; spacers above and below keep the scrollbar honest,
+  and sync scroll uses the same height map. Below the threshold the full
+  DOM with `content-visibility` is kept, because it is simpler and lets
+  in-page search see everything. With virtualisation on, preview search
+  runs on the block list in the worker rather than on the DOM; export
+  always renders the full document separately, so it is unaffected.
 - **Scroll handlers never block.** Listeners are passive; work is
   rAF-throttled to one per frame; block offsets are cached and refreshed
   by `ResizeObserver`, so a scroll event does a binary search, not a DOM
@@ -204,7 +214,8 @@ a commit.
    e2e harness. Tests: atomic save leaves the old file intact when the
    write fails; preview shows rendered Markdown; stale render dropped.
 2. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
-   sanitise, `content-visibility`, the performance overlay. Replaces
+   sanitise, `content-visibility`, preview virtualisation for big docs,
+   the performance overlay. Replaces
    slice 1's fixed debounce. Tests: the latency and scroll budget rows
    (50 KB and 500 KB fixtures); typing in paragraph 3 leaves every other
    preview element the same DOM node (identity check); an image elsewhere
