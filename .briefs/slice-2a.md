@@ -17,10 +17,10 @@ as "MD Editor"; do not invent another name.
 - `CLAUDE.md` — one line: "Read AGENTS.md; it applies to Friday too."
 - `README.md` — per PLAN "Repository layout": title, badges (CI status
   for ci.yml on isumer/md-editor, latest release, platforms Windows |
-  macOS), one-paragraph description, a "Screenshot coming soon" note
+  macOS | Linux), one-paragraph description, a "Screenshot coming soon" note
   instead of an image, **Download** section with a table: Windows
-  installer / Windows portable zip / macOS dmg / macOS zip, linking to
-  the Releases page, and a one-line note on what portable means;
+  installer / Windows portable zip / macOS dmg (no mac zip — dmg only) /
+  Linux deb / Linux AppImage, linking to the Releases page, and a one-line note on what portable means;
   Features (current state only: editor + live preview + atomic save —
   do not advertise unbuilt features; add a "Roadmap" list pointing to
   PLAN.md), Build from source (`npm ci`, `npm start`, `npm run verify`),
@@ -79,8 +79,52 @@ as "MD Editor"; do not invent another name.
   list, a table, fenced code in two languages, a link and an image
   reference (no remote image).
 
+## Added after the brief was first written (user requests 2026-11-04)
+
+### Acceptance criteria traceability
+Friday has written `docs/acceptance/*.md` (format in its README). Do NOT
+edit those files except to report a criterion you believe is wrong (say
+so in your report instead of changing it).
+- Tag every existing test with the criterion it proves: Playwright
+  `test("…", { tag: "@AC-R5-02" }, async …)`, Vitest names prefixed
+  `AC-R5-03: …`. A test may carry several tags.
+- Every criterion with `status: implemented` must have at least one test.
+  Some have none yet (e.g. AC-R1-01's side-by-side layout: assert the
+  editor's bounding box is left of the preview's and both are visible;
+  AC-SEC-05 if not already covered). Write the missing tests.
+- `scripts/check-acceptance.mjs`: parse the criteria files and the JUnit
+  reports (`test-results/junit.xml`, `test-results/unit-junit.xml`);
+  fail (exit 1) if an implemented criterion has no passing test or a
+  test tag/prefix names an unknown criterion; print a Markdown matrix
+  (criterion | status | tests | result) to stdout and, when
+  `GITHUB_STEP_SUMMARY` is set, append it there. Unit-test it
+  (`test/unit/checkAcceptance.test.ts`) on small fixture inputs.
+- npm script `check:acceptance`; `verify` runs it last.
+
+### Coverage
+`@vitest/coverage-v8@5.1.0` is now installed (by Friday).
+- `vitest.config.mts`: coverage provider v8, reporters text-summary +
+  html (`coverage/`) + json-summary; include `src/**`; exclude only
+  type-only files (`src/shared/window.d.ts`) with a comment saying why.
+- Thresholds: global lines 85, branches 80 (unit-only today: main.ts and
+  app.ts are e2e-covered; e2e coverage merging comes in slice 3);
+  per-file 95 lines / 90 branches for `src/main/atomicWrite.ts`,
+  `src/renderer/render.ts`, `src/renderer/renderScheduler.ts`,
+  `src/renderer/sanitize.ts` — add tests until they pass, do not lower
+  them. If one truly cannot be met without testing implementation
+  details, stop and report it.
+- `coverage-baseline.json` with the achieved global numbers and
+  `scripts/check-coverage-ratchet.mjs`: fails if any number in
+  `coverage/coverage-summary.json` is below the baseline by more than
+  0.1; unit-test it. `test:unit` runs with coverage; ci.yml runs the
+  ratchet check and puts the summary in the job summary; upload
+  `coverage/` as an artifact.
+- add `coverage/` to .gitignore.
+
 ## Done means
 `npm run typecheck`, `npm run test:unit`, `npm run build` exit 0
-(paste); every YAML file parses (`node -e` with a tiny parser is not
+(paste) and `npm run check:acceptance` after a full local unit run
+(e2e cannot run in your sandbox — the matrix may show e2e criteria as
+missing; say which); every YAML file parses (`node -e` with a tiny parser is not
 available — instead keep YAML simple and Friday validates it with
 actionlint/yamllint); list every file created/changed/moved.
