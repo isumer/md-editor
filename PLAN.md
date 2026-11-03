@@ -164,6 +164,12 @@ main process (Node)                    renderer (sandboxed, no Node)
   rAF-throttled to one per frame; block offsets are cached and refreshed
   by `ResizeObserver`, so a scroll event does a binary search, not a DOM
   walk.
+- **Heading anchors, GitHub-style.** Headings get slug ids the way
+  GitHub makes them (lower-case, punctuation dropped, spaces → `-`,
+  duplicates `-1`, `-2`; Turkish letters kept), prefixed `user-content-`
+  so no slug can clobber a DOM property; `#kurulum` resolves to
+  `user-content-kurulum`. Table-of-contents links therefore work as on
+  GitHub.
 - **Measured.** A dev overlay (View > Performance, off by default) shows
   the last render time, patch time and blocks patched, and the e2e suite
   asserts the budget rows above.
