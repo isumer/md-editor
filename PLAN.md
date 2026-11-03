@@ -691,7 +691,7 @@ GitHub Release with notes and one download per platform/architecture.
   | Platform | Installer | Standalone (no install) |
   |---|---|---|
   | Windows x64 / arm64 | `<App>-Setup-X.Y.Z-x64.exe`, `-arm64.exe` (NSIS) | `<App>-X.Y.Z-win-x64-portable.zip`, `-arm64-portable.zip` |
-  | macOS Apple Silicon / Intel | `<App>-X.Y.Z-arm64.dmg`, `-x64.dmg` | `<App>-X.Y.Z-mac-arm64.zip`, `-x64.zip` (the `.app`, runs from anywhere) |
+  | macOS Apple Silicon / Intel | `<App>-X.Y.Z-arm64.dmg`, `-x64.dmg` | — (dmg only, user 2026-11-04) |
   | Linux x64 / arm64 (later) | `.deb` | `.AppImage` |
   | All | `SHA256SUMS.txt` | |
 
@@ -723,7 +723,10 @@ GitHub Release with notes and one download per platform/architecture.
   smoke-checks the assets (installers present, checksums match, the
   macOS app's architecture is right) and the user publishes it.
 - **Auto-update (optional, decided at slice 10):** `electron-updater`
-  reads the same release (`latest.yml` / `latest-mac.yml`). It needs the
+  reads the same release (`latest.yml` / `latest-mac.yml`). On macOS it
+  needs a `.zip` of the app as the update payload; if auto-update is
+  turned on, that zip is published as an update-only asset and left out
+  of the README download table. It needs the
   release assets to be publicly readable, and on macOS a signed app.
 - **Visibility:** the repo is private, so release downloads work only for
   signed-in collaborators. Public download links need either a public
