@@ -85,6 +85,8 @@ in CI so a later change cannot silently regress one.
 | Switch tab | < 50 ms, preview shown from that tab's cached blocks, no re-render |
 | Click a file in the sidebar → editable | < 100 ms for a 100 KB file |
 | Toggle view mode / sidebar / theme | < 50 ms |
+| Window resize (continuous, 500 KB doc) | No frame > 32 ms; top visible block unchanged |
+| Enter / leave full screen or focus mode | Interactive < 100 ms after the OS animation |
 | Open a menu or context menu | < 50 ms |
 | Window shown at startup | `ready-to-show`, never a blank or white flash |
 
@@ -156,6 +158,28 @@ main process (Node)                    renderer (sandboxed, no Node)
 - **Measured.** A dev overlay (View > Performance, off by default) shows
   the last render time, patch time and blocks patched, and the e2e suite
   asserts the budget rows above.
+
+### Full screen and window resizing
+- **Full screen:** View > Full Screen (F11 on Windows, Ctrl+Cmd+F on
+  macOS) uses the OS full screen. **Focus mode** (CmdOrCtrl+Shift+F) is
+  full screen plus hidden tab bar, sidebar and status bar, for whichever
+  view mode is active — so "editor alone, full screen" and "preview alone,
+  full screen" are one keystroke each. Esc leaves focus mode.
+- **Resizing never stalls**, because the work a resize causes is bounded:
+  - The preview text column has a max width (default 900 px, setting);
+    beyond it a wider window adds margin, not reflow.
+  - Panes use CSS `contain: strict` so a resize of one does not lay out
+    the other; the split divider is a CSS grid track, no JS layout.
+  - While a resize is in progress (resize events within 150 ms), cached
+    block heights are only marked stale; the virtualiser keeps using
+    them, and re-measures the visible blocks once the size settles. The
+    scroll position is anchored to the top visible block, so the
+    document does not jump.
+  - Every resize-driven callback is rAF-throttled to one per frame.
+- **Budget (e2e):** resizing the window continuously for 2 s on a 500 KB
+  document — no frame > 32 ms, no `longtask`, and the top visible block
+  is the same before and after. Entering / leaving full screen or focus
+  mode: interactive within 100 ms after the OS animation ends.
 
 ### Sync scroll
 The worker adds `data-line` (from markdown-it `token.map`) to every block
@@ -232,7 +256,7 @@ a commit.
    `.md` file on disk appears in the tree within 1 s; deleting an open
    clean file closes its tab; `node_modules` is not listed.
 5. **Views + sync scroll.** Split / editor-only / preview-only, divider,
-   full screen, sync scroll both directions. Tests: scroll to a heading in
+   full screen, focus mode, resize stability, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
 6. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
