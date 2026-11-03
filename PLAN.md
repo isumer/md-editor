@@ -25,6 +25,7 @@ crashes**; every feature below is subordinate to that.
 | R11 | Workspace sidebar | Open a folder; the left panel lists its folders and `.md` files as a tree; click opens in a tab; toggle the panel; updates when files change on disk |
 | R12 | Plain text and code files, Notepad++-style | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
 | R13 | Notepad++ toolset | The everyday Notepad++ tools listed in "Power tools" |
+| R14 | Compare files and folders, IntelliJ-style | See "Compare files and folders" |
 
 ## Stack and why
 
@@ -249,9 +250,7 @@ Markdown tabs; other tabs are editor-only and the view-mode controls hide.
 - **Tail mode** (Notepad++'s "Monitoring"): a `.log` tab follows
   appended lines, reading only the new bytes.
 - **Print** the editor text (with highlighting) or the Markdown preview.
-- **Compare two files** (side-by-side diff with change navigation) —
-  Notepad++ needs a plugin for this; it is the last power-tools item and
-  may move to v1.1 if the slice runs long.
+- **Compare** — its own slice; see "Compare files and folders".
 Every action is in a menu and in a **command palette** (CmdOrCtrl+Shift+P)
 and has a rebindable shortcut; defaults follow Notepad++ on Windows
 (Ctrl+D duplicate, Ctrl+Shift+Up/Down move line, Ctrl+F2 bookmark, …)
@@ -278,12 +277,61 @@ and platform conventions on macOS.
   right" can be one tab split, or a tab cloned into the other view and
   that view set to preview — the Notepad++ way. Each view's preview is
   rendered from the same cached blocks; no second parse.
-- **Compare** (power tools) reuses the two views.
+- **Compare** reuses the two-view layout.
 - **Focus and keys:** F8 (Notepad++'s *Switch to Other View*) moves
   focus between views; every tab command acts on the focused view.
 - **Budget:** typing in a cloned document shows in the other view within
   the same frame; synchronised scrolling of two 20 MB views stays inside
   the scroll frame budget.
+
+### Compare files and folders (R14, modelled on IntelliJ IDEA)
+**File compare** — from a tab menu (*Compare with…*, *Compare with
+Clipboard*, *Compare with Saved* for a dirty tab), two sidebar selections,
+or `<App> --diff a b` on the command line:
+- Side-by-side (default) or unified, toggled in the toolbar.
+- Line changes coloured by kind (added / deleted / modified) with
+  **word- and character-level** highlighting inside modified lines.
+- **Both sides editable**; chunk arrows (`>>`, `<<`, ✕) apply or revert a
+  change in one click; edits re-diff incrementally.
+- Unchanged regions collapsed with an expand control; the two sides
+  stay aligned (padding opposite insertions) and scroll together.
+- Next / previous difference (F7 / Shift+F7), a change count, and a
+  gutter overview of where changes are.
+- Ignore options: whitespace (none / trailing / all), case, line
+  endings; *Highlight: words / lines / characters / none*.
+- Save each side with the normal atomic save; encodings and line
+  endings of each file preserved.
+- Built on `@codemirror/merge` (MIT, CodeMirror's own merge view —
+  added in this slice with the dependency checks). The diff itself runs
+  in a worker for anything over 1 MB, with a time limit that falls back
+  to a coarser line diff and says so instead of freezing.
+
+**Folder compare** — *Compare Folders…* or two folders selected in the
+sidebar:
+- One tree with both sides, each entry marked **same / changed / only
+  left / only right / binary differs / error**; filters to show only
+  differences, only one side, or by name pattern; `.git` /
+  `node_modules` / user patterns excluded.
+- Comparison mode: **contents** (default; size first, then a streamed
+  hash only when sizes match), or fast **size + timestamp**.
+- Double-click a changed file → file compare in a tab. Copy left→right /
+  right→left / delete (to trash) for selected entries, each confirmed,
+  each write atomic.
+- Runs in main in batches off the UI thread, results streamed into the
+  tree as they come, with progress and Cancel; a 50,000-file pair never
+  blocks the window.
+- Re-compare on demand, and automatically for entries the file watcher
+  reports changed.
+
+**Later (v1.x):** three-way merge (base / ours / theirs), as IntelliJ's
+merge tool, useful for git conflicts.
+
+**Budgets / tests:** two 20 MB files with 1% changed lines → first
+diff shown < 2 s, the window responsive throughout; applying a chunk
+arrow < 50 ms; word-level highlight correct on fixtures; folder compare
+of two generated 10,000-file trees streams the first results < 300 ms,
+classifies every entry correctly against a precomputed answer, and
+cancels within 200 ms.
 
 ### Large files
 Target: a **20 MB / ~400k-line** document behaves like a small one —
@@ -439,7 +487,7 @@ a commit.
 7. **Power tools (R13).** Line operations, search extras and Replace in
    Files, column editor, macros, word completion, outline, document map,
    second view, tab menu, formatters, tail mode, print, command palette,
-   rebindable shortcuts. Compare last. Tests per tool on fixtures (e.g.
+   rebindable shortcuts. Tests per tool on fixtures (e.g.
    sort + dedupe on a 100k-line file < 300 ms and undoable in one step;
    a recorded macro replays identically; Replace in Files previews then
    writes atomically and skips files changed since the preview).
@@ -451,13 +499,17 @@ a commit.
    tab appears in the other view in the same frame and undoes once from
    either view; sync scroll keeps the starting line offset; closing the
    last tab of view 2 closes the view.
-9. **Themes + colours + settings.** Light/dark/system, background pickers,
+9. **Compare files and folders (R14).** File compare per the section
+   above (side-by-side/unified, word-level, editable, chunk arrows,
+   ignore options) and folder compare (streamed, cancellable, copy/sync
+   actions). Tests: the R14 budget list.
+10. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-10. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+11. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-11. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+12. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), the stability budget asserted on all CI platforms, auto-update and
     signing if decided, v1.0.0.
 
