@@ -3,8 +3,8 @@
 A standalone **Notepad++-class text editor with first-class Markdown**:
 it should cover everyday text and code editing the way Notepad++ does,
 and add a live Markdown preview, export and a workspace view on top.
-Windows and macOS for v1; Linux later (Electron runs there already —
-development and tests run on Linux — so it is a packaging step). The
+Windows, macOS and Linux (Linux costs only packaging — development and
+tests already run on Linux). The
 overriding requirement is that it is **fast and never freezes or
 crashes**; every feature below is subordinate to that.
 
@@ -20,7 +20,7 @@ crashes**; every feature below is subordinate to that.
 | R6 | Export preview | HTML (self-contained) and PDF, matching what the preview shows |
 | R7 | Background colour | User-chosen background for editor and preview, persisted |
 | R8 | Themes | Light, dark, follow system |
-| R9 | Windows + macOS (Linux later) | Installers for both from CI; Linux AppImage/deb added later as a packaging target |
+| R9 | Windows, macOS and Linux | Installer + standalone per platform from CI (Linux added 2026-11-04: same code, packaging only) |
 | R10 | Fast, stable | See "Stability budget" — measured, not asserted |
 | R11 | Workspace sidebar | Open a folder; the left panel lists its folders and `.md` files as a tree; click opens in a tab; toggle the panel; updates when files change on disk |
 | R12 | Plain text and code files, Notepad++-style | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
@@ -783,7 +783,7 @@ GitHub Release with notes and one download per platform/architecture.
   slices land, each release a usable build, 1.0.0 when all slices pass.
 - **Trigger:** pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`.
   A matrix builds on native runners — `windows-latest`, `macos-latest`,
-  and later `ubuntu-latest` — because macOS packages cannot be built
+  `ubuntu-latest` — because macOS packages cannot be built
   elsewhere and native builds avoid cross-compile surprises.
 - **Every job runs `npm run verify` first**; a red suite on any platform
   fails the release. The response-time budgets are therefore checked on
@@ -794,7 +794,7 @@ GitHub Release with notes and one download per platform/architecture.
   |---|---|---|
   | Windows x64 / arm64 | `<App>-Setup-X.Y.Z-x64.exe`, `-arm64.exe` (NSIS) | `<App>-X.Y.Z-win-x64-portable.zip`, `-arm64-portable.zip` |
   | macOS Apple Silicon / Intel | `<App>-X.Y.Z-arm64.dmg`, `-x64.dmg` | — (dmg only, user 2026-11-04) |
-  | Linux x64 / arm64 (later) | `.deb` | `.AppImage` |
+  | Linux x64 / arm64 | `<App>_X.Y.Z_amd64.deb`, `_arm64.deb` (Debian, Ubuntu, Mint, Raspberry Pi OS) | `<App>-X.Y.Z-x86_64.AppImage`, `-arm64.AppImage` (any distro, no install) |
   | All | `SHA256SUMS.txt` | |
 
 - **Standalone means truly portable, and fast.** The Windows standalone
@@ -818,6 +818,16 @@ GitHub Release with notes and one download per platform/architecture.
   it, change a setting → it lands in `data\settings.json` and nothing is
   written under `%APPDATA%\<App>`; cold start of the standalone build
   meets the same < 1.5 s budget as the installed one.
+- **Linux specifics:** the app has no native modules, so the arm64
+  AppImage/deb are packaged on the x64 runner by electron-builder
+  (no cross-compiling of code involved), and smoke-tested on real arm64
+  hardware — this Raspberry Pi 5 — before a release is published. The
+  `.deb` installs a `.desktop` entry with MIME types, so the app appears
+  in file managers' *Open With*; "Edit with" context entries are
+  file-manager specific (Nautilus scripts, Dolphin service menus) and
+  are left for later. `.rpm` (Fedora) can be added on request — one more
+  electron-builder target. Portable mode applies to the AppImage too:
+  a `portable` marker next to it keeps data beside it.
 - **Notes:** the release body is the version's section of `CHANGELOG.md`
   (Keep a Changelog format), written as part of each change, not at
   release time.
@@ -842,6 +852,3 @@ GitHub Release with notes and one download per platform/architecture.
 Live collaboration, a plugin system, Vim mode, hex editing, cloud sync, spell check beyond the
 OS default, Mermaid/KaTeX (candidates for v1.1, rendered in the worker).
 
-Linux packaging (AppImage, deb) is planned after v1: the app is already
-developed and tested on Linux, so it is an electron-builder target and a
-CI job, not a port.
