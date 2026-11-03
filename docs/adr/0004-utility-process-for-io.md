@@ -1,5 +1,5 @@
 # 0004 — Heavy I/O in a utility process; main stays a router
-Status: proposed (2026-11-04)
+Status: proposed, revised (2026-11-04)
 
 **Context.** Workspace trees, file watching, Find/Replace in Files over
 thousands of files, folder compare with hashing. In Electron, a busy main
@@ -20,3 +20,10 @@ the io-worker.
 **Reverse if** measurements show the extra hop costs more than a frame on
 interactive operations and `worker_threads` in main achieve the same
 isolation.
+
+**Amendment (review findings 1, 4).** The io-worker also owns all file
+reads/writes (ADR-0008); main keeps only dialogs and grants — the
+earlier line "Main keeps single-file operations" is withdrawn. Search
+and hashing run in worker_threads owned by the io-worker, one per job,
+killed on cancel or time limit, so a runaway regex never stalls the tree
+or watcher (answers the one-vs-many io-worker question).

@@ -16,3 +16,7 @@ highlight) are written as CodeMirror extensions by us.
 
 **Reverse if** a required capability (e.g. very long single lines) cannot
 meet the budget and Monaco demonstrably does.
+
+**Amendment (review).** Additional reversal condition: the compare-slice
+spike shows `@codemirror/merge` cannot render worker-computed chunks, so
+diffs of large files would run on the UI thread.
