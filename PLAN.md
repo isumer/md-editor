@@ -172,7 +172,18 @@ Markdown tabs; other tabs are editor-only and the view-mode controls hide.
   highlighting, folding, auto-indent, bracket matching, toggle comment —
   for at least Java, Python, JavaScript/TypeScript, JSON, XML/HTML, CSS,
   SQL, shell, YAML, C/C++, C#, Go, Rust, PHP, Markdown; the rest of
-  `language-data` gets highlighting at least. `@codemirror/language-data`
+  `language-data` gets highlighting at least.
+- **Notepad++ parity.** Every language in Notepad++'s built-in Language
+  menu is supported, with its usual extensions mapped. The slice keeps a
+  coverage table (`docs/languages.md`: Notepad++ language → extensions →
+  source — `language-data`, `@codemirror/legacy-modes`, or ours). Where
+  CodeMirror has no mode (e.g. Batch, NSIS, Inno Setup, AutoIt, Registry,
+  Intel HEX / S-Record, KiXtart, PureBasic), we write a small
+  `StreamLanguage` definition — keywords, comments, strings, numbers —
+  which is the level Notepad++ itself offers for those. Each mode is
+  loaded lazily like the rest.
+- **Any other file** that is text (no NUL bytes) opens as plain text with
+  no highlighting, and the user can pick a language from the menu. `@codemirror/language-data`
   lazy-loads each language's parser the first time it is needed, so ~100
   languages cost nothing at startup. Lezer parsing is incremental and
   limited to the viewport, so it stays fast on big files.
@@ -332,7 +343,10 @@ a commit.
    binary detection, changed-on-disk handling. Tests: a Windows-1254
    file with `ğüşıöç` round-trips byte-identical; a `.java` and a `.py`
    fixture each show keyword/string/comment tokens, fold a method
-   block, and toggle comment with the right marker (`//`, `#`); a CRLF file stays
+   block, and toggle comment with the right marker (`//`, `#`); every row
+   of `docs/languages.md` has a fixture file and a test asserting that
+   its extension selects that language and at least a comment and a
+   keyword (or the format's equivalent) get highlight tokens; a CRLF file stays
    CRLF after edit+save; Find in Files over 5,000 files streams first
    results < 300 ms and cancels; a binary file is refused; editing a
    20 MB `.log` keeps the keystroke budget.
