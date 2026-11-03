@@ -116,6 +116,10 @@ How the budgets are kept:
 
 ## Architecture
 
+The detailed design — processes, layering and dependency rules, document
+model, command registry, IPC contracts — is in `docs/architecture.md` with
+decision records in `docs/adr/`. The sketch below is the summary.
+
 ```
 main process (Node)                    renderer (sandboxed, no Node)
   window + menu + dialogs               tabs, layout, settings UI
@@ -490,7 +494,11 @@ a commit.
    free log gate, CommonMark/GFM conformance, golden render corpus,
    fault-injection basics for save/open, nightly.yml skeleton (soak +
    perf trend + auto-issue). Later slices add to each suite.
-3. **Security baseline.** Everything in "Security testing" that applies
+3. **Architecture refactor + security baseline.** First, behaviour-
+   preserving: move slice 1 code into the layout of docs/architecture.md
+   §11 (core / features / platform / workers, services, shared/ipc
+   contracts, command registry, menu model) with the e2e suite as the
+   safety net, and switch on the import-boundary lint. Then: Everything in "Security testing" that applies
    to what exists: hardening assertions, permission/navigation lockdown,
    senderFrame checks + IPC fuzzing, XSS corpus + fast-check fuzzing,
    DoS corpus, malformed files, remote-image setting, fuses in the
