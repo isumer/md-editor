@@ -599,8 +599,8 @@ a commit.
   are absolute; if a CI runner class is slower, its factor is a named,
   committed constant per platform, not a widened assertion.
 - **Coverage means failure modes:** each slice lists the failure modes it
-  guards (crash, data loss, freeze, wrong output) and the test for each.
-  A line-coverage number is reported, not targeted.
+  guards (crash, data loss, freeze, wrong output) and the test for each;
+  numeric coverage floors are in "Code coverage".
 - **Fixtures are real:** encoding fixtures are byte files checked in with
   `-text`; large fixtures (5 MB, 20 MB, 5,000-file folders) are generated
   deterministically by a seeded script at test time, not committed.
@@ -617,6 +617,51 @@ a commit.
   workflow alone gets `contents: write`); npm cache keyed on the
   lockfile; concurrency group cancels superseded runs on the same branch.
 - `main` is protected: merge requires CI green.
+
+## Acceptance criteria and traceability
+Every requirement (R1…R15) is broken into numbered **acceptance
+criteria** in `docs/acceptance/`, written Given / When / Then with a
+measurable outcome, e.g. `AC-R5-03 — Given a saved file is open, when
+the disk is full during save, then the file on disk is unchanged and
+the status bar says the save failed`.
+- **Written before the code.** A slice's criteria are written (by
+  Friday) and reviewed before its brief goes to Vision; the brief's
+  definition of done is "every criterion of this slice has a passing
+  test".
+- **Tests carry the id**: Playwright `{ tag: "@AC-R5-03" }`, Vitest
+  names starting `AC-R5-03:`. One criterion may have several tests.
+- **CI enforces traceability:** `scripts/check-acceptance.mjs` parses
+  the criteria (each has `status: planned | implemented`) and the test
+  results; any *implemented* criterion without a passing test, or a
+  test tag pointing at no criterion, fails the build. The job summary
+  prints the matrix (criterion → tests → result).
+- Regression tests reference the criterion they protect as well as the
+  issue.
+
+## Code coverage
+Coverage is measured on everything and **enforced as a floor that only
+rises** — while remembering it counts executed lines, not proven
+behaviour; mutation testing is the check on that.
+- **Unit:** Vitest + V8 (`@vitest/coverage-v8`). Thresholds: ≥ 90 %
+  lines and ≥ 85 % branches globally; **≥ 95 % lines / 90 % branches for
+  core logic** (atomic write, render, sanitise, scheduler, diff/merge,
+  encodings, path confinement). Baseline on 2026-11-04: 89.5 %
+  statements, 87.1 % branches.
+- **End to end:** V8 coverage of the main process (`NODE_V8_COVERAGE`)
+  and of the renderer (Playwright's Chromium coverage) during the e2e
+  run, merged with unit coverage into one report, so `main.ts` and
+  `app.ts` — mostly exercised by e2e — are counted too.
+- **Ratchet:** `coverage-baseline.json` on main holds the current
+  numbers; a change that lowers any of them fails CI. The baseline is
+  only ever raised (by the commit that raises coverage).
+- **Mutation testing** (Stryker, nightly) on the core-logic modules:
+  mutation score ≥ 80 %, surviving mutants listed in the nightly issue.
+  This is what catches a test suite that executes code without checking
+  it.
+- Reports: HTML artifact per CI run, numbers in the job summary, a
+  coverage badge in the README.
+- Exclusions are explicit and justified in the config (generated code,
+  type-only files); no blanket ignores.
 
 ## Stability and regression testing — what "stable" means
 A build may be called **stable** only when every gate below is green for

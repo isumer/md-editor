@@ -18,6 +18,7 @@
     "@playwright/test": "1.64.1",
     "@types/markdown-it": "14.2.0",
     "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.1.0",
     "electron": "45.2.1",
     "electron-builder": "26.18.0",
     "typescript": "6.0.3",
