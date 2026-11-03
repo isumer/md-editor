@@ -50,7 +50,14 @@ that symptom, each closed by a rule here:
    work and returns a typed error; the renderer shows it. A crashed or
    hung renderer (`render-process-gone`, `unresponsive`) is reported and
    the window reloaded with the recovered drafts.
-5. **Torn save on power loss / crash.** → Atomic save: write to a temp file
+5. **Preview errors (seen in VS Code: blank or stuck preview).** → A
+   render that throws keeps the last good preview and shows an error
+   badge with the message; the next edit retries. A worker that crashes
+   is restarted and the current text re-rendered. A render running longer
+   than 2 s is treated as hung: the worker is terminated, restarted, and
+   the badge says the document is too complex rather than freezing. A
+   broken image or link never affects the rest of the preview.
+6. **Torn save on power loss / crash.** → Atomic save: write to a temp file
    in the same directory, `fsync`, `rename` over the target. (Seen on this
    machine 2026-10-30: a non-atomic write left a 0-byte file.)
 
@@ -121,8 +128,10 @@ a commit.
    write fails; preview shows rendered Markdown; stale render dropped.
 2. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
    drafts + crash recovery, session restore, single instance + open-with,
-   drag-and-drop. Tests: kill renderer → text recovered; close dirty tab →
-   prompt.
+   drag-and-drop, preview-error resilience (rule 5). Tests: kill renderer
+   → text recovered; close dirty tab → prompt; a render that throws keeps
+   the previous preview + badge; a worker stuck in a loop is restarted
+   within 2.5 s and the editor stays responsive throughout.
 3. **Views + sync scroll.** Split / editor-only / preview-only, divider,
    full screen, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
