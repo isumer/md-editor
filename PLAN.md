@@ -18,6 +18,7 @@ feature below is subordinate to that.
 | R8 | Themes | Light, dark, follow system |
 | R9 | Windows + macOS | Installers for both from CI |
 | R10 | Fast, stable | See "Stability budget" — measured, not asserted |
+| R11 | Workspace sidebar | Open a folder; the left panel lists its folders and `.md` files as a tree; click opens in a tab; toggle the panel; updates when files change on disk |
 
 ## Stack and why
 
@@ -105,6 +106,28 @@ Every 2 s of idle, dirty tabs are written (atomically) to
 newer than its file is offered back. Drafts are deleted on save or on
 discard.
 
+### Workspace sidebar
+File > Open Folder (CmdOrCtrl+Shift+O) sets the workspace; the last one
+is restored. The tree lists folders and Markdown files (`.md`,
+`.markdown`); other files are hidden. Rules that keep it fast on a big
+folder:
+- **Lazy:** a folder's children are read (async, in main) only when it is
+  expanded. Nothing scans the whole tree up front.
+- **Skipped:** `.git`, `node_modules`, and dot-folders are not listed.
+- **Capped:** a folder with more than 2,000 entries shows the first 2,000
+  and a "more…" notice instead of blocking.
+- **Watched:** `fs.watch` on expanded folders only (recursive watching is
+  native on Windows and macOS); events are debounced 200 ms and only the
+  affected folder is re-read. A watcher error drops back to a manual
+  refresh button, never to a crash.
+- **Virtualised list** in the renderer, so 10,000 visible rows scroll
+  smoothly.
+Actions: click opens (or focuses) the file's tab; the active tab's file
+is highlighted in the tree; New File / New Folder / Rename / Delete (to
+the OS trash, `shell.trashItem`) from a context menu; a filter box
+narrows the visible tree by name. Renaming or deleting an open file
+updates or closes its tab (prompting if dirty).
+
 ### Settings
 `userData/settings.json`, atomic write, validated on load (bad or missing
 keys fall back to defaults, never crash): theme, editor/preview background
@@ -132,16 +155,21 @@ a commit.
    → text recovered; close dirty tab → prompt; a render that throws keeps
    the previous preview + badge; a worker stuck in a loop is restarted
    within 2.5 s and the editor stays responsive throughout.
-3. **Views + sync scroll.** Split / editor-only / preview-only, divider,
+3. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
+   file actions, toggle (CmdOrCtrl+B). Tests: a folder fixture with 5,000
+   files lists in < 500 ms and the editor stays responsive; creating a
+   `.md` file on disk appears in the tree within 1 s; deleting an open
+   clean file closes its tab; `node_modules` is not listed.
+4. **Views + sync scroll.** Split / editor-only / preview-only, divider,
    full screen, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
-4. **Themes + colours + settings.** Light/dark/system, background pickers,
+5. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-5. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+6. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-6. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+7. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), CI workflow building Windows and macOS installers.
 
 ## Verification and build
