@@ -240,8 +240,7 @@ Markdown tabs; other tabs are editor-only and the view-mode controls hide.
 - **Outline panel (Function List):** symbols for code via the Lezer
   tree, headings for Markdown; click jumps, follows the cursor.
 - **Document map (minimap)** toggle.
-- **Second view:** move or clone a tab into a side-by-side second editor
-  view (clone = same document, two cursors).
+- **Second view** — see "Side-by-side views".
 - **Tab menu:** copy path / name / folder path, open containing folder,
   reveal in sidebar, pin tab, close others / to the right / unchanged;
   recent files and recent folders (File menu); read-only toggle.
@@ -257,6 +256,34 @@ Every action is in a menu and in a **command palette** (CmdOrCtrl+Shift+P)
 and has a rebindable shortcut; defaults follow Notepad++ on Windows
 (Ctrl+D duplicate, Ctrl+Shift+Up/Down move line, Ctrl+F2 bookmark, …)
 and platform conventions on macOS.
+
+### Side-by-side views (Notepad++ "Other View")
+- **Two views, each with its own tab bar.** Right-click a tab → *Move to
+  Other View* or *Clone to Other View*; drag a tab across; the second
+  view closes itself when its last tab leaves.
+- **Clone = one document in two places.** Both views edit the same
+  document with independent cursor, selection and scroll; an edit in one
+  appears in the other in the same frame; one shared undo history and
+  dirty state (CodeMirror's split-view pattern: one view owns the state,
+  the other forwards transactions with an annotation so they never echo).
+- **Orientation:** vertical (side by side, default) or horizontal
+  (stacked), toggled from View > Rotate; the divider drags, double-click
+  resets to 50/50; both persist in the session.
+- **Synchronised scrolling** between the two views, vertical and
+  horizontal, each a toggle (View > Synchronize …), keeping the line
+  offset that existed when it was turned on — as in Notepad++. This is
+  separate from the editor↔preview sync of a Markdown tab.
+- **Markdown in views:** each view shows its Markdown tab as editor,
+  preview or editor|preview. So "editor on the left, preview on the
+  right" can be one tab split, or a tab cloned into the other view and
+  that view set to preview — the Notepad++ way. Each view's preview is
+  rendered from the same cached blocks; no second parse.
+- **Compare** (power tools) reuses the two views.
+- **Focus and keys:** F8 (Notepad++'s *Switch to Other View*) moves
+  focus between views; every tab command acts on the focused view.
+- **Budget:** typing in a cloned document shows in the other view within
+  the same frame; synchronised scrolling of two 20 MB views stays inside
+  the scroll frame budget.
 
 ### Large files
 Target: a **20 MB / ~400k-line** document behaves like a small one —
@@ -416,9 +443,14 @@ a commit.
    sort + dedupe on a 100k-line file < 300 ms and undoable in one step;
    a recorded macro replays identically; Replace in Files previews then
    writes atomically and skips files changed since the preview).
-8. **Views + sync scroll.** Split / editor-only / preview-only, divider,
+8. **Views + sync scroll + side-by-side views.** Split / editor-only / preview-only, divider,
    full screen, focus mode, resize stability, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
+   Second view per "Side-by-side views": move/clone/drag between
+   views, rotate, synchronised scrolling, F8. Tests: an edit in a cloned
+   tab appears in the other view in the same frame and undoes once from
+   either view; sync scroll keeps the starting line offset; closing the
+   last tab of view 2 closes the view.
 9. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
