@@ -486,7 +486,15 @@ a commit.
    macOS Open With per "Shell integration".
    Ends with the v0.0.1 draft release (slice 1's editor) checked and
    handed to the user to publish.
-3. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
+3. **Security baseline.** Everything in "Security testing" that applies
+   to what exists: hardening assertions, permission/navigation lockdown,
+   senderFrame checks + IPC fuzzing, XSS corpus + fast-check fuzzing,
+   DoS corpus, malformed files, remote-image setting, fuses in the
+   packaging test, security.yml (audit, OSV, lockfile-lint, gitleaks,
+   CodeQL, weekly schedule), threat model. Later slices extend the
+   corpus and boundary tests for what they add (workspace FS ops,
+   Replace in Files, compare/merge writes).
+4. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
    sanitise, `content-visibility`, preview virtualisation for big docs,
    the performance overlay. Replaces
    slice 1's fixed debounce. Incremental chunk parse and first-screen-
@@ -495,18 +503,18 @@ a commit.
    only the touched chunks — counted, not timed); typing in paragraph 3 leaves every other
    preview element the same DOM node (identity check); an image elsewhere
    is not re-requested.
-4. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
+5. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
    drafts + crash recovery, session restore, single instance + open-with,
    drag-and-drop, preview-error resilience (rule 5). Tests: kill renderer
    → text recovered; close dirty tab → prompt; a render that throws keeps
    the previous preview + badge; a worker stuck in a loop is restarted
    within 2.5 s and the editor stays responsive throughout.
-5. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
+6. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
    file actions, toggle (CmdOrCtrl+B). Tests: a folder fixture with 5,000
    files lists in < 500 ms and the editor stays responsive; creating a
    `.md` file on disk appears in the tree within 1 s; deleting an open
    clean file closes its tab; `node_modules` is not listed.
-6. **Text editing (R12).** Any text file, lazy language highlighting,
+7. **Text editing (R12).** Any text file, lazy language highlighting,
    find/replace, Find in Files, editing tools, encodings + line endings,
    binary detection, changed-on-disk handling. Tests: a Windows-1254
    file with `ğüşıöç` round-trips byte-identical; a `.java` and a `.py`
@@ -518,14 +526,14 @@ a commit.
    CRLF after edit+save; Find in Files over 5,000 files streams first
    results < 300 ms and cancels; a binary file is refused; editing a
    20 MB `.log` keeps the keystroke budget.
-7. **Power tools (R13).** Line operations, search extras and Replace in
+8. **Power tools (R13).** Line operations, search extras and Replace in
    Files, column editor, macros, word completion, outline, document map,
    second view, tab menu, formatters, tail mode, print, command palette,
    rebindable shortcuts. Tests per tool on fixtures (e.g.
    sort + dedupe on a 100k-line file < 300 ms and undoable in one step;
    a recorded macro replays identically; Replace in Files previews then
    writes atomically and skips files changed since the preview).
-8. **Views + sync scroll + side-by-side views.** Split / editor-only / preview-only, divider,
+9. **Views + sync scroll + side-by-side views.** Split / editor-only / preview-only, divider,
    full screen, focus mode, resize stability, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
    Second view per "Side-by-side views": move/clone/drag between
@@ -533,21 +541,21 @@ a commit.
    tab appears in the other view in the same frame and undoes once from
    either view; sync scroll keeps the starting line offset; closing the
    last tab of view 2 closes the view.
-9. **Compare files and folders (R14).** File compare per the section
+10. **Compare files and folders (R14).** File compare per the section
    above (side-by-side/unified, word-level, editable, chunk arrows,
    ignore options) and folder compare (streamed, cancellable, copy/sync
    actions). Tests: the R14 budget list.
-10. **Merge view (R15).** Three-pane merge per "Merge view": chunk
+11. **Merge view (R15).** Three-pane merge per "Merge view": chunk
    arrows, conflicts, apply-non-conflicting, conflict-marker files, git
    mergetool/difftool mode. Tests: the merge fixture set and the git
    round trip.
-11. **Themes + colours + settings.** Light/dark/system, background pickers,
+12. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-12. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+13. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-13. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+14. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), the stability budget asserted on all CI platforms, auto-update and
     signing if decided, v1.0.0.
 
@@ -605,6 +613,100 @@ a commit.
   workflow alone gets `contents: write`); npm cache keyed on the
   lockfile; concurrency group cancels superseded runs on the same branch.
 - `main` is protected: merge requires CI green.
+
+## Security testing (advanced)
+The threat: a **document is hostile input**. Someone sends a `.md`,
+`.html`-laden note or a crafted file; opening and previewing it must not
+run code, read other files, reach the network unexpectedly, or hang the
+app. Second threat: a tampered binary or dependency. Every item below is
+an automated test or CI gate, not a checklist.
+
+**1. Electron hardening, asserted (e2e, every platform):**
+- Renderer has no Node: `require`, `process`, `module` are undefined in
+  the page; `window.mdApi` exposes exactly the documented keys, nothing
+  else (snapshot of its shape).
+- `contextIsolation`, `sandbox`, `webSecurity` on, `nodeIntegration` and
+  `allowRunningInsecureContent` off — read back from the live
+  `webContents`, not from source.
+- CSP enforced: an injected inline script and an `eval` both raise
+  `securitypolicyviolation` and do not run.
+- Permission requests (camera, mic, geolocation, notifications, HID,
+  serial, clipboard-read…) are denied by `setPermissionRequestHandler`
+  / `setPermissionCheckHandler`; `<webview>` attach is prevented; new
+  windows denied; `will-navigate`, `will-redirect`, meta refresh, form
+  submit and `location =` all leave the window where it was.
+- IPC hardening: every handler checks `event.senderFrame` is our own
+  top frame; a **fuzz test** calls every `mdApi` method with wrong
+  types, huge strings, `null`, prototype-pollution objects
+  (`{"__proto__":{…}}`) and gets a typed error back, with the app still
+  responsive and nothing written to disk.
+- **Electron fuses** set at package time (electron-builder
+  `electronFuses`): RunAsNode off, NODE_OPTIONS off, `--inspect` off,
+  only load app from ASAR, embedded ASAR integrity validation on,
+  cookie encryption on. A packaging test reads the fuses back from the
+  built binary with `@electron/fuses` and fails the build if any differ.
+
+**2. Hostile documents (e2e + unit, corpus-driven):**
+- **XSS corpus:** a checked-in corpus (OWASP filter-evasion cheat sheet,
+  html5sec vectors, DOMPurify mXSS cases, Markdown-specific ones:
+  `[x](javascript:…)`, `JaVaScRiPt:`, entity-encoded and
+  whitespace-split schemes, `data:text/html`, `vbscript:`, SVG with
+  `<script>`/`onload`, `<iframe srcdoc>`, `<object>`, `<embed>`,
+  `<math>` tricks, `<base href>`, `<meta http-equiv=refresh>`). Each is
+  rendered in the real preview; the test asserts a canary
+  (`window.__pwned`) was never set, no `on*` attribute or dangerous URL
+  survives in the DOM, and no navigation or IPC happened.
+- **Property-based fuzzing** (`fast-check`, MIT): random Markdown/HTML
+  mixes through render + sanitise — never throws, never emits an `on*`
+  attribute or script-capable URL, always terminates.
+- **Denial of service:** known pathological Markdown (100k nested
+  brackets/quotes/lists, 1M emphasis markers, giant tables, deeply
+  nested HTML) — the preview shows the per-chunk hang notice at worst and
+  the editor keeps the keystroke budget. User regex in Find / Replace in
+  Files runs in a worker with a time limit, so a catastrophic-backtracking
+  pattern is cancelled, not a freeze.
+- **Malformed files:** invalid UTF-8/UTF-16, BOM-only, NUL bytes,
+  0-byte, 2 GB sparse file — refused or opened safely, never a crash.
+- **Privacy:** remote images are a setting — *always / ask per document
+  / never* (default *ask*, like a mail client), because an image URL is a
+  tracking pixel. Test: with *never*/*ask*, opening a document with a
+  remote image makes no network request (request interception).
+
+**3. File-system boundary (unit + e2e):**
+- Workspace operations (rename, delete, new file, Replace in Files,
+  folder compare copy) are confined to the chosen roots: `..`, absolute
+  paths, UNC paths, Windows device names (`CON`, `NUL`), alternate data
+  streams (`file.md:evil`), and **symlink escapes** are refused.
+- Relative links/images in a document resolve inside its folder tree;
+  a link to `file:///etc/passwd` or `..\..\Windows\` is not followed.
+- Atomic writes never follow a symlink planted at the temp path
+  (`wx` open) — test with a pre-created symlink.
+
+**4. Supply chain and code scanning (CI):**
+- `npm audit --audit-level=high` and OSV-Scanner on every push; a
+  weekly scheduled run so new advisories surface without a commit.
+- `lockfile-lint`: every package from the npm registry over https with
+  an integrity hash. npm 12's install-script allowlist stays explicit:
+  any new install script fails CI until reviewed.
+- Secret scanning with gitleaks on every push.
+- **CodeQL** (JavaScript/TypeScript, security-extended queries). Note:
+  on a *private* repo GitHub code scanning needs GitHub Advanced
+  Security; until then CodeQL runs and uploads its SARIF as a workflow
+  artifact, and the job fails on any high-severity alert.
+- Electronegativity was considered and rejected: its last release is
+  March 2023 and it predates current Electron defaults; the live
+  assertions in (1) are more precise.
+
+**5. Release integrity:** CycloneDX SBOM attached to every release;
+`SHA256SUMS.txt`; build provenance attestation when the repo is public
+(GitHub requires Enterprise for private-repo attestations); signing per
+"Releases".
+
+**6. Review:** a written threat model (`docs/security/threat-model.md`:
+assets, trust boundaries — document → renderer → preload → main → disk —
+and each mitigation's test) and a security review of every slice that
+touches a boundary (preview, IPC, file system, packaging) before it is
+accepted.
 
 ## Repository layout (modelled on github.com/anthropics/claude-code)
 ```
