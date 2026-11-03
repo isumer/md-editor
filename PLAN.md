@@ -410,6 +410,10 @@ a commit.
    a long doc).
 10. **Hardening + packaging.** The stability budget as e2e tests (5 MB
    file), CI workflow building Windows and macOS installers.
+    Release workflow per "Releases": tag → matrix build → verify on
+    each OS → draft GitHub Release with per-platform assets, checksums and
+    CHANGELOG notes. Test: a `v0.0.0-test` tag produces a draft with every
+    expected asset and matching SHA256SUMS; the draft is then deleted.
 
 ## Verification and build
 
@@ -421,6 +425,42 @@ a commit.
   needs the user's go-ahead.
 - Unsigned builds show a Gatekeeper / SmartScreen warning on first open;
   signing needs an Apple Developer ID and a Windows code-signing cert.
+
+## Releases (GitHub Releases, per-platform downloads)
+Modelled on github.com/anthropics/claude-code/releases: each version is a
+GitHub Release with notes and one download per platform/architecture.
+- **Trigger:** pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`.
+  A matrix builds on native runners — `windows-latest`, `macos-latest`,
+  and later `ubuntu-latest` — because macOS packages cannot be built
+  elsewhere and native builds avoid cross-compile surprises.
+- **Every job runs `npm run verify` first**; a red suite on any platform
+  fails the release. The response-time budgets are therefore checked on
+  real Windows and macOS, not only on the Pi.
+- **Assets** (electron-builder, `--publish always` into a draft release):
+
+  | Platform | Files |
+  |---|---|
+  | Windows x64 / arm64 | `MD-Editor-Setup-X.Y.Z-x64.exe`, `-arm64.exe` (NSIS installer), `MD-Editor-X.Y.Z-win-x64.zip` (portable) |
+  | macOS Apple Silicon / Intel | `MD-Editor-X.Y.Z-arm64.dmg`, `-x64.dmg`, plus `.zip` of each |
+  | Linux x64 / arm64 (later) | `.AppImage`, `.deb` |
+  | All | `SHA256SUMS.txt` |
+
+- **Notes:** the release body is the version's section of `CHANGELOG.md`
+  (Keep a Changelog format), written as part of each change, not at
+  release time.
+- **Draft first:** the workflow leaves the release as a draft; Claude
+  smoke-checks the assets (installers present, checksums match, the
+  macOS app's architecture is right) and the user publishes it.
+- **Auto-update (optional, decided at slice 10):** `electron-updater`
+  reads the same release (`latest.yml` / `latest-mac.yml`). It needs the
+  release assets to be publicly readable, and on macOS a signed app.
+- **Visibility:** the repo is private, so release downloads work only for
+  signed-in collaborators. Public download links need either a public
+  repo or a separate public releases-only repo the workflow publishes
+  to — the user's call before the first release.
+- **Signing:** unsigned builds work but warn on first open (Gatekeeper,
+  SmartScreen). An Apple Developer ID and a Windows code-signing
+  certificate plug into the same workflow as repository secrets.
 
 ## Out of scope for v1
 Live collaboration, a plugin system, Vim mode, hex editing, cloud sync, spell check beyond the
