@@ -360,7 +360,14 @@ a commit.
    worker-rendered preview side by side, open/save one file, atomic save,
    e2e harness. Tests: atomic save leaves the old file intact when the
    write fails; preview shows rendered Markdown; stale render dropped.
-2. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
+2. **CI + release pipeline → v0.0.1.** Moved forward so every later
+   slice is tested on real Windows and macOS, and the user can install
+   builds early. `ci.yml`: verify on ubuntu and windows for every push
+   (macOS on tags and on manual dispatch — a private repo's macOS
+   minutes count 10×). `release.yml` per "Releases". `CHANGELOG.md`.
+   Ends with the v0.0.1 draft release (slice 1's editor) checked and
+   handed to the user to publish.
+3. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
    sanitise, `content-visibility`, preview virtualisation for big docs,
    the performance overlay. Replaces
    slice 1's fixed debounce. Incremental chunk parse and first-screen-
@@ -369,18 +376,18 @@ a commit.
    only the touched chunks — counted, not timed); typing in paragraph 3 leaves every other
    preview element the same DOM node (identity check); an image elsewhere
    is not re-requested.
-3. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
+4. **Tabs + safety.** Multiple files, dirty tracking, close prompts,
    drafts + crash recovery, session restore, single instance + open-with,
    drag-and-drop, preview-error resilience (rule 5). Tests: kill renderer
    → text recovered; close dirty tab → prompt; a render that throws keeps
    the previous preview + badge; a worker stuck in a loop is restarted
    within 2.5 s and the editor stays responsive throughout.
-4. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
+5. **Workspace sidebar (R11).** Open Folder, lazy tree, watcher, filter,
    file actions, toggle (CmdOrCtrl+B). Tests: a folder fixture with 5,000
    files lists in < 500 ms and the editor stays responsive; creating a
    `.md` file on disk appears in the tree within 1 s; deleting an open
    clean file closes its tab; `node_modules` is not listed.
-5. **Text editing (R12).** Any text file, lazy language highlighting,
+6. **Text editing (R12).** Any text file, lazy language highlighting,
    find/replace, Find in Files, editing tools, encodings + line endings,
    binary detection, changed-on-disk handling. Tests: a Windows-1254
    file with `ğüşıöç` round-trips byte-identical; a `.java` and a `.py`
@@ -392,28 +399,25 @@ a commit.
    CRLF after edit+save; Find in Files over 5,000 files streams first
    results < 300 ms and cancels; a binary file is refused; editing a
    20 MB `.log` keeps the keystroke budget.
-6. **Power tools (R13).** Line operations, search extras and Replace in
+7. **Power tools (R13).** Line operations, search extras and Replace in
    Files, column editor, macros, word completion, outline, document map,
    second view, tab menu, formatters, tail mode, print, command palette,
    rebindable shortcuts. Compare last. Tests per tool on fixtures (e.g.
    sort + dedupe on a 100k-line file < 300 ms and undoable in one step;
    a recorded macro replays identically; Replace in Files previews then
    writes atomically and skips files changed since the preview).
-7. **Views + sync scroll.** Split / editor-only / preview-only, divider,
+8. **Views + sync scroll.** Split / editor-only / preview-only, divider,
    full screen, focus mode, resize stability, sync scroll both directions. Tests: scroll to a heading in
    the editor → same heading at the top of the preview (±1 block).
-8. **Themes + colours + settings.** Light/dark/system, background pickers,
+9. **Themes + colours + settings.** Light/dark/system, background pickers,
    font size, GitHub-style preview, code highlight. Tests: settings
    survive restart; a corrupt settings file loads defaults.
-9. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
+10. **Export.** HTML and PDF. Tests: exported HTML contains the rendered
    heading and inlined CSS; PDF file is valid (`%PDF-` header, > 1 page for
    a long doc).
-10. **Hardening + packaging.** The stability budget as e2e tests (5 MB
-   file), CI workflow building Windows and macOS installers.
-    Release workflow per "Releases": tag → matrix build → verify on
-    each OS → draft GitHub Release with per-platform assets, checksums and
-    CHANGELOG notes. Test: a `v0.0.0-test` tag produces a draft with every
-    expected asset and matching SHA256SUMS; the draft is then deleted.
+11. **Hardening + packaging.** The stability budget as e2e tests (5 MB
+   file), the stability budget asserted on all CI platforms, auto-update and
+    signing if decided, v1.0.0.
 
 ## Verification and build
 
@@ -429,6 +433,8 @@ a commit.
 ## Releases (GitHub Releases, per-platform downloads)
 Modelled on github.com/anthropics/claude-code/releases: each version is a
 GitHub Release with notes and one download per platform/architecture.
+- **Versioning:** starts at **0.0.1** (user, 2026-11-04); 0.0.x while
+  slices land, each release a usable build, 1.0.0 when all slices pass.
 - **Trigger:** pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`.
   A matrix builds on native runners — `windows-latest`, `macos-latest`,
   and later `ubuntu-latest` — because macOS packages cannot be built
