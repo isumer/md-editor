@@ -106,7 +106,7 @@ jobs:
           appimage=$(find release -maxdepth 1 -name '*-x86_64.AppImage' -print -quit)
           test -n "$appimage"
           chmod +x "$appimage"
-          node scripts/smoke-appimage.mjs "$appimage" test/fixtures/sample.md
+          xvfb-run -a node scripts/smoke-appimage.mjs "$appimage" test/fixtures/sample.md
       - name: Upload packaging diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
