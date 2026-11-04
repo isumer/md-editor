@@ -65,3 +65,9 @@ status: implemented
 Given the page inspects `window.api`
 When it lists its members
 Then it finds exactly the documented functions, none of which accepts a channel name, and no other global from the preload exists
+
+### AC-SEC-12 — The file process honours only grants the main process registered
+status: planned
+Given the renderer talks to the file process over its port
+When a message presents a raw path, an unknown, revoked or other-window grant, or a malformed body
+Then the file process refuses it with a typed error before touching the disk, and stays responsive
