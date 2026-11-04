@@ -236,7 +236,8 @@ describe("main process", () => {
     expect(fileSystem.handle.writeFile).toHaveBeenCalledWith("new", { encoding: "utf8" });
     expect(fileSystem.handle.sync).toHaveBeenCalledTimes(1);
     expect(fileSystem.rename).toHaveBeenCalledWith(
-      expect.stringMatching(/^\/tmp\/save\.md\..+\.tmp$/),
+      // Separator-agnostic: on Windows the temp path is joined with backslashes.
+      expect.stringMatching(/[\\/]tmp[\\/]save\.md\.[^\\/]+\.tmp$/),
       "/tmp/save.md",
     );
 
