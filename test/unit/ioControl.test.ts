@@ -50,7 +50,10 @@ let temporaryDirectory: string;
 let targetPath: string;
 
 beforeEach(async () => {
-  temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-control-"));
+  // Windows' temp dir is an 8.3 short path (RUNNER~1); grants hold the canonical long one.
+  temporaryDirectory = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-control-")),
+  );
   targetPath = path.join(temporaryDirectory, "note.md");
   await fs.writeFile(targetPath, "text", "utf8");
 });

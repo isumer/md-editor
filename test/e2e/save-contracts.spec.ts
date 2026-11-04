@@ -329,4 +329,29 @@ if (process.platform !== "win32") {
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
+
+  test("a save failure stays visible when the preview renders the next edit", {
+    tag: "@AC-R5-16",
+    annotation: { type: "AC-R5-16" },
+  }, async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-kept-error-"));
+    const readOnlyPath = path.join(temporaryDirectory, "read-only.md");
+    await fs.writeFile(readOnlyPath, "# Read only\n", { mode: 0o400 });
+    const { application, page } = await launchEditor(readOnlyPath);
+    try {
+      await expect(page.getByTestId("editor")).toContainText("Read only");
+      await clickMenuItem(application, "file-save");
+      await expect(page.getByTestId("status")).toContainText("read-only.md");
+      const failure = await page.getByTestId("status").textContent();
+
+      await appendEditorText(page, "\nrendered after the failure");
+      await expect(page.getByTestId("preview")).toContainText("rendered after the failure");
+
+      await expect(page.getByTestId("status")).toHaveText(failure as string);
+    } finally {
+      await application.close();
+      await fs.chmod(readOnlyPath, 0o600);
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
 }
