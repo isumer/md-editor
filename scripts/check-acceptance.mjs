@@ -2,7 +2,8 @@ import { appendFile, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const criterionPattern = /^### (AC-(?:R\d+|SEC|PERF)-\d{2}) — (.+)\nstatus: (planned|implemented)$/gm;
+// An optional "platforms:" line scopes a criterion to the OSes where it can hold (e.g. POSIX file modes).
+const criterionPattern = /^### (AC-(?:R\d+|SEC|PERF)-\d{2}) — (.+)\nstatus: (planned|implemented)(?:\nplatforms: ([a-z0-9, ]+))?$/gm;
 const criterionIdPattern = /@?(AC-(?:R\d+|SEC|PERF)-\d{2})\b/g;
 
 function decodeXml(value) {
@@ -25,12 +26,13 @@ export function parseCriterionFiles(files) {
 
   for (const file of files) {
     for (const match of file.content.matchAll(criterionPattern)) {
-      const [, id, title, status] = match;
+      const [, id, title, status, platformList] = match;
       if (seen.has(id)) {
         throw new Error(`Duplicate acceptance criterion ${id}`);
       }
       seen.add(id);
-      criteria.push({ id, title, status, source: file.path });
+      const platforms = platformList ? platformList.split(",").map((name) => name.trim()) : null;
+      criteria.push({ id, title, status, platforms, source: file.path });
     }
   }
 
@@ -63,7 +65,7 @@ function escapeCell(value) {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-export function buildAcceptanceReport(criteria, tests) {
+export function buildAcceptanceReport(criteria, tests, platform = process.platform) {
   const knownIds = new Set(criteria.map((criterion) => criterion.id));
   const unknown = new Map();
 
@@ -80,8 +82,11 @@ export function buildAcceptanceReport(criteria, tests) {
   const rows = criteria.map((criterion) => {
     const matchingTests = tests.filter((test) => test.ids.includes(criterion.id));
     const passingTests = matchingTests.filter((test) => test.passed);
-    const required = criterion.status === "implemented";
-    const result = required
+    const applies = criterion.platforms === null || criterion.platforms.includes(platform);
+    const required = criterion.status === "implemented" && applies;
+    const result = !applies
+      ? `not applicable on ${platform}`
+      : required
       ? passingTests.length > 0 ? "pass" : "missing"
       : passingTests.length > 0 ? "planned (tested)" : "planned";
     const testNames = matchingTests.length > 0

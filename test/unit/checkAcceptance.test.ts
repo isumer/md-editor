@@ -55,6 +55,22 @@ describe("acceptance report", () => {
     expect(report.missing).toEqual(["AC-R1-01", "AC-R1-02"]);
   });
 
+  it("does not require a criterion on a platform it does not apply to", () => {
+    const criteria = parseCriterionFiles([{
+      path: "R05.md",
+      content: "### AC-R5-06 — Keeps mode\nstatus: implemented\nplatforms: linux, darwin\nGiven a file\n",
+    }]);
+    const tests = parseJUnit('<testcase name="AC-R5-06: keeps mode"><skipped /></testcase>');
+
+    const onWindows = buildAcceptanceReport(criteria, tests, "win32");
+    const onLinux = buildAcceptanceReport(criteria, tests, "linux");
+
+    expect(onWindows.ok).toBe(true);
+    expect(onWindows.markdown).toContain("| not applicable on win32 |");
+    expect(onLinux.ok).toBe(false);
+    expect(onLinux.missing).toEqual(["AC-R5-06"]);
+  });
+
   it("fails when a fixture test references an unknown criterion", () => {
     const criteria = parseCriterionFiles([
       { path: "R01.md", content: criteriaFixture },
