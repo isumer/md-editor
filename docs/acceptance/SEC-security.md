@@ -35,3 +35,15 @@ status: planned
 Given a packaged build for any platform
 When its Electron fuses are read
 Then RunAsNode, NODE_OPTIONS and --inspect are disabled, the app loads only from its ASAR with integrity validation, and cookie encryption is on
+
+### AC-SEC-07 — Malformed requests are refused at the process boundary
+status: planned
+Given a request to save arrives with a missing or wrongly typed field, an oversized payload, or extra prototype keys
+When the receiving process validates it
+Then it returns a typed error, writes nothing, and stays responsive
+
+### AC-SEC-08 — Only http, https and mailto links reach the system browser
+status: planned
+Given a request to open an external link arrives at the process boundary
+When its URL is `file:`, `javascript:`, `data:`, unparsable or not a string
+Then it is refused with a typed error and nothing is opened
