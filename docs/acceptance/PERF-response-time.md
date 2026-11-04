@@ -17,3 +17,9 @@ status: implemented
 Given the app is launched with a Markdown file argument
 When the window appears
 Then the file's text is in the editor and accepts typing within 2 s of launch
+
+### AC-PERF-04 — Typing sends only the change to the file process
+status: planned
+Given a 20 MB document is open
+When the user types one character
+Then the message sent to the file process for that edit is the change (under 1 KB), not a copy of the document

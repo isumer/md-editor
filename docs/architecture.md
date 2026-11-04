@@ -82,6 +82,7 @@ src/
   shared/          pure types, validators, message keys; imports nothing
     ipc/           one contract per service (§7)
     model/         value types: DocumentId, Grant, TextEncoding, Eol, Settings
+    replication/   mirror state machine (ADR-0009), generic over the text type
   node-shared/     Node-only code shared by main and io-worker:
                    path policy, fs port, atomic write
   main/
