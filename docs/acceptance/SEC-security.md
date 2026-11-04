@@ -47,3 +47,21 @@ status: implemented
 Given a request to open an external link arrives at the process boundary
 When its URL is `file:`, `javascript:`, `data:`, unparsable or not a string
 Then it is refused with a typed error and nothing is opened
+
+### AC-SEC-09 — The renderer can write only files the user chose
+status: planned
+Given the renderer asks to save
+When it presents a path or an unknown, forged, revoked or other-window grant instead of a grant issued for a file the user picked (dialog, command line, open-file)
+Then the request is refused with a typed error and nothing is written
+
+### AC-SEC-10 — Only the window's own top frame may call the app's services
+status: planned
+Given a request arrives over IPC
+When its sender frame is not the top frame of a window the app created
+Then it is refused with a typed error before any service runs
+
+### AC-SEC-11 — The preload exposes a fixed, named API
+status: planned
+Given the page inspects `window.api`
+When it lists its members
+Then it finds exactly the documented functions, none of which accepts a channel name, and no other global from the preload exists
