@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createDocumentState, documentTitle } from "../../src/renderer/core/document";
+import {
+  createDocumentState,
+  documentTitle,
+  settleDocumentReplacement,
+} from "../../src/renderer/core/document";
 
 describe("document title", () => {
   it("AC-R5-02: names an untitled clean document without a marker", () => {
@@ -42,5 +46,37 @@ describe("document title", () => {
     const state = { ...createDocumentState(), currentGrant: "opaque-grant" };
 
     expect(documentTitle(state)).toBe("Untitled");
+  });
+});
+
+describe("document replacement", () => {
+  it("AC-SEC-09: declining an open releases the new grant", async () => {
+    const release = vi.fn(async () => undefined);
+
+    const accepted = await settleDocumentReplacement({
+      currentGrant: "current",
+      newGrant: "declined",
+      dirty: true,
+      confirmDiscard: () => false,
+      release,
+    });
+
+    expect(accepted).toBe(false);
+    expect(release).toHaveBeenCalledWith("declined");
+  });
+
+  it("AC-SEC-09: accepting an open releases the old grant", async () => {
+    const release = vi.fn(async () => undefined);
+
+    const accepted = await settleDocumentReplacement({
+      currentGrant: "current",
+      newGrant: "opened",
+      dirty: false,
+      confirmDiscard: () => { throw new Error("clean documents do not ask"); },
+      release,
+    });
+
+    expect(accepted).toBe(true);
+    expect(release).toHaveBeenCalledWith("current");
   });
 });

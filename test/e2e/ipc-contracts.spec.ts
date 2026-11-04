@@ -8,7 +8,6 @@ import {
   fixturePath,
   launchEditor,
   stubOpenDialog,
-  stubSaveDialog,
 } from "./helpers";
 
 type InvalidSaveKind =
@@ -58,10 +57,10 @@ async function sendInvalidSave(
         request = { grant: null, text: "x".repeat(257 * 1024 * 1024) };
         break;
     }
-    const saveFile = window.api.saveFile as unknown as (
+    const writeDocument = window.api.writeDocument as unknown as (
       value: unknown,
     ) => Promise<unknown>;
-    return saveFile(request);
+    return writeDocument(request);
   }, kind);
 }
 
@@ -166,13 +165,15 @@ test("the preload exposes only the fixed named API", {
 
     expect(shape).toEqual({
       keys: [
+        "chooseSaveTarget",
         "onMenuCommand",
         "onOpenRequest",
         "openExternal",
         "openFile",
+        "readDocument",
         "readyForOpenRequests",
-        "saveFile",
-        "saveFileAs",
+        "releaseDocument",
+        "writeDocument",
       ],
       legacyGlobal: false,
     });
@@ -181,7 +182,7 @@ test("the preload exposes only the fixed named API", {
   }
 });
 
-test("the file-save contract rejects a raw path in place of a grant", {
+test("the file-save contract rejects raw and forged grants", {
   tag: "@AC-SEC-09",
   annotation: { type: "AC-SEC-09" },
 }, async () => {
@@ -191,16 +192,17 @@ test("the file-save contract rejects a raw path in place of a grant", {
   try {
     await expect(page.getByTestId("editor")).toContainText("Sample document");
 
-    const result = await page.evaluate(async ({ grant, text }) =>
-      window.api.saveFile({ grant, text }), {
-      grant: targetPath,
-      text: "must not be written",
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      error: { code: "GRANT_INVALID" },
-    });
+    for (const grant of [targetPath, "forged-grant"]) {
+      const result = await page.evaluate(async ({ candidate, text }) =>
+        window.api.writeDocument({ grant: candidate, text }), {
+        candidate: grant,
+        text: "must not be written",
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "GRANT_INVALID" },
+      });
+    }
     expect(await fs.readdir(temporaryDirectory)).toEqual([]);
   } finally {
     await application.close();
@@ -208,13 +210,12 @@ test("the file-save contract rejects a raw path in place of a grant", {
   }
 });
 
-test("the file-save contract rejects a grant revoked by Save As", {
+test("the file-save contract rejects a released grant", {
   tag: "@AC-SEC-09",
   annotation: { type: "AC-SEC-09" },
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-revoked-grant-"));
   const firstPath = path.join(temporaryDirectory, "first.md");
-  const secondPath = path.join(temporaryDirectory, "second.md");
   await fs.writeFile(firstPath, "first", "utf8");
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -225,13 +226,10 @@ test("the file-save contract rejects a grant revoked by Save As", {
     if (!firstGrant) {
       throw new Error("the first open did not return a grant");
     }
-    await stubSaveDialog(application, secondPath);
-    const savedAs = await page.evaluate(async (grant) =>
-      window.api.saveFileAs({ grant, text: "second" }), firstGrant);
-    expect(savedAs).toMatchObject({ ok: true, value: { name: "second.md" } });
+    await page.evaluate(async (grant) => window.api.releaseDocument({ grant }), firstGrant);
 
     const result = await page.evaluate(async (grant) =>
-      window.api.saveFile({ grant, text: "must not be written" }), firstGrant);
+      window.api.writeDocument({ grant, text: "must not be written" }), firstGrant);
 
     expect(result).toMatchObject({
       ok: false,

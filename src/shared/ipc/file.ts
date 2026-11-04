@@ -1,43 +1,40 @@
-export const MAX_TEXT_LENGTH = 256 * 1024 * 1024;
-
 export const FILE_CHANNELS = {
   openFile: "file:open",
-  saveFile: "file:save",
-  saveFileAs: "file:save-as",
+  chooseSaveTarget: "file:choose-save-target",
+  releaseDocument: "file:release-document",
   openRequestsReady: "file:open-requests-ready",
   openRequest: "file:open-request",
 } as const;
 
 export interface OpenFileRequest {}
 
-export interface SaveFileRequest {
+export interface ChooseSaveTargetRequest {
   grant: string | null;
-  text: string;
+}
+
+export interface ReleaseDocumentRequest {
+  grant: string;
 }
 
 export interface OpenRequestsReadyRequest {}
 
-export interface OpenedFile {
+export interface DocumentReference {
   grant: string;
   name: string;
-  text: string;
 }
 
-export interface SavedFile {
-  grant: string;
-  name: string;
-}
+export type OpenedFile = DocumentReference;
 
 export interface OpenRequestReady {
   notice: string | null;
   productName: string;
 }
 
-export type OpenFileResponse = OpenedFile | null;
-export type SaveFileResponse = SavedFile | null;
-export type SaveFileAsResponse = SavedFile | null;
+export type OpenFileResponse = DocumentReference | null;
+export type ChooseSaveTargetResponse = DocumentReference | null;
+export type ReleaseDocumentResponse = void;
 export type OpenRequestsReadyResponse = OpenRequestReady;
-export type OpenRequestMessage = OpenedFile;
+export type OpenRequestMessage = DocumentReference;
 
 function exactData(value: unknown, keys: readonly string[]): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -63,26 +60,26 @@ function exactData(value: unknown, keys: readonly string[]): Record<string, unkn
   }
 }
 
-function validGrant(value: unknown): value is string | null {
-  return value === null || (typeof value === "string" && value.length <= 8 * 1024);
-}
-
-function validSave(value: unknown): value is SaveFileRequest {
-  const record = exactData(value, ["grant", "text"]);
-  return record !== null && validGrant(record["grant"]) &&
-    typeof record["text"] === "string" && record["text"].length <= MAX_TEXT_LENGTH;
+function validGrant(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 8 * 1024;
 }
 
 export function isOpenFileRequest(value: unknown): value is OpenFileRequest {
   return exactData(value, []) !== null;
 }
 
-export function isSaveFileRequest(value: unknown): value is SaveFileRequest {
-  return validSave(value);
+export function isChooseSaveTargetRequest(
+  value: unknown,
+): value is ChooseSaveTargetRequest {
+  const request = exactData(value, ["grant"]);
+  return request !== null && (request["grant"] === null || validGrant(request["grant"]));
 }
 
-export function isSaveFileAsRequest(value: unknown): value is SaveFileRequest {
-  return validSave(value);
+export function isReleaseDocumentRequest(
+  value: unknown,
+): value is ReleaseDocumentRequest {
+  const request = exactData(value, ["grant"]);
+  return request !== null && validGrant(request["grant"]);
 }
 
 export function isOpenRequestsReadyRequest(
@@ -93,8 +90,14 @@ export function isOpenRequestsReadyRequest(
 
 export const fileContracts = {
   openFile: { channel: FILE_CHANNELS.openFile, validate: isOpenFileRequest },
-  saveFile: { channel: FILE_CHANNELS.saveFile, validate: isSaveFileRequest },
-  saveFileAs: { channel: FILE_CHANNELS.saveFileAs, validate: isSaveFileAsRequest },
+  chooseSaveTarget: {
+    channel: FILE_CHANNELS.chooseSaveTarget,
+    validate: isChooseSaveTargetRequest,
+  },
+  releaseDocument: {
+    channel: FILE_CHANNELS.releaseDocument,
+    validate: isReleaseDocumentRequest,
+  },
   openRequestsReady: {
     channel: FILE_CHANNELS.openRequestsReady,
     validate: isOpenRequestsReadyRequest,

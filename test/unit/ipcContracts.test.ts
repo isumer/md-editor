@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   FILE_CHANNELS,
+  isChooseSaveTargetRequest,
   isOpenFileRequest,
   isOpenRequestsReadyRequest,
-  isSaveFileAsRequest,
-  isSaveFileRequest,
+  isReleaseDocumentRequest,
 } from "../../src/shared/ipc/file";
 import {
   isOpenExternalRequest,
@@ -29,26 +29,26 @@ describe("IPC contracts", () => {
   it("AC-SEC-07: file request validators accept only their exact shapes", () => {
     expect(isOpenFileRequest({})).toBe(true);
     expect(isOpenRequestsReadyRequest({})).toBe(true);
-    expect(isSaveFileRequest({ grant: null, text: "text" })).toBe(true);
-    expect(isSaveFileAsRequest({ grant: "grant", text: "text" })).toBe(true);
+    expect(isChooseSaveTargetRequest({ grant: null })).toBe(true);
+    expect(isReleaseDocumentRequest({ grant: "grant" })).toBe(true);
 
     expect(isOpenFileRequest({ currentGrant: null })).toBe(false);
     expect(isOpenRequestsReadyRequest({ extra: true })).toBe(false);
-    expect(isSaveFileRequest({ grant: null })).toBe(false);
-    expect(isSaveFileRequest({ grant: null, text: 1 })).toBe(false);
-    expect(isSaveFileAsRequest({ grant: {}, text: "text" })).toBe(false);
+    expect(isChooseSaveTargetRequest({})).toBe(false);
+    expect(isChooseSaveTargetRequest({ grant: {} })).toBe(false);
+    expect(isReleaseDocumentRequest({ grant: null })).toBe(false);
   });
 
   it("AC-SEC-07: file request validators reject hostile own prototype keys", () => {
     expect(isOpenFileRequest(withOwnProto({}))).toBe(false);
     expect(isOpenRequestsReadyRequest(withOwnProto({}))).toBe(false);
-    expect(isSaveFileRequest(withOwnProto({ grant: null, text: "text" }))).toBe(false);
-    expect(isSaveFileAsRequest(withOwnProto({ grant: null, text: "text" }))).toBe(false);
+    expect(isChooseSaveTargetRequest(withOwnProto({ grant: null }))).toBe(false);
+    expect(isReleaseDocumentRequest(withOwnProto({ grant: "grant" }))).toBe(false);
   });
 
   it("AC-SEC-07: file request validators do not run getters or throw on proxies", () => {
-    const getterRequest = { grant: null } as Record<string, unknown>;
-    Object.defineProperty(getterRequest, "text", {
+    const getterRequest = {} as Record<string, unknown>;
+    Object.defineProperty(getterRequest, "grant", {
       enumerable: true,
       get: () => { throw new Error("getter must not run"); },
     });
@@ -56,14 +56,8 @@ describe("IPC contracts", () => {
       ownKeys: () => { throw new Error("hostile proxy"); },
     });
 
-    expect(isSaveFileRequest(getterRequest)).toBe(false);
+    expect(isChooseSaveTargetRequest(getterRequest)).toBe(false);
     expect(isOpenFileRequest(hostileProxy)).toBe(false);
-  });
-
-  it("AC-SEC-07: file request validators reject 257 MiB of text", () => {
-    const oversizedText = "x".repeat(257 * 1024 * 1024);
-
-    expect(isSaveFileRequest({ grant: null, text: oversizedText })).toBe(false);
   });
 
   it("AC-SEC-07 AC-SEC-08: link requests have exact keys, types, and limits", () => {
@@ -93,8 +87,8 @@ describe("IPC contracts", () => {
   it("AC-SEC-11: contract channel names and menu commands are fixed", () => {
     expect(FILE_CHANNELS).toEqual({
       openFile: "file:open",
-      saveFile: "file:save",
-      saveFileAs: "file:save-as",
+      chooseSaveTarget: "file:choose-save-target",
+      releaseDocument: "file:release-document",
       openRequestsReady: "file:open-requests-ready",
       openRequest: "file:open-request",
     });
