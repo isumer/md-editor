@@ -1,27 +1,33 @@
 # 0005 — Every action is a registered command
-Status: proposed, revised (2026-11-04)
+Status: accepted (2026-11-04, after two review rounds)
 
-**Context.** ~100 actions reachable from menus, shortcuts, a palette,
-context menus, toolbars, macros and tests. If each surface wires its own
-handler they drift (a shortcut that does not match its menu item, a macro
-that cannot replay an action).
+**Context.** ~100 actions reachable from menus, shortcuts, palette,
+context menus, toolbars, macros and tests; per-surface handlers drift.
 
 **Options.** Ad-hoc handlers per surface · a command registry with ids.
 
-**Decision.** A registry in `renderer/core`: `{ id, title, when, run }`.
-All surfaces invoke by id; the keymap is data; macros record command ids
-and editor transactions; native menus are built from a menu model of ids.
+**Decision.**
+- Registry in `renderer/core`: `{ id, titleKey, when?, run(ctx, args, target) }`;
+  `target` names what was clicked (tab, view, tree node); features
+  contribute context keys evaluated by `when`.
+- All surfaces invoke by id; the keymap is data; macros record command
+  invocations, typing as `editor.insertText(text)` relative to the
+  selection; long playback runs in cancellable batches.
+- **Menus:** main owns a static skeleton that works with no renderer
+  (macOS app menu, File > Quit, Window, Help); the renderer contributes
+  items and state, coalesced (≤ 1 push / 100 ms, < 2 ms in main), patched
+  in place, rebuilt only on structural change.
+- **Keys:** the renderer keymap owns every chord, including **Undo and
+  Redo**, so macros record them and all platforms behave alike; menu
+  items show chords with `registerAccelerator: false`. Native roles are
+  kept only for Cut, Copy, Paste, Select All, and the macOS IME/Services
+  and app-menu items (⌘Q/⌘H/⌘M). Matching by `event.key`; on Windows a
+  `Ctrl+Alt+<key>` that produces a character (AltGr) is text input, and
+  default bindings avoid Ctrl+Alt chords.
+- macOS `open-file` events are handled alongside argv.
 
-**Consequences.** A small indirection for every action; enables the
-palette, rebinding, macros, enablement (`when`) and e2e-by-id for free.
+**Consequences.** One indirection per action; palette, rebinding,
+macros, enablement and e2e-by-id come with it. Test: Cmd/Ctrl+Z inside a
+recorded macro replays.
 
-**Reverse if** never expected — this is the backbone of the Notepad++
-feature set.
-
-**Amendment (review finding 7).** Main owns a static menu skeleton that
-works without a renderer; the renderer contributes items and state,
-coalesced (≤ 1 push / 100 ms, < 2 ms in main), patched in place. The
-renderer keymap owns all chords (`registerAccelerator: false`) except
-OS-native roles; AltGr chords are text input. Commands take a `target`;
-features contribute context keys. macOS `open-file` is handled. Titles
-are message keys.
+**Reverse if** never expected — this is the backbone of the feature set.

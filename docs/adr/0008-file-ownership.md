@@ -1,25 +1,40 @@
 # 0008 — One owner for every file read and write
-Status: proposed (2026-11-04, from architecture review finding 1)
+Status: accepted (2026-11-04, after two review rounds)
 
-**Context.** Revision 1 said "main is the only writer" while putting
-Replace in Files and folder copy in the io-worker; the per-path write
-queue is an in-memory map, so two writers could interleave; encoding and
-hashing in main would break the "main is a router" rule; nothing said
-what a multi-file write does to a file open (and dirty) in a tab.
+**Context.** Two writers with two queues can interleave renames; encoding
+and hashing in main would block menus; multi-file writes could overwrite
+an open, dirty buffer.
 
-**Options.** FileService in main · FileService in the io-worker · each
-service writes for itself.
+**Decision.** FileService in the io-worker is the only code that reads or
+writes document files: atomic write, per-path queue, encoding/EOL/BOM
+codec, disk fingerprints, conflict checks, drafts.
 
-**Decision.** FileService lives in the io-worker and is the only code
-that reads or writes document files: atomic write, per-path queue,
-encoding/EOL codec, disk fingerprints, conflict checks, drafts. Main
-keeps dialogs and grants. A multi-file write to a path with an open
-Document becomes a transaction on that Document (one undo step), never a
-write behind it.
+| File kind | Owner |
+|---|---|
+| Documents (open, save, Save As target, reload) | io-worker FileService |
+| Drafts | io-worker FileService (from its mirror) |
+| Multi-file writes (Replace in Files, folder copy, merge MERGED) | FileService; open Documents via a Document transaction |
+| Trash (sidebar delete) | FileService drains the path's queue, then asks main for `shell.trashItem` |
+| Export output (PDF/HTML) | main produces the bytes; FileService writes them atomically |
+| Settings, session index, recent files | main (atomic write from `node-shared`) |
 
-**Consequences.** Open/save cross renderer → io-worker over the port
-(no 20 MB clone through main). Main's `saveDocument` goes away. The
-io-worker must be up before the first open; startup orders it.
+- **Save sends no text.** `save(docId, version, grant)`: FileService writes
+  its own mirror (ADR-0009) at that version and replies with the version;
+  the renderer then sets `saved` from the Text it kept for that version.
+- **Replace in Files:** unopened files are searched and written on disk;
+  open Documents are searched in their buffer (mirror) and changed by a
+  transaction. The preview records each file's version/fingerprint;
+  apply recomputes any file whose version or fingerprint moved and shows
+  it again instead of applying stale edits.
+- **Startup:** the io-worker is spawned in parallel with the
+  BrowserWindow; the renderer's first open waits for port readiness. Test:
+  an argv file is editable within the cold-start budget.
 
-**Reverse if** measurements show the port hop costs more than the save
-budget allows and an in-main writer can keep encoding off the main loop.
+**Consequences.** Open/save go renderer ⇄ io-worker over the port, never
+through main. Memory: a 20 MB document may exist as up to four copies
+(EditorState, render mirror, regex mirror, io-worker mirror, ~40 MB each
+as UTF-16); mirrors are created only while needed (render only for
+previewed Markdown, regex only during a search) and dropped when idle.
+
+**Reverse if** measurements show the port hop breaks the save budget and
+an in-main writer can keep encoding off the main loop.

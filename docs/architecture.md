@@ -1,8 +1,8 @@
 # Architecture
 
-Status: **proposed, revision 2** (2026-11-04). Revision 1 was reviewed by
-the architect agent (verdict: accept with changes; two blockers). This
-revision applies every finding; the review and how each finding was
+Status: **accepted, revision 3** (2026-11-04). Two review rounds by the
+architect agent (round 1: two blockers; round 2: no blockers, four
+major). This revision applies every finding of both rounds; the review and how each finding was
 resolved are in [`reviews/2026-11-04-architecture.md`](reviews/2026-11-04-architecture.md).
 PLAN.md says *what* the product does and the budgets it must meet; this
 document says *how the code is shaped*. Decisions with alternatives and
@@ -67,6 +67,10 @@ Non-goals for v1: a plugin system or plugin seams; multiple windows
   'none'; style-src 'unsafe-inline'; img-src doc-asset:`, navigation and
   window-open denied; it loads already-sanitised HTML and is destroyed
   after `printToPDF`.
+- **Startup sequence**: main creates the BrowserWindow and spawns the
+  io-worker in parallel; the menu skeleton is set immediately; the
+  renderer paints, then its first open waits for port readiness. An argv
+  file must be editable inside the cold-start budget (test).
 - **Crash containment**: io-worker, its job threads and renderer workers
   are supervised; a crash restarts them and fails in-flight requests with
   `WORKER_RESTARTED`. A renderer crash reloads the window (§10).
@@ -112,10 +116,14 @@ Allowed dependencies (→ = may import):
 | preload | electron, shared/ipc |
 | renderer/core | shared, `@codemirror/state` |
 | renderer/editor | core, shared, `@codemirror/*` |
-| renderer/features/X | core, editor, ui, platform, shared — **not another feature** |
+| renderer/features/X | core, editor, ui, platform, shared, `solid-js` — **not another feature** |
 | renderer/ui | core, shared, `solid-js` |
 | renderer/platform | core, shared |
-| renderer/workers | shared, their own pure modules |
+| renderer/main.ts (composition root) | everything in renderer — wires platform adapters into core ports |
+| renderer/workers | shared, their own pure modules, `markdown-it`, `highlight.js`, `@codemirror/state` |
+
+Worker request/response types live in `shared/workers/`, not in the
+worker modules.
 
 Enforced by **dependency-cruiser** (path rules, cycles, dynamic imports)
 plus `@typescript-eslint/no-restricted-imports` for package bans (`node:*`
@@ -128,8 +136,9 @@ core (`commands.ts`: id constants + argument types) and core events.
 ## 4. Documents, tabs, views
 
 ### 4.1 Model ([ADR-0006](adr/0006-document-model.md))
-- **One Document per canonical path per app** (canonical = realpath,
-  case-folded on case-insensitive volumes). Opening a path that is open
+- **One Document per canonical path per app** (canonical =
+  `fs.realpath.native`, on-disk casing, computed in the io-worker; the
+  app-wide path registry lives in main). Opening a path that is open
   focuses its tab; a second window asking for it gets the existing one
   (§12). Untitled documents have synthetic ids.
 - A Document owns: grant, path, encoding, EOL, language, read-only flag,
@@ -145,9 +154,10 @@ core (`commands.ts`: id constants + argument types) and core events.
   selection; edits from any surface go through the Document, which
   broadcasts them (same frame) to every attached surface. Closing a tab
   never affects history.
-- **Dirty** = `!doc.eq(savedText)`, computed lazily: cheap length and
-  hash-of-touched-chunks check first, full `Text.eq` only when they
-  match. Undoing back to the saved text clears dirty.
+- **Dirty** = text differs from `saved.text` (`Text.eq`, which
+  short-circuits on shape and shared subtrees) **or** encoding / EOL /
+  BOM differ from `saved`; evaluated at most once per frame. Undoing back
+  to the saved text clears dirty; converting line endings sets it.
 - **External change**: the watcher reports a new fingerprint → clean
   document: reload as an annotated transaction (one undo step, keeps
   dirty=false); dirty document: conflict banner (Reload / Keep mine /
@@ -156,6 +166,9 @@ core (`commands.ts`: id constants + argument types) and core events.
   path with an open Document are applied **as a transaction on that
   Document** (one undo step, tab becomes dirty), never written behind its
   back. Paths without an open Document are written by FileService.
+- **Replace in Files** searches open Documents in their buffer and other
+  files on disk; apply recomputes any file whose version or fingerprint
+  changed since the preview and shows it again (ADR-0008).
 
 ### 4.2 Compare and merge
 Compare/merge panes attach to Documents (the files compared) or to
@@ -260,9 +273,10 @@ thread. A test asserts no `doc.toString()` on the UI thread per edit.
 - Updater (if enabled): signed artifacts only, staging in a user-owned
   directory, never in portable mode.
 - Accessibility: F6 cycles panes, F8 switches views; tablist/tree roles;
-  dirty and conflict states announced; preview virtualisation is turned
-  off when a screen reader is detected (Chromium accessibility mode) so
-  the whole document is reachable.
+  dirty and conflict states announced; when a screen reader is detected
+  (Chromium accessibility mode) preview virtualisation is turned off for
+  documents up to 2,000 blocks; above that it stays on and a notice
+  points to the editor, which is fully accessible text — never a freeze.
 
 ## 12. Windows
 v1 opens one window per instance, but every main service, grant table,
@@ -270,19 +284,31 @@ io-worker port and session record is **keyed by window id**, and the
 one-Document-per-path rule is app-wide, so a second window is an
 additive change.
 
-## 13. Migration of slice 1 code (slice 3 is split)
-- **Before 3a — characterisation tests** (each shown red against a
-  broken build): Save As; save of an untitled document goes to a dialog;
-  cancelled dialog changes nothing; open/read failure shows status and
-  keeps the document; an edit during an in-flight save stays dirty; a
-  render error keeps the last good preview; menu items dispatch Open /
-  Save / Save As; invalid save payload rejected in main; `openExternal`
-  scheme rejection in main.
-- **3a — pure move**: files into the §3 layout, same contracts, channel
-  names and menu; dependency rules switched on.
-- **3b — boundaries**: shared/ipc contracts, Result/ServiceError, fixed
-  preload, senderFrame checks, grants, io-worker with FileService
-  (atomic write moves there), `app://` and `doc-asset://`, security
-  baseline tests.
-- **3c — commands**: command registry, context keys, keymap ownership,
-  menu skeleton + renderer contributions, message keys.
+## 13. Migration of slice 1 code
+Each step is a PR-sized change with the full suite green before the next.
+
+- **3.0 — characterisation tests**, phrased at the **contract level** so
+  they survive moving between processes ("the file-save contract rejects
+  a payload without text", not "main rejects…"), each shown red against
+  a broken build: Save As; save of an untitled document goes to a
+  dialog; cancelled dialog changes nothing; open/read failure shows
+  status and keeps the document; an edit during an in-flight save stays
+  dirty; a render error keeps the last good preview; menu items dispatch
+  Open / Save / Save As; invalid save payload rejected; `openExternal`
+  scheme rejection.
+- **3a — pure move** into the §3 layout; same contracts, channel names
+  and menu; dependency-cruiser rules on.
+- **3b — contracts and grants**: shared/ipc, Result/ServiceError, fixed
+  preload, senderFrame checks, grant protocol (ADR-0007) — FileService
+  still in main.
+- **3c — io-worker**: spawn, port lifecycle, FileService and atomic write
+  move there, save-by-version and mirrors (ADR-0008/0009); open/save
+  latency measured before and after; startup sequence test.
+- **3d — origins and security baseline**: `app://`, `doc-asset://`
+  (ADR-0010), the security tests from PLAN "Security testing".
+- **3e — commands**: registry, context keys, keymap ownership incl.
+  Undo/Redo, menu skeleton + contributions, message keys (ADR-0005).
+
+Quality gates, e2e coverage merge, test-integrity checks and Stryker
+switch on in the step where they first apply (lint and boundaries in
+3a, coverage merge in 3c, Stryker once core logic exists).
