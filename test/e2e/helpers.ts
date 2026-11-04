@@ -17,9 +17,16 @@ export async function launchEditor(filePath?: string): Promise<{
   application: ElectronApplication;
   page: Page;
 }> {
+  const environment: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name !== "ELECTRON_RUN_AS_NODE" && value !== undefined) {
+      environment[name] = value;
+    }
+  }
   const application = await electron.launch({
     args: filePath ? [repositoryRoot, filePath] : [repositoryRoot],
     cwd: repositoryRoot,
+    env: environment,
   });
   return { application, page: await application.firstWindow() };
 }

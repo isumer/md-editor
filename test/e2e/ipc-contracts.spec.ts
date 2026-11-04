@@ -4,12 +4,18 @@ import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { fixturePath, launchEditor } from "./helpers";
+import {
+  fixturePath,
+  launchEditor,
+  stubOpenDialog,
+} from "./helpers";
 
 type InvalidSaveKind =
   | "missing-text"
   | "non-string-text"
-  | "object-path";
+  | "object-grant"
+  | "own-proto"
+  | "oversized-text";
 
 const invalidSaveCases: ReadonlyArray<{
   kind: InvalidSaveKind;
@@ -17,32 +23,45 @@ const invalidSaveCases: ReadonlyArray<{
 }> = [
   { kind: "missing-text", name: "a request without text" },
   { kind: "non-string-text", name: "a request whose text is not a string" },
-  { kind: "object-path", name: "a request whose path is an object" },
+  { kind: "object-grant", name: "a request whose grant is an object" },
+  { kind: "own-proto", name: "a request with an own __proto__ key" },
+  { kind: "oversized-text", name: "a request with 257 MiB of text" },
 ];
 
 async function sendInvalidSave(
   page: Page,
   kind: InvalidSaveKind,
-  targetPath: string,
 ): Promise<unknown> {
-  return page.evaluate(async ({ invalidKind, savePath }) => {
+  return page.evaluate(async (invalidKind) => {
     let request: unknown;
     switch (invalidKind) {
       case "missing-text":
-        request = { path: savePath };
+        request = { grant: null };
         break;
       case "non-string-text":
-        request = { path: savePath, text: 42 };
+        request = { grant: null, text: 42 };
         break;
-      case "object-path":
-        request = { path: { value: savePath }, text: "must not be written" };
+      case "object-grant":
+        request = { grant: {}, text: "must not be written" };
+        break;
+      case "own-proto": {
+        const hostile = { grant: null, text: "must not be written" };
+        Object.defineProperty(hostile, "__proto__", {
+          enumerable: true,
+          value: { polluted: true },
+        });
+        request = hostile;
+        break;
+      }
+      case "oversized-text":
+        request = { grant: null, text: "x".repeat(257 * 1024 * 1024) };
         break;
     }
-    const saveFile = window.mdApi.saveFile as unknown as (
+    const saveFile = window.api.saveFile as unknown as (
       value: unknown,
     ) => Promise<unknown>;
     return saveFile(request);
-  }, { invalidKind: kind, savePath: targetPath });
+  }, kind);
 }
 
 async function expectRendererResponsive(page: Page, marker: string): Promise<void> {
@@ -61,17 +80,19 @@ for (const invalidCase of invalidSaveCases) {
     annotation: { type: "AC-SEC-07" },
   }, async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-bad-save-"));
-    const targetPath = path.join(temporaryDirectory, "must-not-exist.md");
     const { application, page } = await launchEditor(fixturePath);
 
     try {
       await expect(page.getByTestId("editor")).toContainText("Sample document");
-      const result = await sendInvalidSave(page, invalidCase.kind, targetPath);
+      const result = await sendInvalidSave(page, invalidCase.kind);
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         ok: false,
-        code: "BAD_REQUEST",
-        message: expect.any(String),
+        error: {
+          code: "BAD_REQUEST",
+          messageKey: "request.invalid",
+          retryable: false,
+        },
       });
       expect(await fs.readdir(temporaryDirectory)).toEqual([]);
       await expectRendererResponsive(page, invalidCase.kind);
@@ -107,16 +128,18 @@ for (const rejectedUrl of rejectedExternalUrls) {
       });
 
       const result = await page.evaluate(async (value) => {
-        const openExternal = window.mdApi.openExternal as unknown as (
+        const openExternal = window.api.openExternal as unknown as (
           url: unknown,
         ) => Promise<unknown>;
         return openExternal(value);
       }, rejectedUrl.value);
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         ok: false,
-        code: "BAD_REQUEST",
-        message: expect.any(String),
+        error: {
+          code: expect.stringMatching(/^(BAD_REQUEST|UNSUPPORTED_SCHEME)$/),
+          retryable: false,
+        },
       });
       await expect.poll(() => application.evaluate(() =>
         (globalThis as typeof globalThis & { externalUrls?: string[] }).externalUrls,
@@ -126,3 +149,96 @@ for (const rejectedUrl of rejectedExternalUrls) {
     }
   });
 }
+
+test("the preload exposes only the fixed named API", {
+  tag: "@AC-SEC-11",
+  annotation: { type: "AC-SEC-11" },
+}, async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page.getByTestId("editor")).toContainText("Sample document");
+
+    const shape = await page.evaluate(() => ({
+      keys: Object.keys(window.api).sort(),
+      legacyGlobal: "mdApi" in window,
+    }));
+
+    expect(shape).toEqual({
+      keys: [
+        "onMenuCommand",
+        "onOpenRequest",
+        "openExternal",
+        "openFile",
+        "readyForOpenRequests",
+        "saveFile",
+        "saveFileAs",
+      ],
+      legacyGlobal: false,
+    });
+  } finally {
+    await application.close();
+  }
+});
+
+test("the file-save contract rejects a raw path in place of a grant", {
+  tag: "@AC-SEC-09",
+  annotation: { type: "AC-SEC-09" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-raw-grant-"));
+  const targetPath = path.join(temporaryDirectory, "must-not-exist.md");
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page.getByTestId("editor")).toContainText("Sample document");
+
+    const result = await page.evaluate(async ({ grant, text }) =>
+      window.api.saveFile({ grant, text }), {
+      grant: targetPath,
+      text: "must not be written",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "GRANT_INVALID" },
+    });
+    expect(await fs.readdir(temporaryDirectory)).toEqual([]);
+  } finally {
+    await application.close();
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("the file-save contract rejects a revoked grant", {
+  tag: "@AC-SEC-09",
+  annotation: { type: "AC-SEC-09" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-revoked-grant-"));
+  const firstPath = path.join(temporaryDirectory, "first.md");
+  const secondPath = path.join(temporaryDirectory, "second.md");
+  await fs.writeFile(firstPath, "first", "utf8");
+  await fs.writeFile(secondPath, "second", "utf8");
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page.getByTestId("editor")).toContainText("Sample document");
+    await stubOpenDialog(application, firstPath);
+    const first = await page.evaluate(() => window.api.openFile());
+    expect(first.ok).toBe(true);
+    await stubOpenDialog(application, secondPath);
+    await page.evaluate(() => window.api.openFile());
+    const firstGrant = first.ok ? first.value?.grant : null;
+    if (!firstGrant) {
+      throw new Error("the first open did not return a grant");
+    }
+
+    const result = await page.evaluate(async (grant) =>
+      window.api.saveFile({ grant, text: "must not be written" }), firstGrant);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "GRANT_INVALID" },
+    });
+    expect(await fs.readFile(firstPath, "utf8")).toBe("first");
+  } finally {
+    await application.close();
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});

@@ -1,13 +1,66 @@
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
+import path from "node:path";
 
-import { dialog } from "electron";
+import { BrowserWindow, dialog } from "electron";
 
 import { atomicWrite } from "../../node-shared/atomicWrite";
-import type { OpenedFile, SaveFileRequest, SavedFile } from "../../shared/api";
-import { getMainWindow } from "../app/window";
+import type {
+  OpenedFile,
+  SavedFile,
+  SaveFileRequest,
+} from "../../shared/ipc/file";
+import { toServiceError } from "../../shared/ipc/result";
+import { GrantTable } from "../grants/grantTable";
 
-export async function readDocument(filePath: string): Promise<OpenedFile> {
-  return { path: filePath, text: await fs.readFile(filePath, "utf8") };
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error &&
+    typeof error.code === "string" ? error.code : undefined;
+}
+
+function fileError(error: unknown, filePath: string): never {
+  throw toServiceError(error, { file: path.basename(filePath) || filePath });
+}
+
+async function canonicalPath(filePath: string, allowMissing: boolean): Promise<string> {
+  const absolutePath = path.resolve(filePath);
+  try {
+    return await fs.realpath(absolutePath);
+  } catch (error) {
+    if (allowMissing && errorCode(error) === "ENOENT") {
+      return absolutePath;
+    }
+    return fileError(error, filePath);
+  }
+}
+
+async function readText(filePath: string): Promise<{ canonicalPath: string; text: string }> {
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    return { canonicalPath: await canonicalPath(filePath, false), text };
+  } catch (error) {
+    return fileError(error, filePath);
+  }
+}
+
+async function ensureWritable(filePath: string): Promise<void> {
+  try {
+    await fs.access(filePath, constants.W_OK);
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      fileError(error, filePath);
+    }
+  }
+}
+
+async function writeText(filePath: string, text: string): Promise<string> {
+  try {
+    const canonical = await canonicalPath(filePath, true);
+    await ensureWritable(canonical);
+    await atomicWrite(canonical, text);
+    return canonical;
+  } catch (error) {
+    return fileError(error, filePath);
+  }
 }
 
 export async function isFile(filePath: string): Promise<boolean> {
@@ -18,7 +71,11 @@ export async function isFile(filePath: string): Promise<boolean> {
   }
 }
 
-export async function showOpenDialog(): Promise<OpenedFile | null> {
+function windowFor(windowId: number): BrowserWindow | undefined {
+  return BrowserWindow.fromId(windowId) ?? undefined;
+}
+
+async function chooseOpenPath(windowId: number): Promise<string | null> {
   const options: Electron.OpenDialogOptions = {
     properties: ["openFile"],
     filters: [
@@ -26,24 +83,17 @@ export async function showOpenDialog(): Promise<OpenedFile | null> {
       { name: "All files", extensions: ["*"] },
     ],
   };
-  const mainWindow = getMainWindow();
-  const result = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
+  const window = windowFor(windowId);
+  const result = window
+    ? await dialog.showOpenDialog(window, options)
     : await dialog.showOpenDialog(options);
-  return result.canceled || !result.filePaths[0]
-    ? null
-    : readDocument(result.filePaths[0]);
+  return result.canceled ? null : (result.filePaths[0] ?? null);
 }
 
-function validSaveRequest(value: unknown): asserts value is SaveFileRequest {
-  if (typeof value !== "object" || value === null || !("text" in value) ||
-    typeof value.text !== "string" || !("path" in value) ||
-    (value.path !== null && typeof value.path !== "string")) {
-    throw Object.assign(new Error("Invalid save request"), { code: "BAD_REQUEST" });
-  }
-}
-
-async function chooseSavePath(currentPath: string | null): Promise<string | null> {
+async function chooseSavePath(
+  windowId: number,
+  currentPath: string | null,
+): Promise<string | null> {
   const options: Electron.SaveDialogOptions = {
     defaultPath: currentPath ?? "Untitled.md",
     filters: [
@@ -51,24 +101,77 @@ async function chooseSavePath(currentPath: string | null): Promise<string | null
       { name: "All files", extensions: ["*"] },
     ],
   };
-  const mainWindow = getMainWindow();
-  const result = mainWindow
-    ? await dialog.showSaveDialog(mainWindow, options)
+  const window = windowFor(windowId);
+  const result = window
+    ? await dialog.showSaveDialog(window, options)
     : await dialog.showSaveDialog(options);
   return result.canceled ? null : (result.filePath ?? null);
 }
 
-export async function saveDocument(
-  rawRequest: unknown,
-  forceDialog: boolean,
-): Promise<SavedFile | null> {
-  validSaveRequest(rawRequest);
-  const targetPath = !forceDialog && rawRequest.path
-    ? rawRequest.path
-    : await chooseSavePath(rawRequest.path);
-  if (!targetPath) {
-    return null;
+export class FileService {
+  private readonly activeDocuments = new Map<number, string>();
+
+  constructor(private readonly grants: GrantTable) {}
+
+  async open(windowId: number): Promise<OpenedFile | null> {
+    const filePath = await chooseOpenPath(windowId);
+    return filePath ? this.openPath(windowId, filePath) : null;
   }
-  await atomicWrite(targetPath, rawRequest.text);
-  return { path: targetPath };
+
+  async openPath(windowId: number, filePath: string): Promise<OpenedFile> {
+    const opened = await readText(filePath);
+    const saved = this.adopt(windowId, opened.canonicalPath, path.basename(filePath));
+    return { ...saved, text: opened.text };
+  }
+
+  async save(windowId: number, request: SaveFileRequest): Promise<SavedFile | null> {
+    if (request.grant) {
+      const filePath = this.resolve(windowId, request.grant);
+      await writeText(filePath, request.text);
+      return { grant: request.grant, name: path.basename(filePath) };
+    }
+    const filePath = await chooseSavePath(windowId, null);
+    return filePath ? this.writeAndAdopt(windowId, filePath, request.text) : null;
+  }
+
+  async saveAs(windowId: number, request: SaveFileRequest): Promise<SavedFile | null> {
+    const currentPath = request.grant ? this.resolve(windowId, request.grant) : null;
+    const filePath = await chooseSavePath(windowId, currentPath);
+    return filePath ? this.writeAndAdopt(windowId, filePath, request.text) : null;
+  }
+
+  closeWindow(windowId: number): void {
+    this.activeDocuments.delete(windowId);
+    this.grants.revokeWindow(windowId);
+  }
+
+  private async writeAndAdopt(
+    windowId: number,
+    filePath: string,
+    text: string,
+  ): Promise<SavedFile> {
+    const canonical = await writeText(filePath, text);
+    return this.adopt(windowId, canonical, path.basename(filePath));
+  }
+
+  private resolve(windowId: number, grant: string): string {
+    const result = this.grants.resolve(windowId, grant);
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value;
+  }
+
+  private adopt(windowId: number, canonical: string, name: string): SavedFile {
+    const grant = this.grants.issue(windowId, canonical, "document");
+    const previous = this.activeDocuments.get(windowId);
+    if (previous) {
+      this.grants.revokeDocument(windowId, previous);
+    }
+    this.activeDocuments.set(windowId, grant);
+    return { grant, name };
+  }
 }
+
+export const documentGrants = new GrantTable();
+export const fileService = new FileService(documentGrants);
