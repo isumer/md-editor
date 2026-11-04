@@ -41,6 +41,12 @@ module.exports = {
       },
     },
     {
+      name: "main-no-document-io",
+      severity: "error",
+      from: { path: `${source}/main/` },
+      to: { path: `${source}/node-shared/atomicWrite` },
+    },
+    {
       name: "io-worker-boundaries",
       severity: "error",
       from: { path: `${source}/io-worker/` },

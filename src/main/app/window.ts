@@ -6,7 +6,6 @@ import {
   registerTrustedWindow,
   unregisterTrustedWindow,
 } from "../ipc/handle";
-import { fileService } from "../services/file";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -16,6 +15,13 @@ export function getMainWindow(): BrowserWindow | null {
 
 export function setMainWindow(window: BrowserWindow | null): void {
   mainWindow = window;
+}
+
+interface WindowDependencies {
+  logProcessEvent(event: string, value: unknown): void;
+  openExternalBackstop(url: string): void;
+  attachIoPort(window: BrowserWindow): Promise<void>;
+  closeWindow(windowId: number): Promise<void>;
 }
 
 function wireWindowSecurity(
@@ -42,8 +48,7 @@ function wireWindowSecurity(
 export function createWindow(
   preloadPath: string,
   rendererPath: string,
-  logProcessEvent: (event: string, value: unknown) => void,
-  openExternalBackstop: (url: string) => void,
+  dependencies: WindowDependencies,
 ): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
@@ -59,7 +64,16 @@ export function createWindow(
     },
   });
   registerTrustedWindow(window, pathToFileURL(rendererPath).href);
-  wireWindowSecurity(window, logProcessEvent, openExternalBackstop);
+  wireWindowSecurity(
+    window,
+    dependencies.logProcessEvent,
+    dependencies.openExternalBackstop,
+  );
+  window.webContents.on("did-finish-load", () => {
+    void dependencies.attachIoPort(window).catch((error) => {
+      dependencies.logProcessEvent("io-port", error);
+    });
+  });
   window.once("ready-to-show", () => {
     if (!window.isDestroyed()) {
       window.show();
@@ -67,7 +81,9 @@ export function createWindow(
   });
   window.on("closed", () => {
     unregisterTrustedWindow(window);
-    fileService.closeWindow(window.id);
+    void dependencies.closeWindow(window.id).catch((error) => {
+      dependencies.logProcessEvent("close-window", error);
+    });
     if (mainWindow === window) {
       mainWindow = null;
     }
