@@ -27,6 +27,7 @@ const renderWorker = new Worker(new URL("./render.worker.ts", import.meta.url), 
 let currentPath: string | null = null;
 let dirty = false;
 let applyingDocument = false;
+let productName = "";
 
 function showStatus(message = ""): void {
   status.textContent = message;
@@ -36,7 +37,7 @@ function updateTitle(): void {
   const name = currentPath
     ? (currentPath.split(/[\\/]/).pop() ?? currentPath)
     : "Untitled";
-  document.title = `${dirty ? "• " : ""}${name} — MD Editor`;
+  document.title = `${dirty ? "• " : ""}${name}${productName ? ` — ${productName}` : ""}`;
 }
 
 const scheduler = new RenderScheduler((request: RenderRequest) => {
@@ -162,11 +163,22 @@ function valueOrStatus<T>(result: IpcResult<T>): T | undefined {
 async function openDocument(): Promise<void> {
   try {
     const opened = valueOrStatus(await window.mdApi.openFile());
-    if (opened) {
+    if (opened && mayDiscardDirtyDocument()) {
       displayDocument(opened);
     }
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function mayDiscardDirtyDocument(): boolean {
+  return !dirty || window.confirm("Discard unsaved changes?");
+}
+
+function handleOpenRequest(request: IpcResult<OpenedFile>): void {
+  const opened = valueOrStatus(request);
+  if (opened && mayDiscardDirtyDocument()) {
+    displayDocument(opened);
   }
 }
 
@@ -201,18 +213,23 @@ window.mdApi.onMenuCommand((command) => {
   }
 });
 
-async function loadInitialDocument(): Promise<void> {
+window.mdApi.onOpenRequest(handleOpenRequest);
+
+async function initializeOpenRequests(): Promise<void> {
+  scheduler.schedule(editor.state.doc.toString());
+  updateTitle();
   try {
-    const opened = valueOrStatus(await window.mdApi.getInitialFile());
-    if (opened) {
-      displayDocument(opened);
-    } else {
-      scheduler.schedule(editor.state.doc.toString());
+    const ready = valueOrStatus(await window.mdApi.readyForOpenRequests());
+    if (ready) {
+      productName = ready.productName;
       updateTitle();
+      if (ready.notice) {
+        showStatus(ready.notice);
+      }
     }
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
   }
 }
 
-void loadInitialDocument();
+void initializeOpenRequests();

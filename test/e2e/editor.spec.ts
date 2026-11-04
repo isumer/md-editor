@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,6 +19,26 @@ async function launchEditor(filePath: string): Promise<{
     cwd: repositoryRoot,
   });
   return { application, page: await application.firstWindow() };
+}
+
+async function launchSecondInstance(
+  application: ElectronApplication,
+  filePath: string,
+): Promise<void> {
+  const executable = await application.evaluate(({ app }) => app.getPath("exe"));
+  const environment = { ...process.env };
+  delete environment.ELECTRON_RUN_AS_NODE;
+  const child = spawn(executable, [repositoryRoot, filePath], {
+    cwd: repositoryRoot,
+    env: environment,
+    stdio: "ignore",
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0
+      ? resolve()
+      : reject(new Error(`Second instance exited with code ${String(code)}`)));
+  });
 }
 
 test("opens an argv file and renders its heading", {
@@ -138,6 +159,62 @@ test("saves edits atomically and clears the dirty marker", {
 
     await expect.poll(() => fs.readFile(copiedFile, "utf8")).toContain("saved text");
     await expect(page).not.toHaveTitle(/•/);
+  } finally {
+    await application.close();
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("a second instance opens its file in the existing window", {
+  tag: "@AC-R9-03",
+  annotation: { type: "AC-R9-03" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-single-"));
+  const secondFile = path.join(temporaryDirectory, "second.md");
+  await fs.writeFile(secondFile, "# Opened by the second instance\n", "utf8");
+  const { application, page } = await launchEditor(fixturePath);
+
+  try {
+    await launchSecondInstance(application, secondFile);
+
+    await expect(page.getByTestId("editor")).toContainText("Opened by the second instance");
+    await expect.poll(() => application.windows().length).toBe(1);
+  } finally {
+    await application.close();
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("an open request asks before discarding dirty changes", {
+  tag: "@AC-R5-09",
+  annotation: { type: "AC-R5-09" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-dirty-"));
+  const secondFile = path.join(temporaryDirectory, "second.md");
+  await fs.writeFile(secondFile, "# Replacement document\n", "utf8");
+  const { application, page } = await launchEditor(fixturePath);
+
+  try {
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await editor.click();
+    await page.keyboard.type("dirty change");
+    const dialogHandled = new Promise<void>((resolve, reject) => {
+      page.once("dialog", async (dialog) => {
+        try {
+          expect(dialog.message()).toBe("Discard unsaved changes?");
+          await dialog.dismiss();
+          resolve();
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    });
+
+    await launchSecondInstance(application, secondFile);
+    await dialogHandled;
+
+    await expect(editor).toContainText("dirty change");
+    await expect(page).toHaveTitle(/•/);
   } finally {
     await application.close();
     await fs.rm(temporaryDirectory, { recursive: true, force: true });

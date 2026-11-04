@@ -1,0 +1,77 @@
+appId: io.github.isumer.mdeditor
+asar: true
+directories:
+  output: release
+files:
+  - dist/**
+  - "!dist/THIRD_PARTY_NOTICES.txt"
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: dist/THIRD_PARTY_NOTICES.txt
+    to: THIRD_PARTY_NOTICES.txt
+  - LICENSE.md
+afterAllArtifactBuild: ./scripts/add-portable-marker.mjs
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  enableCookieEncryption: true
+win:
+  artifactName: ${name}-${version}-win-${arch}-portable.${ext}
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+nsis:
+  artifactName: ${name}-Setup-${version}-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
+  license: LICENSE.md
+mac:
+  hardenedRuntime: true
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
+linux:
+  # A noreply address so no personal e-mail ships inside public packages.
+  maintainer: "isumer <isumer@users.noreply.github.com>"
+  # electron-builder writes Categories from this field; desktop.entry.Categories is ignored.
+  category: Utility;TextEditor;Development
+  mimeTypes:
+    - text/markdown
+    - text/plain
+    - text/x-log
+    - application/json
+    - application/yaml
+    - application/xml
+  desktop:
+    entry:
+      MimeType: text/markdown;text/plain;text/x-log;application/json;application/yaml;application/xml;
+  target:
+    - target: deb
+      arch:
+        - x64
+        - arm64
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+deb:
+  artifactName: ${name}_${version}_${arch}.${ext}
+appImage:
+  artifactName: ${name}-${version}-${arch}.${ext}
