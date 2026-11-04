@@ -1,45 +1,16 @@
-import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-const repositoryRoot = path.resolve(__dirname, "../..");
-const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
-const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
-const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
-
-async function launchEditor(filePath: string): Promise<{
-  application: ElectronApplication;
-  page: Page;
-}> {
-  const application = await electron.launch({
-    args: [repositoryRoot, filePath],
-    cwd: repositoryRoot,
-  });
-  return { application, page: await application.firstWindow() };
-}
-
-async function launchSecondInstance(
-  application: ElectronApplication,
-  filePath: string,
-): Promise<void> {
-  const executable = await application.evaluate(({ app }) => app.getPath("exe"));
-  const environment = { ...process.env };
-  delete environment.ELECTRON_RUN_AS_NODE;
-  const child = spawn(executable, [repositoryRoot, filePath], {
-    cwd: repositoryRoot,
-    env: environment,
-    stdio: "ignore",
-  });
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code) => code === 0
-      ? resolve()
-      : reject(new Error(`Second instance exited with code ${String(code)}`)));
-  });
-}
+import { readTextOrNull,
+  fixturePath,
+  launchEditor,
+  launchSecondInstance,
+  linkFixturePath,
+  unsafeHtmlFixturePath,
+} from "./helpers";
 
 test("opens an argv file and renders its heading", {
   tag: "@AC-R5-01",
@@ -157,7 +128,7 @@ test("saves edits atomically and clears the dirty marker", {
       Menu.getApplicationMenu()!.getMenuItemById("file-save")!.click(),
     );
 
-    await expect.poll(() => fs.readFile(copiedFile, "utf8")).toContain("saved text");
+    await expect.poll(() => readTextOrNull(copiedFile)).toContain("saved text");
     await expect(page).not.toHaveTitle(/•/);
   } finally {
     await application.close();
