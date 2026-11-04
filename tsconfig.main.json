@@ -9,6 +9,7 @@
     "types": ["node"]
   },
   "include": [
+    "src/io-worker/**/*.ts",
     "src/main/**/*.ts",
     "src/node-shared/**/*.ts",
     "src/preload/**/*.ts",

@@ -99,7 +99,7 @@ When the status bar reports it
 Then the message names the file and the reason in plain words, and does not show a raw system code alone
 
 ### AC-R5-17 — Saving keeps working after the file process crashes
-status: planned
+status: implemented
 Given a document is open and edited
 When the process that reads and writes files dies and the user then saves
 Then the save writes the same file without asking for a path again, and a save that was in flight at the crash reports a retryable failure and leaves the document marked unsaved

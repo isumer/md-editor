@@ -6,11 +6,12 @@ import { app, BrowserWindow } from "electron";
 import {
   FILE_CHANNELS,
   fileContracts,
-  type OpenedFile,
+  type DocumentReference,
 } from "../../shared/ipc/file";
 import { toServiceError, type Result } from "../../shared/ipc/result";
 import { handle } from "../ipc/handle";
-import { fileService, isFile } from "../services/file";
+import type { DocumentGrantService } from "../services/documentGrants";
+import { isFile } from "../services/fileDialogs";
 import { createMenu } from "./menu";
 import { getMainWindow } from "./window";
 
@@ -152,7 +153,10 @@ export class OpenRequests {
 
 let startupNotice: string | null = null;
 
-async function deliverOpenRequest(filePath: string): Promise<void> {
+async function deliverOpenRequest(
+  fileService: DocumentGrantService,
+  filePath: string,
+): Promise<void> {
   const mainWindow = getMainWindow();
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -162,18 +166,23 @@ async function deliverOpenRequest(filePath: string): Promise<void> {
     mainWindow.webContents.send(FILE_CHANNELS.openRequest, {
       ok: true,
       value: opened,
-    } satisfies Result<OpenedFile>);
+    } satisfies Result<DocumentReference>);
   } catch (error) {
     mainWindow.webContents.send(
       FILE_CHANNELS.openRequest,
-      { ok: false, error: toServiceError(error) } satisfies Result<OpenedFile>,
+      { ok: false, error: toServiceError(error) } satisfies Result<DocumentReference>,
     );
   }
 }
 
-const openRequests = new OpenRequests({ deliver: deliverOpenRequest, isFile });
+export function createOpenRequests(fileService: DocumentGrantService): OpenRequests {
+  return new OpenRequests({
+    deliver: async (filePath) => deliverOpenRequest(fileService, filePath),
+    isFile,
+  });
+}
 
-export function registerOpenRequestIpcHandler(): void {
+export function registerOpenRequestIpcHandler(openRequests: OpenRequests): void {
   handle(fileContracts.openRequestsReady, async () => {
     await openRequests.setRendererReady();
     return { notice: startupNotice, productName: app.getName() };
@@ -206,6 +215,7 @@ function focusMainWindow(): void {
 export function registerApplicationEvents(
   createApplicationWindow: () => void,
   logProcessEvent: (event: string, value: unknown) => void,
+  openRequests: OpenRequests,
 ): void {
   app.on("second-instance", (_event, argv, cwd) => {
     reportAsync(
@@ -233,6 +243,8 @@ export function registerApplicationEvents(
 
 export async function initializeApplication(
   createApplicationWindow: () => void,
+  startIoWorker: () => void,
+  openRequests: OpenRequests,
 ): Promise<void> {
   const dataDirectory = await detectDataDirectory({
     executablePath: process.execPath,
@@ -254,5 +266,6 @@ export async function initializeApplication(
   await app.whenReady();
   await startupRequests;
   createMenu();
+  startIoWorker();
   createApplicationWindow();
 }
