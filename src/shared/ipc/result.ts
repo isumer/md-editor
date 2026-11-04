@@ -6,6 +6,7 @@ export type ServiceErrorCode =
   | "DISK_FULL"
   | "CONFLICT"
   | "GRANT_INVALID"
+  | "WORKER_RESTARTED"
   | "FORBIDDEN_SENDER"
   | "UNSUPPORTED_SCHEME"
   | "TOO_LARGE"
@@ -14,6 +15,7 @@ export type ServiceErrorCode =
 export type MessageKey =
   | "request.invalid"
   | "grant.invalid"
+  | "file.workerRestarted"
   | "sender.forbidden"
   | "link.invalid"
   | "link.unsupportedScheme"

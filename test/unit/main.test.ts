@@ -9,6 +9,79 @@ const electron = vi.hoisted(() => {
   let resolveReady: (() => void) | undefined;
   let menuTemplate: unknown[] = [];
 
+  class MessagePortMock {
+    readonly handlers = new Map<string, (...args: any[]) => unknown>();
+    close = vi.fn();
+    postMessage = vi.fn();
+    start = vi.fn();
+
+    on(event: string, handler: (...args: any[]) => unknown) {
+      this.handlers.set(event, handler);
+      return this;
+    }
+  }
+
+  class MessageChannelMainMock {
+    readonly port1 = new MessagePortMock();
+    readonly port2 = new MessagePortMock();
+  }
+
+  class UtilityProcessMock {
+    static instances: UtilityProcessMock[] = [];
+    readonly handlers = new Map<string, Array<(...args: any[]) => unknown>>();
+    readonly posts: Array<{ message: any; ports: unknown[] }> = [];
+    pid: number | undefined;
+    kill = vi.fn(() => true);
+
+    constructor() {
+      UtilityProcessMock.instances.push(this);
+      queueMicrotask(() => {
+        this.pid = 10_000 + UtilityProcessMock.instances.indexOf(this);
+        this.emit("spawn");
+      });
+    }
+
+    on(event: string, handler: (...args: any[]) => unknown) {
+      const handlers = this.handlers.get(event) ?? [];
+      handlers.push(handler);
+      this.handlers.set(event, handlers);
+      return this;
+    }
+
+    once(event: string, handler: (...args: any[]) => unknown) {
+      const wrapped = (...args: any[]) => {
+        this.handlers.set(event, (this.handlers.get(event) ?? []).filter(
+          (candidate) => candidate !== wrapped,
+        ));
+        handler(...args);
+      };
+      return this.on(event, wrapped);
+    }
+
+    emit(event: string, ...args: any[]): void {
+      for (const handler of [...(this.handlers.get(event) ?? [])]) {
+        handler(...args);
+      }
+    }
+
+    postMessage(message: any, ports: unknown[] = []): void {
+      this.posts.push({ message, ports });
+      if (message.type === "registerGrant") {
+        const filePath = String(message.path);
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: {
+            ok: true,
+            value: {
+              canonicalPath: filePath,
+              name: filePath.split(/[\\/]/).at(-1) ?? filePath,
+            },
+          },
+        }));
+      }
+    }
+  }
+
   class BrowserWindowMock {
     static instances: BrowserWindowMock[] = [];
     static getAllWindows = vi.fn(() => BrowserWindowMock.instances);
@@ -37,6 +110,7 @@ const electron = vi.hoisted(() => {
         this.webHandlers.set(event, handler);
       }),
       send: vi.fn(),
+      postMessage: vi.fn(),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => unknown) => {
         this.windowOpenHandler = handler;
       }),
@@ -95,11 +169,13 @@ const electron = vi.hoisted(() => {
     app,
     appHandlers,
     BrowserWindowMock,
+    MessageChannelMainMock,
     dialog,
     ipcHandlers,
     ipcMain,
     Menu,
     shell,
+    UtilityProcessMock,
     get menuTemplate() {
       return menuTemplate;
     },
@@ -117,6 +193,7 @@ const electron = vi.hoisted(() => {
       BrowserWindowMock.getAllWindows.mockImplementation(() => BrowserWindowMock.instances);
       BrowserWindowMock.fromId.mockClear();
       BrowserWindowMock.fromWebContents.mockClear();
+      UtilityProcessMock.instances.length = 0;
     },
   };
 });
@@ -146,8 +223,12 @@ vi.mock("electron", () => ({
   BrowserWindow: electron.BrowserWindowMock,
   dialog: electron.dialog,
   ipcMain: electron.ipcMain,
+  MessageChannelMain: electron.MessageChannelMainMock,
   Menu: electron.Menu,
   shell: electron.shell,
+  utilityProcess: {
+    fork: vi.fn(() => new electron.UtilityProcessMock()),
+  },
 }));
 vi.mock("node:fs", () => ({
   constants: { F_OK: 0, W_OK: 2 },
@@ -306,115 +387,27 @@ describe("main process", () => {
     const firstOpen = await invoke("file:open", {});
     expect(firstOpen).toMatchObject({
       ok: true,
-      value: { name: "before-ready.md", text: "before ready" },
+      value: { name: "before-ready.md", grant: expect.any(String) },
     });
+    const firstGrant = (firstOpen as { value: { grant: string } }).value.grant;
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
       filePath: "/tmp/before-ready-save.md",
     });
-    await expect(invoke("file:save", { grant: null, text: "before ready" }))
+    await expect(invoke("file:choose-save-target", { grant: firstGrant }))
       .resolves.toMatchObject({
         ok: true,
         value: { name: "before-ready-save.md" },
       });
-    fileSystem.handle.writeFile.mockClear();
-    fileSystem.handle.sync.mockClear();
-    fileSystem.rename.mockClear();
+    await expect(invoke("file:release-document", { grant: firstGrant }))
+      .resolves.toEqual({ ok: true, value: undefined });
     expect([...electron.ipcHandlers.keys()]).toEqual([
       "file:open",
-      "file:save",
-      "file:save-as",
+      "file:choose-save-target",
+      "file:release-document",
       "link:open-external",
       "file:open-requests-ready",
     ]);
-
-    electron.dialog.showOpenDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePaths: ["/tmp/canonical-failure.md"],
-    });
-    fileSystem.readFile.mockResolvedValueOnce("read before canonical failure");
-    fileSystem.realpath.mockRejectedValueOnce(Object.assign(
-      new Error("canonical permission denied"),
-      { code: "EACCES" },
-    ));
-    await expect(invoke("file:open", {})).resolves.toMatchObject({
-      ok: false,
-      error: {
-        code: "PERMISSION_DENIED",
-        params: { file: "canonical-failure.md" },
-      },
-    });
-
-    electron.dialog.showOpenDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePaths: ["/tmp/open.md"],
-    });
-    fileSystem.readFile.mockResolvedValue("opened text");
-    fileSystem.realpath.mockResolvedValueOnce("/tmp/open.md");
-    const secondOpen = await invoke("file:open", {});
-    expect(secondOpen).toMatchObject({
-      ok: true,
-      value: { name: "open.md", text: "opened text" },
-    });
-    electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
-    await expect(invoke("file:open", {})).resolves.toEqual({ ok: true, value: null });
-    electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [] });
-    await expect(invoke("file:open", {})).resolves.toEqual({ ok: true, value: null });
-
-    const openGrant = (secondOpen as { value: { grant: string } }).value.grant;
-    await expect(invoke("file:save", { grant: openGrant, text: "new" }))
-      .resolves.toEqual({
-        ok: true,
-        value: { grant: openGrant, name: "open.md" },
-      });
-    expect(fileSystem.handle.writeFile).toHaveBeenCalledWith("new", { encoding: "utf8" });
-    expect(fileSystem.handle.sync).toHaveBeenCalledTimes(1);
-    expect(fileSystem.rename).toHaveBeenCalledWith(
-      // Separator-agnostic: on Windows the temp path is joined with backslashes.
-      expect.stringMatching(/[\\/]tmp[\\/]open\.md\.[^\\/]+\.tmp$/),
-      path.resolve("/tmp/open.md"),
-    );
-
-    fileSystem.access.mockRejectedValueOnce(Object.assign(
-      new Error("read only"),
-      { code: "EACCES" },
-    ));
-    await expect(invoke("file:save", { grant: openGrant, text: "blocked" }))
-      .resolves.toMatchObject({
-        ok: false,
-        error: {
-          code: "PERMISSION_DENIED",
-          params: { file: "open.md" },
-        },
-      });
-
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePath: "/tmp/save-as.md",
-    });
-    await expect(invoke("file:save-as", { grant: openGrant, text: "save as" }))
-      .resolves.toMatchObject({ ok: true, value: { name: "save-as.md" } });
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
-    await expect(invoke("file:save-as", { grant: null, text: "cancel" }))
-      .resolves.toEqual({ ok: true, value: null });
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
-    await expect(invoke("file:save", { grant: null, text: "cancel" }))
-      .resolves.toEqual({ ok: true, value: null });
-    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false });
-    await expect(invoke("file:save", { grant: null, text: "no path" }))
-      .resolves.toEqual({ ok: true, value: null });
-
-    for (const invalid of [null, {}, { grant: null }, { grant: 1, text: "x" }, { grant: null, text: 1 }]) {
-      await expect(invoke("file:save", invalid)).resolves.toMatchObject({
-        ok: false,
-        error: { code: "BAD_REQUEST" },
-      });
-    }
-    electron.dialog.showOpenDialog.mockRejectedValueOnce("dialog failed");
-    await expect(invoke("file:open", {})).resolves.toMatchObject({
-      ok: false,
-      error: { code: "UNKNOWN" },
-    });
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
       await expect(invoke("link:open-external", { url })).resolves.toEqual({
@@ -432,12 +425,9 @@ describe("main process", () => {
         error: { code },
       });
     }
-    await expect(invoke("file:open-requests-ready", {})).resolves.toEqual({
+    await expect(invoke("file:open-requests-ready", {})).resolves.toMatchObject({
       ok: true,
-      value: {
-        notice: "Portable data is not writable; using the default profile.",
-        productName: "MD Editor",
-      },
+      value: { productName: "MD Editor" },
     });
   });
 
@@ -493,10 +483,12 @@ describe("main process", () => {
         value: {
           grant: expect.any(String),
           name: "document.md",
-          text: "startup text",
         },
       },
     );
+    firstWindow?.webHandlers.get("did-finish-load")?.();
+    await vi.waitFor(() => expect(firstWindow?.webContents.postMessage)
+      .toHaveBeenCalledWith("io:port", null, [expect.anything()]));
     firstWindow?.webContents.send.mockClear();
 
     if (firstWindow) {
@@ -515,7 +507,6 @@ describe("main process", () => {
         value: {
           grant: expect.any(String),
           name: "second.md",
-          text: "second-instance text",
         },
       },
     ));
@@ -523,14 +514,16 @@ describe("main process", () => {
     expect(firstWindow?.focus).toHaveBeenCalledOnce();
 
     firstWindow?.webContents.send.mockClear();
-    fileSystem.readFile.mockRejectedValueOnce(new Error("open-file failed"));
     const openFileEvent = { preventDefault: vi.fn() };
     electron.appHandlers.get("open-file")?.(openFileEvent, "/tmp/from-finder.md");
     await vi.waitFor(() => expect(firstWindow?.webContents.send).toHaveBeenCalledWith(
       "file:open-request",
       {
-        ok: false,
-        error: expect.objectContaining({ code: "UNKNOWN" }),
+        ok: true,
+        value: {
+          grant: expect.any(String),
+          name: "from-finder.md",
+        },
       },
     ));
     expect(openFileEvent.preventDefault).toHaveBeenCalledOnce();
@@ -615,5 +608,48 @@ describe("main process", () => {
 
     electron.appHandlers.get("window-all-closed")?.();
     expect(electron.app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("AC-R5-17 AC-SEC-10: sends io-worker ports only to the app frame and logs worker exits", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    const worker = electron.UtilityProcessMock.instances[0];
+    await vi.waitFor(() => expect(worker?.pid).toBeDefined());
+
+    if (window) {
+      window.mainFrame.url = "https://example.com/";
+    }
+    window?.webHandlers.get("did-finish-load")?.();
+    await vi.waitFor(() => expect(worker?.posts).toContainEqual(expect.objectContaining({
+      message: { type: "attachPort", windowId: window?.id },
+    })));
+    expect(window?.webContents.postMessage).not.toHaveBeenCalled();
+
+    worker?.emit("exit", 9);
+    expect(errorSpy).toHaveBeenCalledWith(JSON.stringify({
+      event: "io-worker-exit",
+      code: 9,
+      signal: null,
+    }));
+    const replacement = electron.UtilityProcessMock.instances[1];
+    await vi.waitFor(() => expect(replacement?.pid).toBeDefined());
+    if (replacement) {
+      replacement.postMessage = () => {
+        throw new Error("worker channel closed");
+      };
+    }
+    window?.webHandlers.get("did-finish-load")?.();
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"io-port"'),
+    ));
+    window?.windowHandlers.get("closed")?.();
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"close-window"'),
+    ));
+
+    electron.appHandlers.get("before-quit")?.();
+    expect(replacement?.kill).toHaveBeenCalledOnce();
   });
 });

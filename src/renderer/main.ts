@@ -1,8 +1,13 @@
-import type { OpenedFile, SavedFile } from "../shared/ipc/file";
+import type { DocumentReference } from "../shared/ipc/file";
 import type { Result } from "../shared/ipc/result";
 import { formatMessage } from "../shared/messages/en";
 import type { RenderRequest } from "../shared/workers/render";
-import { createDocumentState, documentTitle } from "./core/document";
+import {
+  createDocumentState,
+  documentTitle,
+  messageParams,
+  settleDocumentReplacement,
+} from "./core/document";
 import { createEditor } from "./editor/editor";
 import {
   wirePreviewLinks,
@@ -10,12 +15,14 @@ import {
 } from "./features/preview/preview";
 import { RenderScheduler } from "./features/preview/renderScheduler";
 import {
+  chooseSaveTarget,
   onMenuCommand,
   onOpenRequest,
   openFile,
+  readDocument,
   readyForOpenRequests,
-  saveFile,
-  saveFileAs,
+  releaseDocument,
+  writeDocument,
 } from "./platform/api";
 import "./styles.css";
 
@@ -58,7 +65,7 @@ const editor = createEditor(
 wireRenderWorker(renderWorker, scheduler, preview, showStatus);
 wirePreviewLinks(preview, showStatus);
 
-function displayDocument(documentFile: OpenedFile): void {
+function displayDocument(documentFile: DocumentReference & { text: string }): void {
   documentState.applyingDocument = true;
   documentState.currentGrant = documentFile.grant;
   documentState.currentName = documentFile.name;
@@ -74,9 +81,12 @@ function displayDocument(documentFile: OpenedFile): void {
   editor.focus();
 }
 
-function valueOrStatus<T>(result: Result<T>): T | undefined {
+function valueOrStatus<T>(result: Result<T>, fileName: string | null = null): T | undefined {
   if (!result.ok) {
-    showStatus(formatMessage(result.error.messageKey, result.error.params));
+    showStatus(formatMessage(
+      result.error.messageKey,
+      messageParams(result.error.params, fileName),
+    ));
     return undefined;
   }
   return result.value;
@@ -85,44 +95,105 @@ function valueOrStatus<T>(result: Result<T>): T | undefined {
 async function openDocument(): Promise<void> {
   try {
     const opened = valueOrStatus(await openFile());
-    if (opened && mayDiscardDirtyDocument()) {
-      displayDocument(opened);
+    if (opened) {
+      await loadDocument(opened);
     }
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
   }
 }
 
-function mayDiscardDirtyDocument(): boolean {
-  return !documentState.dirty || window.confirm("Discard unsaved changes?");
+async function releaseGrant(grant: string): Promise<void> {
+  valueOrStatus(await releaseDocument({ grant }));
 }
 
-function handleOpenRequest(request: Result<OpenedFile>): void {
+async function loadDocument(reference: DocumentReference): Promise<void> {
+  const read = valueOrStatus(
+    await readDocument(reference.grant),
+    reference.name,
+  );
+  if (!read) {
+    await releaseGrant(reference.grant);
+    return;
+  }
+  const accepted = await settleDocumentReplacement({
+    currentGrant: documentState.currentGrant,
+    newGrant: reference.grant,
+    dirty: documentState.dirty,
+    confirmDiscard: () => window.confirm("Discard unsaved changes?"),
+    release: releaseGrant,
+  });
+  if (accepted) {
+    displayDocument({ ...reference, text: read.text });
+  }
+}
+
+function handleOpenRequest(request: Result<DocumentReference>): void {
   const opened = valueOrStatus(request);
-  if (opened && mayDiscardDirtyDocument()) {
-    displayDocument(opened);
+  if (opened) {
+    void loadDocument(opened).catch(showUnexpectedError);
+  }
+}
+
+function showUnexpectedError(error: unknown): void {
+  showStatus(error instanceof Error ? error.message : String(error));
+}
+
+function markSavedIfCurrent(text: string): void {
+  if (editor.state.doc.toString() === text) {
+    documentState.dirty = false;
+  }
+  updateTitle();
+}
+
+async function saveToCurrentGrant(text: string, grant: string): Promise<void> {
+  const saved = valueOrStatus(
+    await writeDocument({ grant, text }),
+    documentState.currentName,
+  );
+  if (saved) {
+    documentState.currentName = saved.name;
+    markSavedIfCurrent(text);
+    showStatus();
+  }
+}
+
+async function saveToNewGrant(text: string): Promise<void> {
+  const target = valueOrStatus(await chooseSaveTarget({
+    grant: documentState.currentGrant,
+  }));
+  if (!target) {
+    return;
+  }
+  const saved = valueOrStatus(
+    await writeDocument({ grant: target.grant, text }),
+    target.name,
+  );
+  if (!saved) {
+    await releaseGrant(target.grant);
+    return;
+  }
+  const previousGrant = documentState.currentGrant;
+  documentState.currentGrant = target.grant;
+  documentState.currentName = saved.name;
+  markSavedIfCurrent(text);
+  showStatus();
+  if (previousGrant) {
+    await releaseGrant(previousGrant);
   }
 }
 
 async function saveDocument(saveAs: boolean): Promise<void> {
   const text = editor.state.doc.toString();
   try {
-    const result = saveAs
-      ? await saveFileAs({ grant: documentState.currentGrant, text })
-      : await saveFile({ grant: documentState.currentGrant, text });
-    const saved = valueOrStatus<SavedFile | null>(result);
-    if (!saved) {
-      return;
+    const grant = documentState.currentGrant;
+    if (!saveAs && grant) {
+      await saveToCurrentGrant(text, grant);
+    } else {
+      await saveToNewGrant(text);
     }
-    documentState.currentGrant = saved.grant;
-    documentState.currentName = saved.name;
-    if (editor.state.doc.toString() === text) {
-      documentState.dirty = false;
-    }
-    updateTitle();
-    showStatus();
   } catch (error) {
-    showStatus(error instanceof Error ? error.message : String(error));
+    showUnexpectedError(error);
   }
 }
 

@@ -1,8 +1,6 @@
-import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
   fromId: vi.fn(() => null),
@@ -19,122 +17,148 @@ vi.mock("electron", () => ({
 }));
 
 import { GrantTable } from "../../src/main/grants/grantTable";
-import { FileService } from "../../src/main/services/file";
+import type { GrantControl } from "../../src/main/services/documentGrants";
+import { DocumentGrantService } from "../../src/main/services/documentGrants";
+import { FileDialogs } from "../../src/main/services/fileDialogs";
 
-let temporaryDirectory: string;
-let targetPath: string;
+function createControl() {
+  const revoked = new Set<string>();
+  return {
+    revoked,
+    registerGrant: vi.fn<GrantControl["registerGrant"]>(async (
+      _windowId: number,
+      _handle: string,
+      filePath: string,
+      _mustExist: boolean,
+    ) => ({
+      ok: true as const,
+      value: { canonicalPath: path.resolve(filePath), name: path.basename(filePath) },
+    })),
+    revokeGrant: vi.fn<GrantControl["revokeGrant"]>(async (
+      _windowId: number,
+      handle: string,
+    ) => {
+      revoked.add(handle);
+    }),
+    revokeWindow: vi.fn<GrantControl["revokeWindow"]>(async () => undefined),
+  } satisfies GrantControl & { revoked: Set<string> };
+}
 
-beforeEach(async () => {
+beforeEach(() => {
   vi.clearAllMocks();
   electron.fromId.mockReturnValue(null);
-  temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-grants-"));
-  targetPath = path.join(temporaryDirectory, "protected.md");
-  await fs.writeFile(targetPath, "original", "utf8");
 });
-
-afterEach(async () => {
-  await fs.rm(temporaryDirectory, { recursive: true, force: true });
-});
-
-async function expectRejectedWithoutWrite(
-  service: FileService,
-  windowId: number,
-  grant: string,
-): Promise<void> {
-  await expect(service.save(windowId, { grant, text: "attacker text" }))
-    .rejects.toMatchObject({ code: "GRANT_INVALID" });
-  await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("original");
-}
 
 describe("file service grants", () => {
   it("AC-R5-12: handles canceled dialogs without an owning window", async () => {
-    const service = new FileService(new GrantTable());
+    const service = new DocumentGrantService(
+      new GrantTable(),
+      new FileDialogs(),
+      createControl(),
+    );
     electron.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
     electron.showSaveDialog.mockResolvedValueOnce({ canceled: true });
 
     await expect(service.open(1)).resolves.toBeNull();
-    await expect(service.saveAs(1, { grant: null, text: "text" }))
-      .resolves.toBeNull();
+    await expect(service.chooseSaveTarget(1, null)).resolves.toBeNull();
   });
 
-  it("AC-R5-10: opens and saves dialog paths without an owning window", async () => {
+  it("AC-R5-10: registers dialog paths before exposing their grants", async () => {
+    const control = createControl();
     const grants = new GrantTable();
-    const service = new FileService(grants);
-    const openedPath = path.join(temporaryDirectory, "opened.md");
-    const savedPath = path.join(temporaryDirectory, "saved.md");
-    await fs.writeFile(openedPath, "opened", "utf8");
+    const service = new DocumentGrantService(grants, new FileDialogs(), control);
     electron.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
-      filePaths: [openedPath],
+      filePaths: ["/documents/opened.md"],
     });
     electron.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: savedPath,
+      filePath: "/documents/saved.md",
     });
 
-    await expect(service.open(1)).resolves.toMatchObject({
-      name: "opened.md",
-      text: "opened",
+    const opened = await service.open(1);
+    const saved = await service.chooseSaveTarget(1, opened?.grant ?? null);
+
+    expect(control.registerGrant.mock.calls.map((call) => [call[2], call[3]]))
+      .toEqual([
+        ["/documents/opened.md", true],
+        ["/documents/saved.md", false],
+      ]);
+    expect(opened).toMatchObject({ name: "opened.md", grant: expect.any(String) });
+    expect(saved).toMatchObject({ name: "saved.md", grant: expect.any(String) });
+  });
+
+  it("AC-SEC-07: returns registration failures without issuing a grant", async () => {
+    const grants = new GrantTable();
+    const control = createControl();
+    control.registerGrant.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "NOT_FOUND",
+        messageKey: "file.notFound",
+        params: { file: "missing.md" },
+        retryable: false,
+      },
     });
-    await expect(service.saveAs(1, { grant: null, text: "saved" }))
-      .resolves.toMatchObject({ name: "saved.md" });
-    await expect(fs.readFile(savedPath, "utf8")).resolves.toBe("saved");
+    const service = new DocumentGrantService(grants, new FileDialogs(), control);
+
+    await expect(service.openPath(1, "/documents/missing.md"))
+      .rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(grants.entries(1)).toEqual([]);
   });
 
-  it("AC-R5-09: opening another file keeps the current document's grant writable", async () => {
+  it("AC-R5-09: choosing another path keeps the current grant live", async () => {
     const grants = new GrantTable();
-    const service = new FileService(grants);
-    const current = await service.openPath(1, targetPath);
-    const otherPath = path.join(temporaryDirectory, "other.md");
-    await fs.writeFile(otherPath, "other", "utf8");
-
-    await service.openPath(1, otherPath);
-
-    await expect(service.save(1, { grant: current.grant, text: "kept" }))
-      .resolves.toMatchObject({ grant: current.grant, name: "protected.md" });
-    await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("kept");
-  });
-
-  it("AC-SEC-09: Save As revokes the grant the document gave up", async () => {
-    const grants = new GrantTable();
-    const service = new FileService(grants);
-    const current = await service.openPath(1, targetPath);
+    const control = createControl();
+    const service = new DocumentGrantService(grants, new FileDialogs(), control);
+    const current = await service.openPath(1, "/documents/current.md");
     electron.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
-      filePath: path.join(temporaryDirectory, "renamed.md"),
+      filePath: "/documents/other.md",
     });
 
-    await service.saveAs(1, { grant: current.grant, text: "renamed" });
+    await service.chooseSaveTarget(1, current.grant);
 
-    await expectRejectedWithoutWrite(service, 1, current.grant);
+    expect(grants.resolve(1, current.grant)).toEqual({
+      ok: true,
+      value: path.resolve("/documents/current.md"),
+    });
+    expect(control.revokeGrant).not.toHaveBeenCalled();
   });
 
-  it("AC-SEC-09: rejects an other-window grant without writing", async () => {
+  it("AC-SEC-09: release revokes a document in main and the io-worker", async () => {
     const grants = new GrantTable();
-    const service = new FileService(grants);
-    const grant = grants.issue(1, targetPath, "document");
+    const control = createControl();
+    const service = new DocumentGrantService(grants, new FileDialogs(), control);
+    const opened = await service.openPath(1, "/documents/current.md");
 
-    await expectRejectedWithoutWrite(service, 2, grant);
+    await service.release(1, opened.grant);
+
+    expect(grants.resolve(1, opened.grant).ok).toBe(false);
+    expect(control.revoked).toContain(opened.grant);
   });
 
-  it("AC-SEC-09: rejects a revoked grant without writing", async () => {
+  it("AC-SEC-09: closing a window revokes all grants in both tables", async () => {
     const grants = new GrantTable();
-    const service = new FileService(grants);
-    const grant = grants.issue(1, targetPath, "document");
-    grants.revokeDocument(1, grant);
+    const control = createControl();
+    const service = new DocumentGrantService(grants, new FileDialogs(), control);
+    await service.openPath(1, "/documents/current.md");
 
-    await expectRejectedWithoutWrite(service, 1, grant);
+    await service.closeWindow(1);
+
+    expect(grants.entries(1)).toEqual([]);
+    expect(control.revokeWindow).toHaveBeenCalledWith(1);
   });
 
-  it("AC-SEC-09: rejects a forged handle without writing", async () => {
-    await expectRejectedWithoutWrite(new FileService(new GrantTable()), 1, "forged");
-  });
+  it("AC-SEC-09: Save As from another window's grant is refused before any dialog", async () => {
+    const control = createControl();
+    const service = new DocumentGrantService(new GrantTable(), new FileDialogs(), control);
+    const opened = await service.openPath(1, "/documents/current.md");
 
-  it("AC-SEC-09: rejects a raw path in place of a grant without writing", async () => {
-    await expectRejectedWithoutWrite(
-      new FileService(new GrantTable()),
-      1,
-      targetPath,
-    );
+    await expect(service.chooseSaveTarget(2, opened.grant)).rejects.toMatchObject({
+      code: "GRANT_INVALID",
+    });
+    expect(electron.showSaveDialog).not.toHaveBeenCalled();
+    expect(control.registerGrant).toHaveBeenCalledOnce();
   });
 });
