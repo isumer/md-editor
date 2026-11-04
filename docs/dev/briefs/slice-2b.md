@@ -11,8 +11,9 @@ docs/adr/**, package-lock.json, .git. The product name is the existing
 rename later. Keep Electron's default icon (no icon files yet).
 
 ## Allowed files
-src/main/** (only what portable mode, single instance and open-file
-need), src/shared/**, src/preload/** (only if a new IPC is needed),
+package.json (the "scripts" block only — no dependency or other field
+changes), src/main/** (only what portable mode, single instance and
+open-file need), src/shared/**, src/preload/** (only if a new IPC is needed),
 src/renderer/** (only the open-request handling), build/**,
 electron-builder.yml, scripts/**, test/**, .github/workflows/release.yml,
 .github/workflows/ci.yml (only to add the jobs below), docs/release.md,
