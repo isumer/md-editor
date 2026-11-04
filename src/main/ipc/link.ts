@@ -1,38 +1,37 @@
 import { shell } from "electron";
 
-import { IPC_CHANNELS } from "../../shared/api";
-import { handleIpc } from "./result";
+import {
+  linkContracts,
+  type OpenExternalRequest,
+} from "../../shared/ipc/link";
+import { serviceError } from "../../shared/ipc/result";
+import { handle } from "./handle";
 
-async function openExternalUrl(rawUrl: unknown): Promise<void> {
-  if (typeof rawUrl !== "string") {
-    throw Object.assign(new Error("Invalid external URL"), { code: "BAD_REQUEST" });
-  }
+async function openExternalUrl(request: OpenExternalRequest): Promise<void> {
   let url: URL;
   try {
-    url = new URL(rawUrl);
+    url = new URL(request.url);
   } catch {
-    throw Object.assign(new Error("Invalid external URL"), { code: "BAD_REQUEST" });
+    throw serviceError("BAD_REQUEST", "link.invalid");
   }
   if (!["http:", "https:", "mailto:"].includes(url.protocol)) {
-    throw Object.assign(new Error("Unsupported external URL scheme"), {
-      code: "BAD_REQUEST",
-    });
+    throw serviceError("UNSUPPORTED_SCHEME", "link.unsupportedScheme");
   }
-  await shell.openExternal(rawUrl);
+  await shell.openExternal(request.url);
 }
 
 export function openExternalBackstop(
   url: string,
   logProcessEvent: (event: string, value: unknown) => void,
 ): void {
-  void openExternalUrl(url).catch((error) => {
+  void openExternalUrl({ url }).catch((error) => {
     if (typeof error !== "object" || error === null || !("code" in error) ||
-      error.code !== "BAD_REQUEST") {
+      (error.code !== "BAD_REQUEST" && error.code !== "UNSUPPORTED_SCHEME")) {
       logProcessEvent("open-external", error);
     }
   });
 }
 
 export function registerLinkIpcHandler(): void {
-  handleIpc(IPC_CHANNELS.openExternal, openExternalUrl);
+  handle(linkContracts.openExternal, async (request) => openExternalUrl(request));
 }

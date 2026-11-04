@@ -10,9 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Open and save failures now name the file and explain the reason in plain words, for example "Could not open “notes”: it is a folder."
+
 ### Fixed
 
 ### Security
+
+- The app window can now write only to files you chose through a dialog, the command line, or your system's "open with"; requests that name any other path are refused.
+- Requests to the app's services are checked for exact shape and size (documents up to 256 MiB), and are accepted only from the app's own window.
+- The page sees a fixed, named set of app functions and nothing else.
 
 ## [0.0.1] - 2026-11-04
 

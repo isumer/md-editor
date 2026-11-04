@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { app } from "electron";
 
+import { errorMessage } from "../shared/ipc/result";
+
 import {
   initializeApplication,
   registerApplicationEvents,
@@ -10,7 +12,6 @@ import {
 import { createWindow, setMainWindow } from "./app/window";
 import { registerFileIpcHandlers } from "./ipc/file";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
-import { errorMessage } from "./ipc/result";
 
 function logProcessEvent(event: string, value: unknown): void {
   console.error(JSON.stringify({ event, message: errorMessage(value) }));

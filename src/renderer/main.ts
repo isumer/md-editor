@@ -1,4 +1,6 @@
-import type { IpcResult, OpenedFile, SavedFile } from "../shared/api";
+import type { OpenedFile, SavedFile } from "../shared/ipc/file";
+import type { Result } from "../shared/ipc/result";
+import { formatMessage } from "../shared/messages/en";
 import type { RenderRequest } from "../shared/workers/render";
 import { createDocumentState, documentTitle } from "./core/document";
 import { createEditor } from "./editor/editor";
@@ -58,7 +60,8 @@ wirePreviewLinks(preview, showStatus);
 
 function displayDocument(documentFile: OpenedFile): void {
   documentState.applyingDocument = true;
-  documentState.currentPath = documentFile.path;
+  documentState.currentGrant = documentFile.grant;
+  documentState.currentName = documentFile.name;
   editor.dispatch({
     changes: { from: 0, to: editor.state.doc.length, insert: documentFile.text },
     selection: { anchor: 0 },
@@ -71,9 +74,9 @@ function displayDocument(documentFile: OpenedFile): void {
   editor.focus();
 }
 
-function valueOrStatus<T>(result: IpcResult<T>): T | undefined {
+function valueOrStatus<T>(result: Result<T>): T | undefined {
   if (!result.ok) {
-    showStatus(result.message);
+    showStatus(formatMessage(result.error.messageKey, result.error.params));
     return undefined;
   }
   return result.value;
@@ -94,7 +97,7 @@ function mayDiscardDirtyDocument(): boolean {
   return !documentState.dirty || window.confirm("Discard unsaved changes?");
 }
 
-function handleOpenRequest(request: IpcResult<OpenedFile>): void {
+function handleOpenRequest(request: Result<OpenedFile>): void {
   const opened = valueOrStatus(request);
   if (opened && mayDiscardDirtyDocument()) {
     displayDocument(opened);
@@ -105,13 +108,14 @@ async function saveDocument(saveAs: boolean): Promise<void> {
   const text = editor.state.doc.toString();
   try {
     const result = saveAs
-      ? await saveFileAs({ path: documentState.currentPath, text })
-      : await saveFile({ path: documentState.currentPath, text });
+      ? await saveFileAs({ grant: documentState.currentGrant, text })
+      : await saveFile({ grant: documentState.currentGrant, text });
     const saved = valueOrStatus<SavedFile | null>(result);
     if (!saved) {
       return;
     }
-    documentState.currentPath = saved.path;
+    documentState.currentGrant = saved.grant;
+    documentState.currentName = saved.name;
     if (editor.state.doc.toString() === text) {
       documentState.dirty = false;
     }

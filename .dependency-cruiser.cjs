@@ -59,6 +59,13 @@ module.exports = {
       },
     },
     {
+      // The sandboxed preload can require only electron at runtime; shared code reaches it as types.
+      name: "preload-types-only",
+      severity: "error",
+      from: { path: `${source}/preload/` },
+      to: { path: `${source}/`, dependencyTypesNot: ["type-only"] },
+    },
+    {
       name: "preload-no-other-packages",
       severity: "error",
       from: { path: `${source}/preload/` },
