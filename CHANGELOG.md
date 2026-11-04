@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
+
 ### Security
 
 - Reading and saving happen in a process that accepts only files the app has registered for that window, so a file the page names itself is refused.

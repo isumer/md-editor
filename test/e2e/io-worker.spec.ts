@@ -10,6 +10,7 @@ import {
   fixturePath,
   launchEditor,
   readTextOrNull,
+  stubOpenDialog,
   stubSaveDialog,
 } from "./helpers";
 
@@ -86,6 +87,10 @@ if (process.platform !== "win32") {
 
       process.kill(pid as number, "SIGSTOP");
       await clickMenuItem(application, "file-save");
+      // Menu commands reach the renderer in order: once Open's dialog runs, Save has posted its write.
+      await stubOpenDialog(application, null);
+      await clickMenuItem(application, "file-open");
+      await expect.poll(() => dialogCallCount(application, "open")).toBe(1);
       process.kill(pid as number, "SIGKILL");
 
       await expect(page.getByTestId("status"))
