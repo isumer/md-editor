@@ -21,3 +21,31 @@ marked assumed need spikes, but no resolution depends on them.
 
 Next: second review round on revision 2 before ADRs 0004–0011 are
 accepted.
+
+## Round 2 (revision 2 → revision 3)
+
+Verdict on revision 2: **accept with changes**, no blockers; 3 findings
+closed, 2 closed with residuals, 6 partial; 14 new findings (4 major).
+Confidence 0.8.
+
+| # | Sev. | Finding | Resolution (revision 3) |
+|---|---|---|---|
+| N-1 | major | Grant lifecycle: ordering race, io-worker restart, persisted grants from the renderer, grants inside roots, no revocation | ADR-0007 rewritten: ack-before-resolve, replay on restart, main-written persistence only, io-worker-minted derived grants, revocation |
+| N-2 | major | Save still sends the whole text; saved-version consistency | ADR-0008: `save(docId, version, grant)` from the io-worker mirror; memory budget stated |
+| N-3 | major | `doc-asset://` handler runs in main; no window check | ADR-0010: window id in URL, grant check in main, io-worker resolves, `net.fetch` streaming — documented exception |
+| N-4 | major | 3b too big; characterisation tests pinned to "in main" | §13: steps 3.0 + 3a–3e; tests phrased at contract level |
+| N-5 | minor/major | macOS Edit roles bypass the registry (undo, macros) | ADR-0005: Undo/Redo are commands; only clipboard/select-all/IME/app roles stay native |
+| N-6 | minor | Dirty misses EOL/encoding/BOM; invented chunk hash | ADR-0006: dirty includes encoding/EOL/BOM; `Text.eq`; < 1 ms test |
+| N-7 | minor | Resync race | ADR-0009: epochs, buffered deltas, versioned results, interleaving property test |
+| N-8 | minor | Unlisted writers (trash, export, settings) | ADR-0008 file-kind owner table |
+| N-9 | minor | Dependency table gaps | §3: solid-js in features, composition root, `shared/workers/`, worker packages |
+| N-10 | minor | Replace in Files over dirty buffers | ADR-0008 + §4.1: buffer for open docs, recompute on version/fingerprint change |
+| N-11 | minor | ADR bodies contradict amendments; stale PLAN | ADRs 0005–0010 rewritten; PLAN architecture section now points to the doc |
+| N-12 | minor | Screen-reader rule vs never-freeze | §11: cap at 2,000 blocks, notice above |
+| N-13 | minor | Canonical path casing; registry location | ADR-0006: `realpath.native` in io-worker; registry in main |
+| N-14 | minor | Startup ordering budget | §2 startup sequence; ADR-0008 startup line; test |
+
+All ADRs 0001–0011 accepted. Remaining assumptions (protocol.handle in
+main, shell availability in utilityProcess, macOS key-equivalent order,
+`Text.eq` subtree skipping) are verified by spikes in the slice that
+first depends on them.

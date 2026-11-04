@@ -116,359 +116,13 @@ How the budgets are kept:
 
 ## Architecture
 
-The detailed design — processes, layering and dependency rules, document
-model, command registry, IPC contracts — is in `docs/architecture.md` with
-decision records in `docs/adr/`. The sketch below is the summary.
-
-```
-main process (Node)                    renderer (sandboxed, no Node)
-  window + menu + dialogs               tabs, layout, settings UI
-  file IO (atomic save)   <--invoke-->  CodeMirror editor per tab
-  settings store                        preview pane (sanitised DOM)
-  drafts / crash recovery                  ^
-  export: hidden window -> printToPDF      | postMessage
-  single-instance + open-with           render worker: markdown-it +
-                                         highlight.js -> HTML + line map
-```
-
-- `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.
-  The preload exposes a small typed API (`window.mdApi`) and nothing else.
-- Strict CSP in the renderer; no remote content loaded except images the
-  document references.
-- Links in the preview open in the system browser (`http`, `https`,
-  `mailto` only); in-document anchors scroll the preview.
-- Relative image paths resolve against the document's folder.
-
-### Preview pipeline (low latency while editing, fast scroll)
-- **Adaptive scheduling, not a fixed debounce.** A render starts on the
-  next animation frame after an edit if none is running; edits arriving
-  while one runs coalesce into a single follow-up. A small doc therefore
-  updates within one or two frames; a big doc renders as fast as the
-  worker can, never queueing a backlog.
-- **Block diffing.** The worker returns top-level blocks as
-  `{key, line, html}`, where `key` is a hash of the block's source. The UI
-  thread keeps the blocks already in the DOM and replaces, inserts or
-  removes only those whose key changed. Typing in one paragraph touches
-  one element — images elsewhere do not reload, scroll does not jump.
-- **Sanitise only what changed.** DOMPurify runs per new block, not on the
-  whole document.
-- **Skip off-screen work.** Preview blocks use `content-visibility: auto`
-  with `contain-intrinsic-size`, so the browser does not lay out or paint
-  blocks far outside the viewport. Images get `loading="lazy"` and
-  `decoding="async"`.
-- **Virtualise big documents.** Above a block-count threshold (start at
-  2,000 blocks; tune it in slice 2 by measurement) the preview keeps only
-  the visible blocks ± 1 screen of overscan in the DOM. Heights are
-  measured once and cached per block key, unmeasured ones estimated from
-  their source size; spacers above and below keep the scrollbar honest,
-  and sync scroll uses the same height map. Below the threshold the full
-  DOM with `content-visibility` is kept, because it is simpler and lets
-  in-page search see everything. With virtualisation on, preview search
-  runs on the block list in the worker rather than on the DOM; export
-  always renders the full document separately, so it is unaffected.
-- **Scroll handlers never block.** Listeners are passive; work is
-  rAF-throttled to one per frame; block offsets are cached and refreshed
-  by `ResizeObserver`, so a scroll event does a binary search, not a DOM
-  walk.
-- **Heading anchors, GitHub-style.** Headings get slug ids the way
-  GitHub makes them (lower-case, punctuation dropped, spaces → `-`,
-  duplicates `-1`, `-2`; Turkish letters kept), prefixed `user-content-`
-  so no slug can clobber a DOM property; `#kurulum` resolves to
-  `user-content-kurulum`. Table-of-contents links therefore work as on
-  GitHub.
-- **Measured.** A dev overlay (View > Performance, off by default) shows
-  the last render time, patch time and blocks patched, and the e2e suite
-  asserts the budget rows above.
-
-### Text editing (R12)
-Any text file opens, not only Markdown. The preview pane exists only for
-Markdown tabs; other tabs are editor-only and the view-mode controls hide.
-- **Highlighting:** language chosen from the extension (then shebang /
-  first line), overridable from the status bar and from a Notepad++-style
-  **Language** menu (alphabetical, grouped by letter). Full grammars —
-  highlighting, folding, auto-indent, bracket matching, toggle comment —
-  for at least Java, Python, JavaScript/TypeScript, JSON, XML/HTML, CSS,
-  SQL, shell, YAML, C/C++, C#, Go, Rust, PHP, Markdown; the rest of
-  `language-data` gets highlighting at least.
-- **Notepad++ parity.** Every language in Notepad++'s built-in Language
-  menu is supported, with its usual extensions mapped. The slice keeps a
-  coverage table (`docs/languages.md`: Notepad++ language → extensions →
-  source — `language-data`, `@codemirror/legacy-modes`, or ours). Where
-  CodeMirror has no mode (e.g. Batch, NSIS, Inno Setup, AutoIt, Registry,
-  Intel HEX / S-Record, KiXtart, PureBasic), we write a small
-  `StreamLanguage` definition — keywords, comments, strings, numbers —
-  which is the level Notepad++ itself offers for those. Each mode is
-  loaded lazily like the rest.
-- **Any other file** that is text (no NUL bytes) opens as plain text with
-  no highlighting, and the user can pick a language from the menu. `@codemirror/language-data`
-  lazy-loads each language's parser the first time it is needed, so ~100
-  languages cost nothing at startup. Lezer parsing is incremental and
-  limited to the viewport, so it stays fast on big files.
-- **Find / replace:** in-file with regex, case, whole word, replace all,
-  match count; **Find in Files** across the workspace, run in the io-worker in
-  killable per-job threads with a cancel button and results streamed in, skipping binary
-  files and the sidebar's ignore list.
-- **Editing:** line numbers, go to line (CmdOrCtrl+G), code folding,
-  multi-cursor and column (rectangular) selection, duplicate / move /
-  delete line, toggle comment, indent with tabs or spaces (detected per
-  file), show whitespace and line endings, word-wrap toggle per tab, zoom.
-- **Encoding and line endings** (status bar, per file): detected on open —
-  UTF-8 (with/without BOM), UTF-16 LE/BE, and legacy single-byte code
-  pages such as Windows-1254 (Turkish) and Windows-1252. Saved back in the
-  same encoding and line endings unless the user converts them. A file
-  that cannot be decoded cleanly opens read-only with a notice instead of
-  being silently corrupted on save. New dependencies for this
-  (`iconv-lite` to encode legacy code pages, `chardet` to detect) are
-  added by Friday in this slice with the usual dependency checks.
-- **Binary files** (NUL bytes in the first 8 KB) are not opened as text;
-  the user gets a notice.
-- **Changed on disk:** a file modified by another program is reloaded
-  automatically if the tab is clean, or offers Reload / Keep mine if
-  dirty.
-- **Sidebar:** a toggle between "Markdown only" and "All text files".
-
-### Power tools (R13) — the rest of what Notepad++ is used for
-- **Line operations** (Edit > Line Operations): sort asc/desc (case
-  options, numeric), remove duplicate lines, remove empty lines, trim
-  leading/trailing whitespace, join lines, split lines, reverse order;
-  UPPER / lower / Title / iNVERT case; tabs ↔ spaces.
-- **Search extras:** highlight all occurrences of the selected word
-  (smart highlight); Mark All with a colour; bookmark lines (toggle,
-  next/previous, copy/cut/delete bookmarked lines); find in all open
-  tabs; **Replace in Files** with a preview of every change before it is
-  written, and atomic writes per file; a docked search-results panel.
-- **Column editor:** insert text or an incrementing number sequence down
-  a column selection.
-- **Macros:** record, play back, play N times / to end of file, save
-  named macros.
-- **Word completion** from the words in open documents, plus language
-  keywords.
-- **Outline panel (Function List):** symbols for code via the Lezer
-  tree, headings for Markdown; click jumps, follows the cursor.
-- **Document map (minimap)** toggle.
-- **Second view** — see "Side-by-side views".
-- **Tab menu:** copy path / name / folder path, open containing folder,
-  reveal in sidebar, pin tab, close others / to the right / unchanged;
-  recent files and recent folders (File menu); read-only toggle.
-- **Formatters:** pretty-print / minify JSON and XML (built-in, no
-  external tool), with a clear error position on invalid input.
-- **Tail mode** (Notepad++'s "Monitoring"): a `.log` tab follows
-  appended lines, reading only the new bytes.
-- **Print** the editor text (with highlighting) or the Markdown preview.
-- **Compare** — its own slice; see "Compare files and folders".
-Every action is in a menu and in a **command palette** (CmdOrCtrl+Shift+P)
-and has a rebindable shortcut; defaults follow Notepad++ on Windows
-(Ctrl+D duplicate, Ctrl+Shift+Up/Down move line, Ctrl+F2 bookmark, …)
-and platform conventions on macOS.
-
-### Side-by-side views (Notepad++ "Other View")
-- **Two views, each with its own tab bar.** Right-click a tab → *Move to
-  Other View* or *Clone to Other View*; drag a tab across; the second
-  view closes itself when its last tab leaves.
-- **Clone = one document in two places.** Both views edit the same
-  document with independent cursor, selection and scroll; an edit in one
-  appears in the other in the same frame; one shared undo history and
-  dirty state (CodeMirror's split-view pattern: one view owns the state,
-  the other forwards transactions with an annotation so they never echo).
-- **Orientation:** vertical (side by side, default) or horizontal
-  (stacked), toggled from View > Rotate; the divider drags, double-click
-  resets to 50/50; both persist in the session.
-- **Synchronised scrolling** between the two views, vertical and
-  horizontal, each a toggle (View > Synchronize …), keeping the line
-  offset that existed when it was turned on — as in Notepad++. This is
-  separate from the editor↔preview sync of a Markdown tab.
-- **Markdown in views:** each view shows its Markdown tab as editor,
-  preview or editor|preview. So "editor on the left, preview on the
-  right" can be one tab split, or a tab cloned into the other view and
-  that view set to preview — the Notepad++ way. Each view's preview is
-  rendered from the same cached blocks; no second parse.
-- **Compare** reuses the two-view layout.
-- **Focus and keys:** F8 (Notepad++'s *Switch to Other View*) moves
-  focus between views; every tab command acts on the focused view.
-- **Budget:** typing in a cloned document shows in the other view within
-  the same frame; synchronised scrolling of two 20 MB views stays inside
-  the scroll frame budget.
-
-### Compare files and folders (R14, modelled on IntelliJ IDEA)
-**File compare** — from a tab menu (*Compare with…*, *Compare with
-Clipboard*, *Compare with Saved* for a dirty tab), two sidebar selections,
-or `<App> --diff a b` on the command line:
-- Side-by-side (default) or unified, toggled in the toolbar.
-- Line changes coloured by kind (added / deleted / modified) with
-  **word- and character-level** highlighting inside modified lines.
-- **Both sides editable**; chunk arrows (`>>`, `<<`, ✕) apply or revert a
-  change in one click; edits re-diff incrementally.
-- Unchanged regions collapsed with an expand control; the two sides
-  stay aligned (padding opposite insertions) and scroll together.
-- Next / previous difference (F7 / Shift+F7), a change count, and a
-  gutter overview of where changes are.
-- Ignore options: whitespace (none / trailing / all), case, line
-  endings; *Highlight: words / lines / characters / none*.
-- Save each side with the normal atomic save; encodings and line
-  endings of each file preserved.
-- Built on `@codemirror/merge` (MIT, CodeMirror's own merge view —
-  added in this slice with the dependency checks). The diff itself runs
-  in a worker for anything over 1 MB, with a time limit that falls back
-  to a coarser line diff and says so instead of freezing.
-
-**Folder compare** — *Compare Folders…* or two folders selected in the
-sidebar:
-- One tree with both sides, each entry marked **same / changed / only
-  left / only right / binary differs / error**; filters to show only
-  differences, only one side, or by name pattern; `.git` /
-  `node_modules` / user patterns excluded.
-- Comparison mode: **contents** (default; size first, then a streamed
-  hash only when sizes match), or fast **size + timestamp**.
-- Double-click a changed file → file compare in a tab. Copy left→right /
-  right→left / delete (to trash) for selected entries, each confirmed,
-  each write atomic.
-- Runs in the io-worker (hashing in a per-job thread), off the UI thread, results streamed into the
-  tree as they come, with progress and Cancel; a 50,000-file pair never
-  blocks the window.
-- Re-compare on demand, and automatically for entries the file watcher
-  reports changed.
-
-**Merge view (three panes, IntelliJ's merge tool):**
-- **Left** (ours / local, read-only) · **Centre** (the result, editable)
-  · **Right** (theirs / remote, read-only). The centre starts from the
-  common **base** when one exists, otherwise from the left side.
-- Every change from either side is a chunk with arrows into the centre:
-  accept left, accept right, accept both (left then right / right then
-  left), ignore. A chunk changed on **both** sides differently is a
-  **conflict**, marked red, and needs an explicit choice or a manual
-  edit in the centre.
-- **Apply all non-conflicting changes** in one click (IntelliJ's magic
-  wand), from left, right or both; afterwards only conflicts remain.
-- Counters ("3 changes, 1 conflict left"), next/previous change and
-  conflict (F7 / Shift+F7), word-level highlighting, the same ignore
-  options as file compare, synchronised scrolling of all three panes.
-- **Sources:**
-  - two files, with an optional third as base (*Merge…* dialog);
-  - a file containing git conflict markers (`<<<<<<<` … `>>>>>>>`)
-    opens as a merge with sides split from the markers;
-  - **git mergetool:** `<App> --merge LOCAL REMOTE BASE MERGED` writes the
-    result to MERGED and exits 0 on *Apply*, 1 on *Abort*, so it can be
-    configured with `git config merge.tool <app>` (setup documented in
-    docs/). `--diff a b` likewise works as `git difftool`.
-- *Apply* is refused while unresolved conflicts remain unless the user
-  confirms; the result is saved atomically.
-- Implementation: diff3 (base→left and base→right line diffs, then
-  overlap detection) in the worker; three CodeMirror views reusing
-  `@codemirror/merge`'s chunk rendering and the alignment code from file
-  compare.
-- **Tests:** a fixture set of (base, left, right, expected) — clean
-  merges, adjacent edits, same edit both sides (not a conflict), real
-  conflicts, insert-at-end, deleted-vs-modified — each auto-merged and
-  compared to the expected result; conflict counts asserted; the git
-  mergetool round trip run against a scripted conflicting git repo
-  (exit codes and MERGED content); merging two 5 MB files with 200
-  conflicts stays responsive.
-
-**Budgets / tests:** two 20 MB files with 1% changed lines → first
-diff shown < 2 s, the window responsive throughout; applying a chunk
-arrow < 50 ms; word-level highlight correct on fixtures; folder compare
-of two generated 10,000-file trees streams the first results < 300 ms,
-classifies every entry correctly against a precomputed answer, and
-cancels within 200 ms.
-
-### Large files
-Target: a **20 MB / ~400k-line** document behaves like a small one —
-typing and scrolling stay inside the normal budgets. The cost of an edit
-must depend on the size of the change, not of the document.
-- **Incremental parse.** The worker splits the source into top-level
-  chunks at blank lines outside fenced code / HTML blocks, keyed by
-  content hash. An edit re-parses only the chunks it touched (plus one
-  neighbour each side for merged/split blocks); unchanged chunks reuse
-  their cached blocks. Reference-link definitions are collected in a
-  cheap document-wide pre-pass, and a change to one invalidates only the
-  chunks that use that label.
-- **First screen first.** On open, the editor is editable immediately; the
-  worker renders the chunks around the visible position first, then the
-  rest in slices that yield between batches, so the preview fills in
-  without ever blocking.
-- **The hang guard is per chunk**, not per document: a single chunk
-  taking > 2 s is the hung case; a big document that is simply long is
-  never killed.
-- **Bounded memory.** Inactive tabs keep their CodeMirror state but their
-  preview block cache is evicted LRU beyond a 200 MB total budget, and
-  rebuilt (first screen first) when the tab is shown.
-- **Bounded side work.** Draft autosave for documents > 5 MB runs every
-  10 s instead of 2 s and only when changed; the atomic save streams the
-  write rather than building a second copy in memory.
-- **Pathological input.** A line longer than 100k characters (minified
-  or generated text) switches that tab's editor wrapping off and shows a
-  notice — CodeMirror lays out a wrapped giant line on every edit.
-  Documents > 50 MB open in large-file mode: preview paused until the user
-  turns it on, with a notice. Stated limits rather than a freeze.
-
-### Full screen and window resizing
-- **Full screen:** View > Full Screen (F11 on Windows, Ctrl+Cmd+F on
-  macOS) uses the OS full screen. **Focus mode** (CmdOrCtrl+Shift+F) is
-  full screen plus hidden tab bar, sidebar and status bar, for whichever
-  view mode is active — so "editor alone, full screen" and "preview alone,
-  full screen" are one keystroke each. Esc leaves focus mode.
-- **Resizing never stalls**, because the work a resize causes is bounded:
-  - The preview text column has a max width (default 900 px, setting);
-    beyond it a wider window adds margin, not reflow.
-  - Panes use CSS `contain: strict` so a resize of one does not lay out
-    the other; the split divider is a CSS grid track, no JS layout.
-  - While a resize is in progress (resize events within 150 ms), cached
-    block heights are only marked stale; the virtualiser keeps using
-    them, and re-measures the visible blocks once the size settles. The
-    scroll position is anchored to the top visible block, so the
-    document does not jump.
-  - Every resize-driven callback is rAF-throttled to one per frame.
-- **Budget (e2e):** resizing the window continuously for 2 s on a 500 KB
-  document — no frame > 32 ms, no `longtask`, and the top visible block
-  is the same before and after. Entering / leaving full screen or focus
-  mode: interactive within 100 ms after the OS animation ends.
-
-### Sync scroll
-The worker adds `data-line` (from markdown-it `token.map`) to every block
-element. Editor → preview: top visible editor line → nearest block at or
-before it → interpolate within the block → set preview scroll. Preview →
-editor is the inverse. A guard ignores the scroll event the other pane
-caused, so the two never feed back into each other. Toggle in the View menu.
-
-### Drafts and session
-Every 2 s of idle, dirty tabs are written (atomically) to
-`userData/drafts/`. On start, open tabs and drafts are restored; a draft
-newer than its file is offered back. Drafts are deleted on save or on
-discard.
-
-### Workspace sidebar
-File > Open Folder (CmdOrCtrl+Shift+O) sets the workspace; the last one
-is restored. The tree lists folders and Markdown files (`.md`,
-`.markdown`); other files are hidden. Rules that keep it fast on a big
-folder:
-- **Lazy:** a folder's children are read (async, in the io-worker) only when it is
-  expanded. Nothing scans the whole tree up front.
-- **Skipped:** `.git`, `node_modules`, and dot-folders are not listed.
-- **Capped:** a folder with more than 2,000 entries shows the first 2,000
-  and a "more…" notice instead of blocking.
-- **Watched:** `fs.watch` on expanded folders only (recursive watching is
-  native on Windows and macOS); events are debounced 200 ms and only the
-  affected folder is re-read. A watcher error drops back to a manual
-  refresh button, never to a crash.
-- **Virtualised list** in the renderer, so 10,000 visible rows scroll
-  smoothly.
-Actions: click opens (or focuses) the file's tab; the active tab's file
-is highlighted in the tree; New File / New Folder / Rename / Delete (to
-the OS trash, `shell.trashItem`) from a context menu; a filter box
-narrows the visible tree by name. Renaming or deleting an open file
-updates or closes its tab (prompting if dirty).
-
-### Settings
-`userData/settings.json`, atomic write, validated on load (bad or missing
-keys fall back to defaults, never crash): theme, editor/preview background
-colours, font size, view mode, sync scroll on/off, last session.
-
-### Export
-- **HTML:** one file, CSS inlined, current theme's preview styles (option:
-  always light for export). Images keep their relative paths.
-- **PDF:** a hidden window loads the same HTML with a print stylesheet and
-  `printToPDF` (A4/Letter, margins, background colour on/off). Written to
-  the chosen path atomically.
+The design — processes (main as router and grant issuer, an io-worker
+utility process owning all file I/O, renderer workers), layering and
+dependency rules, document model, command registry, IPC contracts with
+capability grants, asset protocol — is in `docs/architecture.md`, with
+accepted decision records in `docs/adr/` (0001–0011) and the two review
+rounds in `docs/reviews/`. That document is authoritative where it and
+this plan differ.
 
 ## Slices (Vision implements, Friday reviews each before the next)
 
@@ -494,15 +148,13 @@ a commit.
    free log gate, CommonMark/GFM conformance, golden render corpus,
    fault-injection basics for save/open, nightly.yml skeleton (soak +
    perf trend + auto-issue). Later slices add to each suite.
-3. **Architecture migration + security baseline** (per
-   docs/architecture.md §13), in four steps, each its own PR-sized
-   commit set: (0) characterisation tests for slice 1 behaviour, each
-   shown red; (3a) pure move into the §3 layout + dependency-cruiser
-   rules; (3b) contracts, grants, io-worker FileService, `app://` /
-   `doc-asset://`, the security baseline from "Security testing",
-   e2e coverage merge, quality gates and test-integrity checks,
-   Stryker nightly; (3c) command registry, context keys, keymap
-   ownership, menu skeleton + contributions, message keys.
+3. **Architecture migration + security baseline**, in the six steps of
+   docs/architecture.md §13: 3.0 characterisation tests (contract-level,
+   each shown red) · 3a pure move + dependency rules · 3b contracts and
+   grants · 3c io-worker, FileService, save-by-version, mirrors · 3d
+   `app://` / `doc-asset://` and the security baseline · 3e commands,
+   keymap, menu skeleton, message keys. Quality gates, coverage merge and
+   Stryker switch on in the step where they first apply.
 4. **Preview pipeline.** Adaptive scheduling, block diffing, per-block
    sanitise, `content-visibility`, preview virtualisation for big docs,
    the performance overlay. Replaces
@@ -781,7 +433,7 @@ an automated test or CI gate, not a checklist.
 
 **1. Electron hardening, asserted (e2e, every platform):**
 - Renderer has no Node: `require`, `process`, `module` are undefined in
-  the page; `window.mdApi` exposes exactly the documented keys, nothing
+  the page; `window.api` exposes exactly the documented keys, nothing
   else (snapshot of its shape).
 - `contextIsolation`, `sandbox`, `webSecurity` on, `nodeIntegration` and
   `allowRunningInsecureContent` off — read back from the live
@@ -794,7 +446,7 @@ an automated test or CI gate, not a checklist.
   windows denied; `will-navigate`, `will-redirect`, meta refresh, form
   submit and `location =` all leave the window where it was.
 - IPC hardening: every handler checks `event.senderFrame` is our own
-  top frame; a **fuzz test** calls every `mdApi` method with wrong
+  top frame; a **fuzz test** calls every `window.api` method with wrong
   types, huge strings, `null`, prototype-pollution objects
   (`{"__proto__":{…}}`) and gets a typed error back, with the app still
   responsive and nothing written to disk.
