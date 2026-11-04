@@ -26,12 +26,14 @@ Then the file holds the second save's text
 
 ### AC-R5-05 — Saving through a symlink updates the target
 status: implemented
+platforms: linux, darwin
 Given the opened path is a symlink to another file
 When the user saves
 Then the link still exists and the target file holds the new text
 
 ### AC-R5-06 — Save keeps the file's permissions
 status: implemented
+platforms: linux, darwin
 Given an existing file with a non-default mode (POSIX)
 When the user saves
 Then the file has the same mode afterwards
