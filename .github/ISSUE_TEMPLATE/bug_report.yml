@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible problem in MD Editor
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: input
+    id: version
+    attributes:
+      label: MD Editor version
+      placeholder: 0.0.1
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: Windows 11 24H2, macOS 15.1, or Ubuntu 24.04
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Installation type
+      options:
+        - Installer
+        - Portable archive
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Describe the smallest reliable reproduction.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: input
+    id: file-size
+    attributes:
+      label: File size, if relevant
+      placeholder: 500 KB
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Remove private document content and other sensitive information.
+      render: shell

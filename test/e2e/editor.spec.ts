@@ -20,7 +20,10 @@ async function launchEditor(filePath: string): Promise<{
   return { application, page: await application.firstWindow() };
 }
 
-test("opens an argv file and renders its heading", async () => {
+test("opens an argv file and renders its heading", {
+  tag: "@AC-R5-01",
+  annotation: { type: "AC-R5-01" },
+}, async () => {
   const { application, page } = await launchEditor(fixturePath);
   try {
     await expect(page.getByTestId("preview").locator("h1")).toHaveText(
@@ -32,7 +35,10 @@ test("opens an argv file and renders its heading", async () => {
   }
 });
 
-test("shows the window after it is ready", async () => {
+test("shows the window after it is ready", {
+  tag: "@AC-PERF-01",
+  annotation: { type: "AC-PERF-01" },
+}, async () => {
   const { application } = await launchEditor(fixturePath);
   try {
     await expect.poll(
@@ -46,7 +52,31 @@ test("shows the window after it is ready", async () => {
   }
 });
 
-test("exposes stable File menu items with their accelerators", async () => {
+test("shows the editor to the left of the preview", {
+  tag: "@AC-R1-01",
+  annotation: { type: "AC-R1-01" },
+}, async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    const editor = page.getByTestId("editor");
+    const preview = page.getByTestId("preview");
+    await expect(editor).toBeVisible();
+    await expect(preview).toBeVisible();
+
+    const editorBox = await editor.boundingBox();
+    const previewBox = await preview.boundingBox();
+    expect(editorBox).not.toBeNull();
+    expect(previewBox).not.toBeNull();
+    expect(editorBox!.x + editorBox!.width).toBeLessThanOrEqual(previewBox!.x);
+  } finally {
+    await application.close();
+  }
+});
+
+test("exposes stable File menu items with their accelerators", {
+  tag: "@AC-R5-08",
+  annotation: { type: "AC-R5-08" },
+}, async () => {
   const { application } = await launchEditor(fixturePath);
   try {
     const menuItems = await application.evaluate(({ Menu }) => {
@@ -67,7 +97,10 @@ test("exposes stable File menu items with their accelerators", async () => {
   }
 });
 
-test("updates the preview after editing", async () => {
+test("updates the preview after editing", {
+  tag: "@AC-R1-02",
+  annotation: { type: "AC-R1-02" },
+}, async () => {
   const { application, page } = await launchEditor(fixturePath);
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
@@ -83,7 +116,10 @@ test("updates the preview after editing", async () => {
   }
 });
 
-test("saves edits atomically and clears the dirty marker", async () => {
+test("saves edits atomically and clears the dirty marker", {
+  tag: "@AC-R5-02",
+  annotation: { type: "AC-R5-02" },
+}, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-e2e-"));
   const copiedFile = path.join(temporaryDirectory, "sample.md");
   await fs.copyFile(fixturePath, copiedFile);
@@ -108,7 +144,10 @@ test("saves edits atomically and clears the dirty marker", async () => {
   }
 });
 
-test("opens external preview links outside the editor", async () => {
+test("opens external preview links outside the editor", {
+  tag: "@AC-SEC-01",
+  annotation: { type: "AC-SEC-01" },
+}, async () => {
   const { application, page } = await launchEditor(linkFixturePath);
   try {
     await application.evaluate(({ shell }) => {
@@ -138,7 +177,10 @@ test("opens external preview links outside the editor", async () => {
   }
 });
 
-test("blocks javascript preview links without opening or navigating", async () => {
+test("blocks javascript preview links without opening or navigating", {
+  tag: "@AC-SEC-02",
+  annotation: { type: "AC-SEC-02" },
+}, async () => {
   const { application, page } = await launchEditor(linkFixturePath);
   try {
     await application.evaluate(({ shell }) => {
@@ -177,7 +219,10 @@ test("blocks javascript preview links without opening or navigating", async () =
   }
 });
 
-test("scrolls preview anchors without navigating the window", async () => {
+test("scrolls preview anchors without navigating the window", {
+  tag: "@AC-SEC-03",
+  annotation: { type: "AC-SEC-03" },
+}, async () => {
   const { application, page } = await launchEditor(linkFixturePath);
   try {
     const preview = page.getByTestId("preview");
@@ -192,7 +237,10 @@ test("scrolls preview anchors without navigating the window", async () => {
   }
 });
 
-test("sanitises active and document-level raw HTML", async () => {
+test("sanitises active and document-level raw HTML", {
+  tag: ["@AC-SEC-04", "@AC-SEC-05"],
+  annotation: [{ type: "AC-SEC-04" }, { type: "AC-SEC-05" }],
+}, async () => {
   const { application, page } = await launchEditor(unsafeHtmlFixturePath);
   try {
     const preview = page.getByTestId("preview");

@@ -7,5 +7,16 @@ export default defineConfig({
     timeout: 2_000,
   },
   fullyParallel: false,
+  forbidOnly: Boolean(process.env.CI),
+  retries: 0,
   workers: 1,
+  reporter: [
+    ["list"],
+    ["junit", { outputFile: "reports/e2e-junit.xml" }],
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+  ],
+  use: {
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+  },
 });
