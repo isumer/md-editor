@@ -18,7 +18,9 @@ export default defineConfig({
         // app.ts is UI wiring and is covered by e2e; e2e coverage merging arrives in slice 3.
         "src/renderer/app.ts",
       ],
-      thresholds: {
+      // Floors are measured on Linux only: POSIX-only branches (symlinks, file
+      // modes) are skipped elsewhere, so other platforms would under-report.
+      thresholds: process.platform !== "linux" ? undefined : {
         lines: 85,
         branches: 80,
         "src/main/atomicWrite.ts": { lines: 95, branches: 90 },
