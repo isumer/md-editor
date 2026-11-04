@@ -31,7 +31,8 @@ export async function launchSecondInstance(
   const executable = await application.evaluate(({ app }) => app.getPath("exe"));
   const environment = { ...process.env };
   delete environment["ELECTRON_RUN_AS_NODE"];
-  const child = spawn(executable, [repositoryRoot, filePath], {
+  // Same flag Playwright gives the first instance; window sandboxing (webPreferences) is unaffected.
+  const child = spawn(executable, ["--no-sandbox", repositoryRoot, filePath], {
     cwd: repositoryRoot,
     env: environment,
     stdio: "ignore",
