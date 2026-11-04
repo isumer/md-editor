@@ -247,6 +247,29 @@ describe("main process", () => {
     expect(lockOrder).toBeGreaterThan(setPathOrder ?? Number.POSITIVE_INFINITY);
   });
 
+  it("AC-R9-03: a second instance quits without opening a window", async () => {
+    electron.app.requestSingleInstanceLock.mockReturnValueOnce(false);
+
+    await loadMain();
+
+    await vi.waitFor(() => expect(electron.app.quit).toHaveBeenCalledOnce());
+    expect(electron.app.whenReady).not.toHaveBeenCalled();
+    expect(electron.BrowserWindowMock.instances).toHaveLength(0);
+  });
+
+  it("AC-R9-01: a startup failure is logged and the app quits", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    electron.app.getPath.mockImplementationOnce(() => {
+      throw new Error("profile unavailable");
+    });
+
+    await loadMain();
+
+    await vi.waitFor(() => expect(electron.app.quit).toHaveBeenCalledOnce());
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("profile unavailable"));
+    expect(electron.BrowserWindowMock.instances).toHaveLength(0);
+  });
+
   it("AC-R5-02 AC-R5-08 AC-SEC-01: wraps file and link IPC results", async () => {
     fileSystem.access
       .mockResolvedValueOnce(undefined)
