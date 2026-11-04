@@ -1,0 +1,36 @@
+# Changelog
+
+All notable changes to MD Editor will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Security
+
+## [0.0.1] - 2026-11-04
+
+### Added
+
+- Added a CodeMirror Markdown editor beside a live, syntax-highlighted preview.
+- Added opening files from the command line and Open, Save, and Save As commands.
+- Added atomic saves that preserve file permissions, follow symlinks, serialize overlapping writes, and retry transient Windows file locks.
+- Added safe external links, task-list rendering, and source-line metadata in the preview.
+
+### Security
+
+- Sandboxed the renderer, enabled context isolation and a Content Security Policy, and sanitised rendered Markdown.
+- Prevented preview links from navigating the app window and rejected unsupported URL schemes.
+
+### Fixed
+
+- Delayed showing the window until its first paint to avoid a white startup flash.
+
+[Unreleased]: https://github.com/isumer/md-editor/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/isumer/md-editor/releases/tag/v0.0.1

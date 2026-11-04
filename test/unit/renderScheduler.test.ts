@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("RenderScheduler", () => {
-  it("renders a single change after 150 ms", async () => {
+  it("AC-R1-02: renders a single change after 150 ms", async () => {
     vi.useFakeTimers();
     let now = 0;
     const requests: ScheduledRender[] = [];
@@ -25,7 +25,7 @@ describe("RenderScheduler", () => {
     expect(requests).toEqual([{ id: 1, text: "hello" }]);
   });
 
-  it("renders continuous changes by 500 ms", async () => {
+  it("AC-R1-02: renders continuous changes by 500 ms", async () => {
     vi.useFakeTimers();
     let now = 0;
     const requests: ScheduledRender[] = [];
@@ -46,12 +46,25 @@ describe("RenderScheduler", () => {
     expect(requests).toEqual([{ id: 1, text: "400" }]);
   });
 
-  it("does not apply a result older than the newest applied result", () => {
+  it("AC-R1-05: does not apply a result older than the newest applied result", () => {
     const scheduler = new RenderScheduler(() => undefined, () => 0);
     const applied: string[] = [];
 
     expect(scheduler.applyResult(2, "new", (value) => applied.push(value))).toBe(true);
     expect(scheduler.applyResult(1, "old", (value) => applied.push(value))).toBe(false);
     expect(applied).toEqual(["new"]);
+  });
+
+  it("AC-R1-02: cancels a pending render when disposed", async () => {
+    vi.useFakeTimers();
+    const requests: ScheduledRender[] = [];
+    const scheduler = new RenderScheduler((request) => requests.push(request), () => 0);
+
+    scheduler.schedule("discarded");
+    scheduler.dispose();
+    scheduler.dispose();
+    await vi.runAllTimersAsync();
+
+    expect(requests).toEqual([]);
   });
 });
