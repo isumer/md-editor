@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveDataDirectory,
   resolveExecutableDirectory,
-} from "../../src/main/dataDirectory";
+} from "../../src/main/app/startup";
 
 describe("portable data directory", () => {
   it("AC-R9-01: uses the portable data directory when the marker exists and it is writable", () => {

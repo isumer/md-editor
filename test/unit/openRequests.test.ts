@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { OpenRequests } from "../../src/main/openRequests";
+import { OpenRequests } from "../../src/main/app/startup";
 
 describe("open requests", () => {
   it("AC-R9-03: delivers requests received before renderer readiness in order", async () => {

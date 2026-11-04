@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { sanitizeRenderedHtml } from "../../src/renderer/sanitize";
+import { sanitizeRenderedHtml } from "../../src/renderer/features/preview/sanitize";
 
 describe("sanitizeRenderedHtml", () => {
   it("AC-SEC-04: removes active document elements and event handlers", () => {

@@ -8,18 +8,19 @@
   "license": "GPL-3.0-or-later",
   "scripts": {
     "build": "tsc -p tsconfig.main.json && vite build",
-    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:unit": "vitest run --coverage",
     "test:e2e": "npm run build && node scripts/run-e2e.cjs",
     "check:acceptance": "node scripts/check-acceptance.mjs",
     "check:coverage": "node scripts/check-coverage-ratchet.mjs",
+    "check:deps": "depcruise src --config .dependency-cruiser.cjs --output-type err",
     "check:licenses": "node scripts/third-party-notices.mjs --check",
     "prepare:dist": "node scripts/gen-installer-nsh.mjs --check && node scripts/third-party-notices.mjs",
     "dist": "npm run build && npm run prepare:dist && electron-builder --publish never",
     "dist:linux": "npm run build && npm run prepare:dist && electron-builder --linux --publish never",
     "dist:win": "npm run build && npm run prepare:dist && electron-builder --win --publish never",
     "dist:mac": "npm run build && npm run prepare:dist && electron-builder --mac --publish never",
-    "verify": "npm run typecheck && npm run test:unit && npm run test:e2e && npm run check:acceptance",
+    "verify": "npm run typecheck && npm run check:deps && npm run test:unit && npm run test:e2e && npm run check:acceptance",
     "start": "npm run build && electron ."
   },
   "devDependencies": {
