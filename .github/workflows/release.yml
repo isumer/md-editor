@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and verify artifacts without creating a GitHub release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Package ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            runner: ubuntu-latest
+            command: linux
+          - name: Windows
+            runner: windows-latest
+            command: win
+          - name: macOS
+            runner: macos-latest
+            command: mac
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Download the Electron binary
+        run: node node_modules/electron/install.js
+      - name: Enable Electron's setuid sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - name: Verify source
+        run: npm run verify
+      - name: Build x64 and arm64 artifacts
+        run: npm run dist:${{ matrix.command }} -- --x64 --arm64
+      - name: Check Linux fuses
+        if: runner.os == 'Linux'
+        run: |
+          node scripts/check-fuses.mjs release/linux-unpacked/mdeditor
+          node scripts/check-fuses.mjs release/linux-arm64-unpacked/mdeditor
+      - name: Check Windows fuses
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $productName = node -p "require('./package.json').productName"
+          node scripts/check-fuses.mjs "release/win-unpacked/$productName.exe"
+          node scripts/check-fuses.mjs "release/win-arm64-unpacked/$productName.exe"
+      - name: Check macOS fuses
+        if: runner.os == 'macOS'
+        run: |
+          product_name=$(node -p "require('./package.json').productName")
+          node scripts/check-fuses.mjs "release/mac/$product_name.app"
+          node scripts/check-fuses.mjs "release/mac-arm64/$product_name.app"
+      - name: Test Windows installer and portable zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $productName = node -p "require('./package.json').productName"
+          $productKey = $productName -replace '[^A-Za-z0-9]', ''
+          $fileKey = "HKCU\Software\Classes\*\shell\${productKey}Edit"
+          $directoryKey = "HKCU\Software\Classes\Directory\shell\${productKey}Open"
+          $backgroundKey = "HKCU\Software\Classes\Directory\Background\shell\${productKey}Open"
+          $installer = Get-ChildItem release -Filter "*-Setup-*-x64.exe" | Select-Object -First 1
+          Start-Process $installer.FullName -ArgumentList "/S" -Wait
+          reg query $fileKey
+          reg query $directoryKey
+          reg query $backgroundKey
+          $installedExe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Filter "$productName.exe" -Recurse | Select-Object -First 1
+          if (-not $installedExe) { throw "Installed executable was not found" }
+          $installed = Start-Process $installedExe.FullName -ArgumentList "test/fixtures/sample.md" -PassThru
+          $deadline = [DateTime]::UtcNow.AddSeconds(15)
+          do {
+            Start-Sleep -Milliseconds 100
+            $installed.Refresh()
+          } until ($installed.HasExited -or $installed.MainWindowHandle -ne 0 -or [DateTime]::UtcNow -gt $deadline)
+          if ($installed.HasExited) { throw "Installed application exited during smoke test" }
+          Stop-Process -Id $installed.Id
+          $uninstaller = Get-ChildItem $installedExe.DirectoryName -Filter "Uninstall*.exe" | Select-Object -First 1
+          Start-Process $uninstaller.FullName -ArgumentList "/S" -Wait
+          foreach ($key in @($fileKey, $directoryKey, $backgroundKey)) {
+            reg query $key 2>$null
+            if ($LASTEXITCODE -eq 0) { throw "Registry key remains after uninstall: $key" }
+          }
+          $portableRoot = Join-Path $env:RUNNER_TEMP "mdeditor-portable"
+          $portableZip = Get-ChildItem release -Filter "*-win-x64-portable.zip" | Select-Object -First 1
+          Expand-Archive $portableZip.FullName $portableRoot
+          $portableExe = Get-ChildItem $portableRoot -Filter "$productName.exe" | Select-Object -First 1
+          if (-not (Test-Path (Join-Path $portableRoot "portable"))) { throw "Portable marker is missing" }
+          $normalProfile = Join-Path $env:APPDATA $productName
+          Remove-Item $normalProfile -Recurse -Force -ErrorAction SilentlyContinue
+          $portable = Start-Process $portableExe.FullName -ArgumentList "test/fixtures/sample.md" -PassThru
+          $deadline = [DateTime]::UtcNow.AddSeconds(15)
+          do {
+            Start-Sleep -Milliseconds 100
+          } until ((Test-Path (Join-Path $portableRoot "data")) -or $portable.HasExited -or [DateTime]::UtcNow -gt $deadline)
+          if ($portable.HasExited) { throw "Portable application exited during smoke test" }
+          Stop-Process -Id $portable.Id
+          if (-not (Test-Path (Join-Path $portableRoot "data"))) { throw "Portable data directory was not created" }
+          if (Test-Path $normalProfile) { throw "Portable application wrote to the default profile" }
+          foreach ($key in @($fileKey, $directoryKey, $backgroundKey)) {
+            reg query $key 2>$null
+            if ($LASTEXITCODE -eq 0) { throw "Portable application wrote registry key: $key" }
+          }
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.command }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.dmg
+            release/*.exe
+            release/*.zip
+          if-no-files-found: error
+
+  draft-release:
+    name: Assemble draft release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Download release artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Prepare checksums and release notes
+        id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            version="${tag#v}"
+          else
+            version=$(node -p "require('./package.json').version")
+            tag="v${version}-dry-run"
+          fi
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+          node scripts/extract-release-notes.mjs CHANGELOG.md "$version" release-notes.md
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create draft GitHub release
+        if: github.event_name != 'workflow_dispatch' || inputs['dry-run'] == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          options=(--draft --notes-file release-notes.md)
+          if [[ "${{ steps.release.outputs.tag }}" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+          gh release create "${{ steps.release.outputs.tag }}" "${options[@]}" release-assets/*

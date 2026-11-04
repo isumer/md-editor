@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const electron = vi.hoisted(() => {
   const ipcHandlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
   const appHandlers = new Map<string, (...args: unknown[]) => unknown>();
-  let readyHandler: (() => Promise<void>) | undefined;
+  let resolveReady: (() => void) | undefined;
   let menuTemplate: unknown[] = [];
 
   class BrowserWindowMock {
@@ -18,6 +18,9 @@ const electron = vi.hoisted(() => {
     windowOpenHandler: ((details: { url: string }) => unknown) | undefined;
     destroyed = false;
     show = vi.fn();
+    focus = vi.fn();
+    restore = vi.fn();
+    isMinimized = vi.fn(() => false);
     loadFile = vi.fn(async () => undefined);
     webContents = {
       on: vi.fn((event: string, handler: (...args: any[]) => unknown) => {
@@ -48,12 +51,12 @@ const electron = vi.hoisted(() => {
   }
 
   const app = {
-    whenReady: vi.fn(() => ({
-      then(handler: () => Promise<void>) {
-        readyHandler = handler;
-        return Promise.resolve();
-      },
-    })),
+    getName: vi.fn(() => "MD Editor"),
+    getPath: vi.fn(() => "/profiles/default"),
+    isPackaged: false,
+    requestSingleInstanceLock: vi.fn(() => true),
+    setPath: vi.fn(),
+    whenReady: vi.fn(() => new Promise<void>((resolve) => { resolveReady = resolve; })),
     on: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
       appHandlers.set(event, handler);
     }),
@@ -89,13 +92,14 @@ const electron = vi.hoisted(() => {
     get menuTemplate() {
       return menuTemplate;
     },
-    get readyHandler() {
-      return readyHandler;
+    resolveReady() {
+      resolveReady?.();
     },
     reset() {
       ipcHandlers.clear();
       appHandlers.clear();
-      readyHandler = undefined;
+      app.isPackaged = false;
+      resolveReady = undefined;
       menuTemplate = [];
       BrowserWindowMock.instances.length = 0;
       BrowserWindowMock.getAllWindows.mockReset();
@@ -111,8 +115,10 @@ const fileSystem = vi.hoisted(() => {
     close: vi.fn(async () => undefined),
   };
   return {
+    access: vi.fn(),
     chmod: vi.fn(async () => undefined),
     handle,
+    mkdir: vi.fn(async () => undefined),
     open: vi.fn(async () => handle),
     readFile: vi.fn(),
     realpath: vi.fn(),
@@ -130,9 +136,13 @@ vi.mock("electron", () => ({
   Menu: electron.Menu,
   shell: electron.shell,
 }));
-vi.mock("node:fs", () => ({ promises: fileSystem }));
+vi.mock("node:fs", () => ({
+  constants: { F_OK: 0, W_OK: 2 },
+  promises: fileSystem,
+}));
 
 const originalArgv = process.argv;
+const originalAppImage = process.env.APPIMAGE;
 let addedProcessListeners: Array<{ event: "uncaughtException" | "unhandledRejection"; listener: (...args: any[]) => void }> = [];
 
 async function loadMain() {
@@ -159,16 +169,24 @@ async function invoke(channel: string, ...args: unknown[]) {
   return handler({}, ...args);
 }
 
+async function readyApplication(): Promise<void> {
+  await vi.waitFor(() => expect(electron.app.whenReady).toHaveBeenCalledOnce());
+  electron.resolveReady();
+  await vi.waitFor(() => expect(electron.BrowserWindowMock.instances).toHaveLength(1));
+}
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   electron.reset();
   for (const operation of [
+    fileSystem.access,
     fileSystem.chmod,
     fileSystem.handle.writeFile,
     fileSystem.handle.sync,
     fileSystem.handle.close,
     fileSystem.open,
+    fileSystem.mkdir,
     fileSystem.readFile,
     fileSystem.realpath,
     fileSystem.rename,
@@ -180,17 +198,24 @@ beforeEach(() => {
   fileSystem.handle.writeFile.mockResolvedValue(undefined);
   fileSystem.handle.sync.mockResolvedValue(undefined);
   fileSystem.handle.close.mockResolvedValue(undefined);
+  fileSystem.access.mockRejectedValue(Object.assign(new Error("missing"), { code: "ENOENT" }));
+  fileSystem.mkdir.mockResolvedValue(undefined);
   fileSystem.open.mockResolvedValue(fileSystem.handle);
   fileSystem.realpath.mockRejectedValue(Object.assign(new Error("missing"), { code: "ENOENT" }));
   fileSystem.rename.mockResolvedValue(undefined);
   fileSystem.stat.mockRejectedValue(Object.assign(new Error("missing"), { code: "ENOENT" }));
   fileSystem.unlink.mockResolvedValue(undefined);
   electron.shell.openExternal.mockResolvedValue(undefined);
-  process.argv = ["electron"];
+  process.argv = ["electron", "."];
 });
 
 afterEach(() => {
   process.argv = originalArgv;
+  if (originalAppImage === undefined) {
+    delete process.env.APPIMAGE;
+  } else {
+    process.env.APPIMAGE = originalAppImage;
+  }
   for (const { event, listener } of addedProcessListeners) {
     process.removeListener(event, listener);
   }
@@ -201,21 +226,62 @@ afterEach(() => {
 describe("main process", () => {
   it("AC-R5-01: starts without an open-with file", async () => {
     await loadMain();
-    await electron.readyHandler?.();
+    await readyApplication();
 
-    await expect(invoke("file:initial")).resolves.toEqual({ ok: true, value: null });
+    await expect(invoke("file:open-requests-ready")).resolves.toEqual({
+      ok: true,
+      value: { notice: null, productName: "MD Editor" },
+    });
+    expect(electron.app.setPath).toHaveBeenCalledWith("userData", "/profiles/default");
+  });
+
+  it("AC-R9-01 AC-R9-03: takes the single-instance lock only after choosing the data directory", async () => {
+    await loadMain();
+    await readyApplication();
+
+    // Chromium writes its lock files into userData, so the lock must follow setPath.
+    const setPathOrder = electron.app.setPath.mock.invocationCallOrder[0];
+    const lockOrder = electron.app.requestSingleInstanceLock.mock.invocationCallOrder[0];
+    expect(setPathOrder).toBeDefined();
+    expect(lockOrder).toBeDefined();
+    expect(lockOrder).toBeGreaterThan(setPathOrder ?? Number.POSITIVE_INFINITY);
   });
 
   it("AC-R5-02 AC-R5-08 AC-SEC-01: wraps file and link IPC results", async () => {
+    fileSystem.access
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("read only"));
     await loadMain();
+
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ["/tmp/before-ready.md"],
+    });
+    fileSystem.readFile.mockResolvedValueOnce("before ready");
+    await expect(invoke("file:open")).resolves.toEqual({
+      ok: true,
+      value: { path: "/tmp/before-ready.md", text: "before ready" },
+    });
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePath: "/tmp/before-ready-save.md",
+    });
+    await expect(invoke("file:save", { path: null, text: "before ready" }))
+      .resolves.toEqual({
+        ok: true,
+        value: { path: "/tmp/before-ready-save.md" },
+      });
+    fileSystem.handle.writeFile.mockClear();
+    fileSystem.handle.sync.mockClear();
+    fileSystem.rename.mockClear();
+    await readyApplication();
     expect([...electron.ipcHandlers.keys()]).toEqual([
-      "file:initial",
       "file:open",
       "file:save",
       "file:save-as",
       "link:open-external",
+      "file:open-requests-ready",
     ]);
-    await expect(invoke("file:initial")).resolves.toEqual({ ok: true, value: null });
 
     electron.dialog.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
@@ -279,11 +345,21 @@ describe("main process", () => {
         code: "BAD_REQUEST",
       });
     }
+    await expect(invoke("file:open-requests-ready")).resolves.toEqual({
+      ok: true,
+      value: {
+        notice: "Portable data is not writable; using the default profile.",
+        productName: "MD Editor",
+      },
+    });
   });
 
   it("AC-R5-01 AC-R5-08 AC-PERF-01: creates a secure ready-to-show window and menu", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    electron.app.isPackaged = true;
+    process.env.APPIMAGE = path.join("media", "MD-Editor.AppImage");
     process.argv = ["electron", "--inspect", "folder", "missing.md", "document.md"];
+    fileSystem.access.mockResolvedValue(undefined);
     fileSystem.stat.mockImplementation(async (filePath: string) => {
       if (filePath.endsWith("folder")) {
         return { isFile: () => false };
@@ -301,9 +377,10 @@ describe("main process", () => {
     }
     expect(errorSpy).toHaveBeenCalledTimes(2);
 
-    await electron.readyHandler?.();
+    await readyApplication();
     const firstWindow = electron.BrowserWindowMock.instances[0];
     expect(firstWindow?.options).toMatchObject({
+      title: "MD Editor",
       show: false,
       backgroundColor: "#ffffff",
       webPreferences: {
@@ -316,10 +393,78 @@ describe("main process", () => {
       expect.stringContaining(path.join("renderer", "index.html")),
     );
     expect(electron.Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
-    await expect(invoke("file:initial")).resolves.toEqual({
-      ok: true,
-      value: { path: path.resolve("document.md"), text: "startup text" },
+    expect(electron.app.setPath).toHaveBeenCalledWith(
+      "userData",
+      path.join("media", "data"),
+    );
+    await invoke("file:open-requests-ready");
+    expect(firstWindow?.webContents.send).toHaveBeenCalledWith(
+      "file:open-request",
+      {
+        ok: true,
+        value: { path: path.resolve("document.md"), text: "startup text" },
+      },
+    );
+    firstWindow?.webContents.send.mockClear();
+
+    if (firstWindow) {
+      firstWindow.isMinimized.mockReturnValueOnce(true);
+    }
+    fileSystem.readFile.mockResolvedValueOnce("second-instance text");
+    electron.appHandlers.get("second-instance")?.(
+      {},
+      ["electron", "second.md"],
+      path.join("sender", "cwd"),
+    );
+    await vi.waitFor(() => expect(firstWindow?.webContents.send).toHaveBeenCalledWith(
+      "file:open-request",
+      {
+        ok: true,
+        value: {
+          path: path.resolve(path.join("sender", "cwd"), "second.md"),
+          text: "second-instance text",
+        },
+      },
+    ));
+    expect(firstWindow?.restore).toHaveBeenCalledOnce();
+    expect(firstWindow?.focus).toHaveBeenCalledOnce();
+
+    firstWindow?.webContents.send.mockClear();
+    fileSystem.readFile.mockRejectedValueOnce(new Error("open-file failed"));
+    const openFileEvent = { preventDefault: vi.fn() };
+    electron.appHandlers.get("open-file")?.(openFileEvent, "/tmp/from-finder.md");
+    await vi.waitFor(() => expect(firstWindow?.webContents.send).toHaveBeenCalledWith(
+      "file:open-request",
+      { ok: false, code: "UNKNOWN", message: "open-file failed" },
+    ));
+    expect(openFileEvent.preventDefault).toHaveBeenCalledOnce();
+    firstWindow?.webContents.send.mockClear();
+
+    fileSystem.readFile.mockResolvedValueOnce("delivery failure");
+    firstWindow?.webContents.send.mockImplementation(() => {
+      throw new Error("renderer unavailable");
     });
+    electron.appHandlers.get("open-file")?.(
+      { preventDefault: vi.fn() },
+      "/tmp/delivery-failure.md",
+    );
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"open-file"'),
+    ));
+    firstWindow?.webContents.send.mockReset();
+
+    if (firstWindow) {
+      firstWindow.destroyed = true;
+    }
+    electron.appHandlers.get("second-instance")?.(
+      {},
+      ["electron", "/tmp/while-closed.md"],
+      path.parse("/tmp/while-closed.md").root,
+    );
+    await invoke("file:open-requests-ready");
+    if (firstWindow) {
+      firstWindow.destroyed = false;
+    }
 
     firstWindow?.windowHandlers.get("ready-to-show")?.();
     expect(firstWindow?.show).toHaveBeenCalledTimes(1);
@@ -349,6 +494,14 @@ describe("main process", () => {
     firstWindow?.webHandlers.get("render-process-gone")?.({}, { reason: "crashed" });
     firstWindow?.webHandlers.get("will-navigate")?.(navigationEvent, "file:///tmp/nope");
     expect(navigationEvent.preventDefault).toHaveBeenCalled();
+    electron.shell.openExternal.mockRejectedValueOnce(new Error("shell failed"));
+    firstWindow?.webHandlers.get("will-navigate")?.(
+      { preventDefault: vi.fn() },
+      "https://example.com/failure",
+    );
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"event":"open-external"'),
+    ));
     expect(firstWindow?.windowOpenHandler?.({ url: "https://example.com" })).toEqual({
       action: "deny",
     });

@@ -13,6 +13,12 @@
     "test:e2e": "npm run build && node scripts/run-e2e.cjs",
     "check:acceptance": "node scripts/check-acceptance.mjs",
     "check:coverage": "node scripts/check-coverage-ratchet.mjs",
+    "check:licenses": "node scripts/third-party-notices.mjs --check",
+    "prepare:dist": "node scripts/gen-installer-nsh.mjs --check && node scripts/third-party-notices.mjs",
+    "dist": "npm run build && npm run prepare:dist && electron-builder --publish never",
+    "dist:linux": "npm run build && npm run prepare:dist && electron-builder --linux --publish never",
+    "dist:win": "npm run build && npm run prepare:dist && electron-builder --win --publish never",
+    "dist:mac": "npm run build && npm run prepare:dist && electron-builder --mac --publish never",
     "verify": "npm run typecheck && npm run test:unit && npm run test:e2e && npm run check:acceptance",
     "start": "npm run build && electron ."
   },
@@ -37,5 +43,10 @@
     "dompurify": "3.4.17",
     "highlight.js": "11.12.0",
     "markdown-it": "15.0.3"
-  }
+  },
+  "author": {
+    "name": "isumer",
+    "url": "https://github.com/isumer"
+  },
+  "homepage": "https://github.com/isumer/md-editor"
 }
