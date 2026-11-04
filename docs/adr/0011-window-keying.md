@@ -1,5 +1,5 @@
 # 0011 — Everything keyed by window; one Document per path app-wide
-Status: proposed (2026-11-04, from review finding 10)
+Status: accepted (2026-11-04, after two review rounds)
 
 **Context.** v1 has one window, but globals (`mainWindow`) and
 renderer-singleton assumptions make a second window a rewrite later.

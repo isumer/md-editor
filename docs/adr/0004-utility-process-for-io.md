@@ -1,5 +1,5 @@
 # 0004 — Heavy I/O in a utility process; main stays a router
-Status: proposed, revised (2026-11-04)
+Status: accepted (2026-11-04, after two review rounds)
 
 **Context.** Workspace trees, file watching, Find/Replace in Files over
 thousands of files, folder compare with hashing. In Electron, a busy main
@@ -11,7 +11,7 @@ Electron `utilityProcess` · in the renderer via IPC per file.
 **Decision.** One `utilityProcess` ("io-worker") hosts Workspace, Watch,
 Search and FolderCompare services. The renderer reaches it over a
 `MessagePort` that main brokers once, so streamed results bypass main.
-Main keeps single-file operations (open, save) that the user waits on.
+Main keeps only dialogs and grants; all file I/O is in the io-worker (ADR-0008).
 
 **Consequences.** One more process to supervise (restart on crash, typed
 `WORKER_RESTARTED` errors). The path policy module is shared by main and
