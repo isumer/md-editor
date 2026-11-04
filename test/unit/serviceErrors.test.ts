@@ -55,6 +55,17 @@ describe("service errors", () => {
     })).toBe("Could not access “notes.md”: device vanished.");
   });
 
+  it("AC-R5-17: tells the user a restarted file service can be retried", () => {
+    expect(formatMessage("file.workerRestarted", { file: "notes.md" }))
+      .toBe("Could not save “notes.md”: the file service restarted. Try again.");
+    expect(serviceError(
+      "WORKER_RESTARTED",
+      "file.workerRestarted",
+      { file: "notes.md" },
+      true,
+    )).toMatchObject({ retryable: true });
+  });
+
   it.each([
     "file.notFound",
     "file.isDirectory",

@@ -53,4 +53,18 @@ describe("document grants", () => {
     expect(grants.resolve(1, first).ok).toBe(false);
     expect(grants.resolve(1, second).ok).toBe(false);
   });
+
+  it("AC-R5-17: lists only one window's live grants for restart replay", () => {
+    const grants = new GrantTable();
+    const first = grants.issue(1, "/documents/first.md", "document");
+    const revoked = grants.issue(1, "/documents/revoked.md", "document");
+    grants.issue(2, "/documents/other-window.md", "document");
+    grants.revokeDocument(1, revoked);
+
+    expect(grants.entries(1)).toEqual([{
+      handle: first,
+      canonicalPath: "/documents/first.md",
+      kind: "document",
+    }]);
+  });
 });
