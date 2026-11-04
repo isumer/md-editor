@@ -2,8 +2,14 @@ import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 
 import { atomicWrite } from "../../node-shared/atomicWrite";
-import { toServiceError } from "../../shared/ipc/result";
+import type {
+  AttachDocumentInput,
+  ChangeDocumentMessage,
+  SaveDocumentInput,
+} from "../../shared/ipc/io";
+import { serviceError, toServiceError } from "../../shared/ipc/result";
 import { IoGrantTable } from "../grants";
+import { IoMirrors } from "../mirrors";
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error &&
@@ -47,6 +53,8 @@ async function ensureWritable(filePath: string): Promise<void> {
 }
 
 export class IoFileService {
+  private readonly mirrors = new IoMirrors();
+
   constructor(private readonly grants: IoGrantTable) {}
 
   async registerGrant(
@@ -72,16 +80,40 @@ export class IoFileService {
     }
   }
 
-  async write(
+  attach(windowId: number, input: AttachDocumentInput): void {
+    this.mirrors.attach(windowId, input);
+  }
+
+  change(windowId: number, input: Omit<ChangeDocumentMessage, "op">): void {
+    this.mirrors.change(windowId, input);
+  }
+
+  detach(windowId: number, docId: string): void {
+    this.mirrors.detach(windowId, docId);
+  }
+
+  revokeWindow(windowId: number): void {
+    this.mirrors.revokeWindow(windowId);
+  }
+
+  async save(
     windowId: number,
-    grant: string,
-    text: string,
-  ): Promise<{ name: string }> {
-    const filePath = this.grants.resolve(windowId, grant);
+    input: SaveDocumentInput,
+  ): Promise<{ name: string; version: number }> {
+    const filePath = this.grants.resolve(windowId, input.grant);
+    const document = this.mirrors.docAt(
+      windowId,
+      input.docId,
+      input.epoch,
+      input.version,
+    );
+    if (!document) {
+      throw serviceError("OUT_OF_SYNC", "file.outOfSync", {}, true);
+    }
     try {
       await ensureWritable(filePath);
-      await atomicWrite(filePath, text);
-      return { name: path.basename(filePath) };
+      await atomicWrite(filePath, document.toString());
+      return { name: path.basename(filePath), version: input.version };
     } catch (error) {
       return fileError(error, filePath);
     }

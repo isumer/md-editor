@@ -8,9 +8,13 @@ import type {
   ReleaseDocumentRequest,
 } from "../shared/ipc/file";
 import type {
+  AttachDocumentInput,
+  ChangeDocumentMessage,
+  DetachDocumentMessage,
   IO_PORT_CHANNEL as SharedIoPortChannel,
   ReadDocumentResponse,
-  WriteDocumentResponse,
+  SaveDocumentInput,
+  SaveDocumentResponse,
 } from "../shared/ipc/io";
 import type { LINK_CHANNELS as SharedLinkChannels } from "../shared/ipc/link";
 import type {
@@ -19,7 +23,6 @@ import type {
 } from "../shared/ipc/menu";
 import type { Result } from "../shared/ipc/result";
 
-// A sandboxed preload cannot require our modules, so channels are copied; satisfies keeps them in step.
 const FILE_CHANNELS = {
   openFile: "file:open",
   chooseSaveTarget: "file:choose-save-target",
@@ -44,7 +47,9 @@ interface RendererPort {
 
 type PortOperation =
   | { op: "read"; grant: string }
-  | { op: "write"; grant: string; text: string };
+  | ({ op: "attach" } & AttachDocumentInput)
+  | ({ op: "save" } & SaveDocumentInput);
+type PortOneWay = ChangeDocumentMessage | DetachDocumentMessage;
 
 interface PendingRequest {
   operation: PortOperation;
@@ -63,30 +68,94 @@ function workerRestarted(): Result<never> {
   };
 }
 
-function replyData(value: unknown): { id: string; result: Result<unknown> } | null {
+function exactData(value: unknown, keys: readonly string[]): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
   }
   try {
-    const keys = Reflect.ownKeys(value);
-    if (keys.length !== 2 || !keys.includes("id") || !keys.includes("result")) {
+    const ownKeys = Reflect.ownKeys(value);
+    if (ownKeys.length !== keys.length || ownKeys.some((key) =>
+      typeof key !== "string" || !keys.includes(key))) {
       return null;
     }
-    const id = Object.getOwnPropertyDescriptor(value, "id");
-    const result = Object.getOwnPropertyDescriptor(value, "result");
-    if (!id || !("value" in id) || typeof id.value !== "string" ||
-      !result || !("value" in result) || typeof result.value !== "object" ||
-      result.value === null) {
-      return null;
+    const data: Record<string, unknown> = {};
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor)) {
+        return null;
+      }
+      data[key] = descriptor.value;
     }
-    return { id: id.value, result: result.value as Result<unknown> };
+    return data;
   } catch {
     return null;
   }
 }
 
+function validParams(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  try {
+    return Reflect.ownKeys(value).every((key) => {
+      const descriptor = typeof key === "string"
+        ? Object.getOwnPropertyDescriptor(value, key)
+        : undefined;
+      return descriptor !== undefined && "value" in descriptor &&
+        typeof descriptor.value === "string";
+    });
+  } catch {
+    return false;
+  }
+}
+
+function validFailure(value: unknown): boolean {
+  const failure = exactData(value, ["ok", "error"]);
+  const error = failure?.["ok"] === false
+    ? exactData(failure["error"], ["code", "messageKey", "params", "retryable"])
+    : null;
+  return error !== null && typeof error["code"] === "string" &&
+    typeof error["messageKey"] === "string" && validParams(error["params"]) &&
+    typeof error["retryable"] === "boolean";
+}
+
+function validSuccessValue(value: unknown, operation: PortOperation["op"]): boolean {
+  if (operation === "attach") {
+    return exactData(value, []) !== null;
+  }
+  if (operation === "read") {
+    const read = exactData(value, ["name", "text"]);
+    return read !== null && typeof read["name"] === "string" &&
+      typeof read["text"] === "string";
+  }
+  const save = exactData(value, ["name", "version"]);
+  return save !== null && typeof save["name"] === "string" &&
+    typeof save["version"] === "number" && Number.isSafeInteger(save["version"]) &&
+    save["version"] >= 0;
+}
+
+function boundaryResult(
+  value: unknown,
+  operation: PortOperation["op"],
+): Result<unknown> | null {
+  const success = exactData(value, ["ok", "value"]);
+  if (success?.["ok"] === true && validSuccessValue(success["value"], operation)) {
+    return value as Result<unknown>;
+  }
+  return validFailure(value) ? value as Result<unknown> : null;
+}
+
+function replyData(value: unknown): { id: string; result: unknown } | null {
+  const reply = exactData(value, ["id", "result"]);
+  return reply && typeof reply["id"] === "string" && reply["id"].length > 0 &&
+      reply["id"].length <= 128
+    ? { id: reply["id"], result: reply["result"] }
+    : null;
+}
+
 export class IoPortClient {
   private readonly pending = new Map<string, PendingRequest>();
+  private queued: unknown[] = [];
   private port: RendererPort | null = null;
   private receivedPort = false;
   private nextId = 1;
@@ -100,9 +169,10 @@ export class IoPortClient {
     this.port = port;
     port.onmessage = (event) => this.receive(event.data);
     port.start();
-    for (const [id, pending] of this.pending) {
-      port.postMessage({ id, ...pending.operation });
+    for (const message of this.queued) {
+      port.postMessage(message);
     }
+    this.queued = [];
   }
 
   request<T>(operation: PortOperation): Promise<Result<T>> {
@@ -112,8 +182,20 @@ export class IoPortClient {
         operation,
         resolve: (result) => resolve(result as Result<T>),
       });
-      this.port?.postMessage({ id, ...operation });
+      this.post({ id, ...operation });
     });
+  }
+
+  send(message: PortOneWay): void {
+    this.post(message);
+  }
+
+  private post(message: unknown): void {
+    if (this.port) {
+      this.port.postMessage(message);
+    } else {
+      this.queued.push(message);
+    }
   }
 
   private receive(value: unknown): void {
@@ -122,9 +204,10 @@ export class IoPortClient {
       return;
     }
     const pending = this.pending.get(reply.id);
-    if (pending) {
+    const result = pending ? boundaryResult(reply.result, pending.operation.op) : null;
+    if (pending && result) {
       this.pending.delete(reply.id);
-      pending.resolve(reply.result);
+      pending.resolve(result);
     }
   }
 
@@ -140,7 +223,10 @@ interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
   readDocument(grant: string): Promise<Result<ReadDocumentResponse>>;
-  writeDocument(request: { grant: string; text: string }): Promise<Result<WriteDocumentResponse>>;
+  attachDocument(request: AttachDocumentInput): Promise<Result<void>>;
+  saveDocument(request: SaveDocumentInput): Promise<Result<SaveDocumentResponse>>;
+  sendChanges(request: Omit<ChangeDocumentMessage, "op">): void;
+  detachDocument(request: Omit<DetachDocumentMessage, "op">): void;
   releaseDocument(request: ReleaseDocumentRequest): Promise<Result<void>>;
   openExternal(url: string): Promise<Result<void>>;
   readyForOpenRequests(): Promise<Result<OpenRequestReady>>;
@@ -165,7 +251,29 @@ const api: Api = {
     request,
   ) as Promise<Result<DocumentReference | null>>,
   readDocument: (grant) => ioClient.request({ op: "read", grant }),
-  writeDocument: ({ grant, text }) => ioClient.request({ op: "write", grant, text }),
+  attachDocument: ({ docId, epoch, version, text }) => ioClient.request({
+    op: "attach",
+    docId,
+    epoch,
+    version,
+    text,
+  }),
+  saveDocument: ({ grant, docId, epoch, version }) => ioClient.request({
+    op: "save",
+    grant,
+    docId,
+    epoch,
+    version,
+  }),
+  sendChanges: ({ docId, epoch, fromVersion, toVersion, changes }) => ioClient.send({
+    op: "change",
+    docId,
+    epoch,
+    fromVersion,
+    toVersion,
+    changes,
+  }),
+  detachDocument: ({ docId }) => ioClient.send({ op: "detach", docId }),
   releaseDocument: (request) => ipcRenderer.invoke(
     FILE_CHANNELS.releaseDocument,
     request,
