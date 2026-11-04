@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RenderScheduler,
   type ScheduledRender,
-} from "../../src/renderer/renderScheduler";
+} from "../../src/renderer/features/preview/renderScheduler";
 
 afterEach(() => {
   vi.useRealTimers();

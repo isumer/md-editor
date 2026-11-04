@@ -1,4 +1,4 @@
-import type { MdApi } from "./api";
+import type { MdApi } from "../../shared/api";
 
 declare global {
   interface Window {

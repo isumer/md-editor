@@ -8,7 +8,7 @@ import {
   atomicWrite,
   type AtomicWriteFs,
   type AtomicWriteHandle,
-} from "../../src/main/atomicWrite";
+} from "../../src/node-shared/atomicWrite";
 
 const temporaryDirectories: string[] = [];
 

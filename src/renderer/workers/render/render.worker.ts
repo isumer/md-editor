@@ -1,15 +1,7 @@
 /// <reference lib="webworker" />
 
 import { renderMarkdown } from "./render";
-
-export interface RenderRequest {
-  id: number;
-  text: string;
-}
-
-export type RenderResponse =
-  | { id: number; ok: true; html: string }
-  | { id: number; ok: false; message: string };
+import type { RenderRequest, RenderResponse } from "../../../shared/workers/render";
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 

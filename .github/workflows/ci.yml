@@ -47,6 +47,8 @@ jobs:
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - name: Typecheck
         run: npm run typecheck
+      - name: Check dependency boundaries
+        run: npm run check:deps
       - name: Run unit tests
         run: npm run test:unit
       - name: Check production dependency licences

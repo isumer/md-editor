@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../src/renderer/render", async (importOriginal) => {
-  const renderer = await importOriginal<typeof import("../../src/renderer/render")>();
+vi.mock("../../src/renderer/workers/render/render", async (importOriginal) => {
+  const renderer = await importOriginal<
+    typeof import("../../src/renderer/workers/render/render")
+  >();
   return { renderMarkdown: vi.fn(renderer.renderMarkdown) };
 });
 
-import { renderMarkdown } from "../../src/renderer/render";
+import { renderMarkdown } from "../../src/renderer/workers/render/render";
 
 const renderMarkdownMock = vi.mocked(renderMarkdown);
 
@@ -22,7 +24,7 @@ describe("render worker", () => {
   it("AC-R1-02: posts successful renders and typed failures", async () => {
     const workerScope = { onmessage: undefined as any, postMessage: vi.fn() };
     vi.stubGlobal("self", workerScope);
-    await import("../../src/renderer/render.worker");
+    await import("../../src/renderer/workers/render/render.worker");
 
     workerScope.onmessage({ data: { id: 1, text: "# Rendered" } });
     expect(workerScope.postMessage).toHaveBeenLastCalledWith({

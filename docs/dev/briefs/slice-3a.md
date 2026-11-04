@@ -12,7 +12,7 @@ paths changed in tests. Claude installed `dependency-cruiser` (dev).
 | src/main/atomicWrite.ts | src/node-shared/atomicWrite.ts |
 | src/main/main.ts | split: src/main/main.ts (entry: wires the parts), src/main/app/window.ts (BrowserWindow creation, navigation guards, ready-to-show), src/main/app/menu.ts, src/main/app/startup.ts (argv/open-file/single-instance/open requests, portable data dir), src/main/ipc/file.ts and src/main/ipc/link.ts (handler registration), src/main/services/file.ts (open/save logic; still in main until 3c) |
 | src/shared/api.ts | unchanged path (contracts arrive in 3b) |
-| src/renderer/app.ts | src/renderer/main.ts (composition root: creates and wires) + src/renderer/features/editor/editor.ts (CodeMirror setup) + src/renderer/features/preview/preview.ts (preview DOM, link interception) + src/renderer/platform/api.ts (the only file touching window.mdApi) + src/renderer/core/document.ts (current path, dirty state, title — no DOM, no CodeMirror view) |
+| src/renderer/app.ts | src/renderer/main.ts (composition root: creates and wires) + src/renderer/editor/editor.ts (CodeMirror setup; the editor layer of §3, not a feature — corrected during review) + src/renderer/features/preview/preview.ts (preview DOM, link interception) + src/renderer/platform/api.ts (the only file touching window.mdApi) + src/renderer/core/document.ts (current path, dirty state, title — no DOM, no CodeMirror view) |
 | src/renderer/render.ts | src/renderer/workers/render/render.ts |
 | src/renderer/render.worker.ts | src/renderer/workers/render/render.worker.ts |
 | worker message types | src/shared/workers/render.ts |

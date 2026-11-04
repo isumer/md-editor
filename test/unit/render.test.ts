@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderMarkdown } from "../../src/renderer/render";
+import { renderMarkdown } from "../../src/renderer/workers/render/render";
 
 describe("renderMarkdown", () => {
   it("AC-R1-04: adds the zero-based source line to a heading", () => {
