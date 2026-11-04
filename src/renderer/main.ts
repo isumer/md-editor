@@ -43,8 +43,19 @@ const renderWorker = new Worker(
 );
 const documentState = createDocumentState();
 
+let statusFromPreview = false;
+
 function showStatus(message = ""): void {
+  statusFromPreview = false;
   status.textContent = message;
+}
+
+// A successful render clears only the preview's own error, never a file failure.
+function showPreviewStatus(message = ""): void {
+  if (message || statusFromPreview) {
+    status.textContent = message;
+    statusFromPreview = message !== "";
+  }
 }
 
 function updateTitle(): void {
@@ -62,7 +73,7 @@ const editor = createEditor(
   updateTitle,
 );
 
-wireRenderWorker(renderWorker, scheduler, preview, showStatus);
+wireRenderWorker(renderWorker, scheduler, preview, showPreviewStatus);
 wirePreviewLinks(preview, showStatus);
 
 function displayDocument(documentFile: DocumentReference & { text: string }): void {
