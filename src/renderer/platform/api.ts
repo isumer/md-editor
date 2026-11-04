@@ -1,28 +1,40 @@
 import type {
+  ChooseSaveTargetRequest,
+  DocumentReference,
   OpenRequestReady,
-  OpenedFile,
-  SavedFile,
-  SaveFileRequest,
+  ReleaseDocumentRequest,
 } from "../../shared/ipc/file";
+import type {
+  ReadDocumentResponse,
+  WriteDocumentResponse,
+} from "../../shared/ipc/io";
 import type { MenuCommand } from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
 
 const api = window.api;
 
-export function openFile(): Promise<Result<OpenedFile | null>> {
+export function openFile(): Promise<Result<DocumentReference | null>> {
   return api.openFile();
 }
 
-export function saveFile(
-  request: SaveFileRequest,
-): Promise<Result<SavedFile | null>> {
-  return api.saveFile(request);
+export function chooseSaveTarget(
+  request: ChooseSaveTargetRequest,
+): Promise<Result<DocumentReference | null>> {
+  return api.chooseSaveTarget(request);
 }
 
-export function saveFileAs(
-  request: SaveFileRequest,
-): Promise<Result<SavedFile | null>> {
-  return api.saveFileAs(request);
+export function readDocument(grant: string): Promise<Result<ReadDocumentResponse>> {
+  return api.readDocument(grant);
+}
+
+export function writeDocument(
+  request: { grant: string; text: string },
+): Promise<Result<WriteDocumentResponse>> {
+  return api.writeDocument(request);
+}
+
+export function releaseDocument(request: ReleaseDocumentRequest): Promise<Result<void>> {
+  return api.releaseDocument(request);
 }
 
 export function openExternal(url: string): Promise<Result<void>> {
@@ -40,7 +52,7 @@ export function onMenuCommand(
 }
 
 export function onOpenRequest(
-  listener: (request: Result<OpenedFile>) => void,
+  listener: (request: Result<DocumentReference>) => void,
 ): () => void {
   return api.onOpenRequest(listener);
 }

@@ -11,10 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Open and save failures now name the file and explain the reason in plain words, for example "Could not open “notes”: it is a folder."
+- Files are now read and saved by a separate background process. If that process crashes, the app restarts it and Save keeps writing to the same file without asking for a path again. A save caught by the crash says so, and the document stays marked unsaved so you can try again.
 
 ### Fixed
 
 ### Security
+
+- Reading and saving happen in a process that accepts only files the app has registered for that window, so a file the page names itself is refused.
 
 - The app window can now write only to files you chose through a dialog, the command line, or your system's "open with"; requests that name any other path are refused.
 - Requests to the app's services are checked for exact shape and size (documents up to 256 MiB), and are accepted only from the app's own window.

@@ -2,9 +2,10 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 import {
+  dialogCallCount,
   fixturePath,
   launchEditor,
   stubOpenDialog,
@@ -29,40 +30,53 @@ const invalidSaveCases: ReadonlyArray<{
   { kind: "oversized-text", name: "a request with 257 MiB of text" },
 ];
 
+async function openGrant(
+  application: ElectronApplication,
+  page: Page,
+  filePath: string,
+): Promise<string> {
+  await stubOpenDialog(application, filePath);
+  const opened = await page.evaluate(() => window.api.openFile());
+  const grant = opened.ok ? opened.value?.grant : null;
+  if (!grant) {
+    throw new Error("the open did not return a grant");
+  }
+  return grant;
+}
+
+// Text cases carry a live grant so the text check is what refuses them. The preload rebuilds
+// port messages, so the own __proto__ case goes to the IPC contract that receives the object.
 async function sendInvalidSave(
   page: Page,
   kind: InvalidSaveKind,
+  grant: string,
 ): Promise<unknown> {
-  return page.evaluate(async (invalidKind) => {
-    let request: unknown;
+  return page.evaluate(async ({ invalidKind, liveGrant }) => {
+    const writeDocument = window.api.writeDocument as unknown as (
+      value: unknown,
+    ) => Promise<unknown>;
     switch (invalidKind) {
       case "missing-text":
-        request = { grant: null };
-        break;
+        return writeDocument({ grant: liveGrant });
       case "non-string-text":
-        request = { grant: null, text: 42 };
-        break;
+        return writeDocument({ grant: liveGrant, text: 42 });
       case "object-grant":
-        request = { grant: {}, text: "must not be written" };
-        break;
+        return writeDocument({ grant: {}, text: "must not be written" });
       case "own-proto": {
-        const hostile = { grant: null, text: "must not be written" };
+        const hostile = { grant: liveGrant };
         Object.defineProperty(hostile, "__proto__", {
           enumerable: true,
           value: { polluted: true },
         });
-        request = hostile;
-        break;
+        const chooseSaveTarget = window.api.chooseSaveTarget as unknown as (
+          value: unknown,
+        ) => Promise<unknown>;
+        return chooseSaveTarget(hostile);
       }
       case "oversized-text":
-        request = { grant: null, text: "x".repeat(257 * 1024 * 1024) };
-        break;
+        return writeDocument({ grant: liveGrant, text: "x".repeat(257 * 1024 * 1024) });
     }
-    const saveFile = window.api.saveFile as unknown as (
-      value: unknown,
-    ) => Promise<unknown>;
-    return saveFile(request);
-  }, kind);
+  }, { invalidKind: kind, liveGrant: grant });
 }
 
 async function expectRendererResponsive(page: Page, marker: string): Promise<void> {
@@ -81,11 +95,15 @@ for (const invalidCase of invalidSaveCases) {
     annotation: { type: "AC-SEC-07" },
   }, async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-bad-save-"));
+    const targetPath = path.join(temporaryDirectory, "target.md");
+    await fs.writeFile(targetPath, "original", "utf8");
     const { application, page } = await launchEditor(fixturePath);
 
     try {
       await expect(page.getByTestId("editor")).toContainText("Sample document");
-      const result = await sendInvalidSave(page, invalidCase.kind);
+      const grant = await openGrant(application, page, targetPath);
+      await stubSaveDialog(application, path.join(temporaryDirectory, "chosen.md"));
+      const result = await sendInvalidSave(page, invalidCase.kind, grant);
 
       expect(result).toMatchObject({
         ok: false,
@@ -95,7 +113,9 @@ for (const invalidCase of invalidSaveCases) {
           retryable: false,
         },
       });
-      expect(await fs.readdir(temporaryDirectory)).toEqual([]);
+      expect(await fs.readdir(temporaryDirectory)).toEqual(["target.md"]);
+      expect(await fs.readFile(targetPath, "utf8")).toBe("original");
+      expect(await dialogCallCount(application, "save")).toBe(0);
       await expectRendererResponsive(page, invalidCase.kind);
     } finally {
       await application.close();
@@ -166,13 +186,15 @@ test("the preload exposes only the fixed named API", {
 
     expect(shape).toEqual({
       keys: [
+        "chooseSaveTarget",
         "onMenuCommand",
         "onOpenRequest",
         "openExternal",
         "openFile",
+        "readDocument",
         "readyForOpenRequests",
-        "saveFile",
-        "saveFileAs",
+        "releaseDocument",
+        "writeDocument",
       ],
       legacyGlobal: false,
     });
@@ -181,7 +203,7 @@ test("the preload exposes only the fixed named API", {
   }
 });
 
-test("the file-save contract rejects a raw path in place of a grant", {
+test("the file-save contract rejects raw and forged grants", {
   tag: "@AC-SEC-09",
   annotation: { type: "AC-SEC-09" },
 }, async () => {
@@ -191,16 +213,17 @@ test("the file-save contract rejects a raw path in place of a grant", {
   try {
     await expect(page.getByTestId("editor")).toContainText("Sample document");
 
-    const result = await page.evaluate(async ({ grant, text }) =>
-      window.api.saveFile({ grant, text }), {
-      grant: targetPath,
-      text: "must not be written",
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      error: { code: "GRANT_INVALID" },
-    });
+    for (const grant of [targetPath, "forged-grant"]) {
+      const result = await page.evaluate(async ({ candidate, text }) =>
+        window.api.writeDocument({ grant: candidate, text }), {
+        candidate: grant,
+        text: "must not be written",
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "GRANT_INVALID" },
+      });
+    }
     expect(await fs.readdir(temporaryDirectory)).toEqual([]);
   } finally {
     await application.close();
@@ -208,13 +231,12 @@ test("the file-save contract rejects a raw path in place of a grant", {
   }
 });
 
-test("the file-save contract rejects a grant revoked by Save As", {
+test("the file-save contract rejects a released grant", {
   tag: "@AC-SEC-09",
   annotation: { type: "AC-SEC-09" },
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-revoked-grant-"));
   const firstPath = path.join(temporaryDirectory, "first.md");
-  const secondPath = path.join(temporaryDirectory, "second.md");
   await fs.writeFile(firstPath, "first", "utf8");
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -225,13 +247,10 @@ test("the file-save contract rejects a grant revoked by Save As", {
     if (!firstGrant) {
       throw new Error("the first open did not return a grant");
     }
-    await stubSaveDialog(application, secondPath);
-    const savedAs = await page.evaluate(async (grant) =>
-      window.api.saveFileAs({ grant, text: "second" }), firstGrant);
-    expect(savedAs).toMatchObject({ ok: true, value: { name: "second.md" } });
+    await page.evaluate(async (grant) => window.api.releaseDocument({ grant }), firstGrant);
 
     const result = await page.evaluate(async (grant) =>
-      window.api.saveFile({ grant, text: "must not be written" }), firstGrant);
+      window.api.writeDocument({ grant, text: "must not be written" }), firstGrant);
 
     expect(result).toMatchObject({
       ok: false,

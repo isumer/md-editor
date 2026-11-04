@@ -37,6 +37,7 @@ describe("dependency rules", () => {
     ["core-to-view", "core-no-codemirror-view"],
     ["renderer-to-node", "renderer-no-node"],
     ["shared-to-anything", "shared-no-dependencies"],
+    ["main-document-io", "main-no-document-io"],
     ["cycle", "no-circular"],
   ])("%s fixture fires %s", async (fixture, expectedRule) => {
     const rules = await violatedRules(fixture);
