@@ -46,6 +46,20 @@ import `electron` or `node:*`.
   per-file floors on the moved core modules). Protected-change trailer
   will be added by Claude.
 
+## Also in 3a (found while reviewing 3.0)
+- **Tests are not type-checked today**: `npm run typecheck` covers only
+  tsconfig.main/renderer. Add `tsconfig.test.json` (test/**, scripts/**
+  with `allowJs`/`checkJs` off for .mjs, declaration stubs for the .mjs
+  scripts the unit tests import) and include it in `typecheck`.
+- **AC-R1-06 seam**: no real input makes markdown-it throw, so the
+  render-failure path is untestable. Inject the worker factory into the
+  renderer composition root (`createRenderWorker`, default: the real
+  `new Worker(...)`); the e2e test supplies a boundary double through a
+  preload-free mechanism that does not add a test branch to src (e.g. the
+  composition root reads an optional factory from a module that the e2e
+  build aliases) — propose the mechanism in your report before using one
+  that touches production code paths. Then write the AC-R1-06 test.
+
 ## Done means
 typecheck, test:unit, build, check:deps exit 0 (paste); `git diff -M
 --stat` style list of moves (you cannot run git; list old → new);
