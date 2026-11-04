@@ -1,4 +1,5 @@
 import type { RenderResponse } from "../../../shared/workers/render";
+import { formatMessage } from "../../../shared/messages/en";
 import { openExternal } from "../../platform/api";
 import { RenderScheduler } from "./renderScheduler";
 import { sanitizeRenderedHtml } from "./sanitize";
@@ -75,7 +76,7 @@ export function wirePreviewLinks(
 
     void openExternal(href).then((result) => {
       if (!result.ok) {
-        showStatus(result.message);
+        showStatus(formatMessage(result.error.messageKey, result.error.params));
       }
     }).catch((error) => {
       showStatus(error instanceof Error ? error.message : String(error));

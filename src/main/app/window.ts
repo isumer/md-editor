@@ -1,4 +1,12 @@
+import { pathToFileURL } from "node:url";
+
 import { app, BrowserWindow } from "electron";
+
+import {
+  registerTrustedWindow,
+  unregisterTrustedWindow,
+} from "../ipc/handle";
+import { fileService } from "../services/file";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -50,6 +58,7 @@ export function createWindow(
       nodeIntegration: false,
     },
   });
+  registerTrustedWindow(window, pathToFileURL(rendererPath).href);
   wireWindowSecurity(window, logProcessEvent, openExternalBackstop);
   window.once("ready-to-show", () => {
     if (!window.isDestroyed()) {
@@ -57,6 +66,8 @@ export function createWindow(
     }
   });
   window.on("closed", () => {
+    unregisterTrustedWindow(window);
+    fileService.closeWindow(window.id);
     if (mainWindow === window) {
       mainWindow = null;
     }

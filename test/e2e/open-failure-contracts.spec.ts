@@ -13,7 +13,6 @@ import {
 
 async function expectFailedOpenToPreserveDocument(
   failedPath: string,
-  // Today a directory read reports EISDIR without the path; 3b adds named, user-facing errors.
   expectedStatus: string | RegExp = path.basename(failedPath),
 ): Promise<void> {
   const { application, page } = await launchEditor(fixturePath);
@@ -53,7 +52,7 @@ test("opening a directory names the failure and keeps the current document", {
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-directory-open-"));
   try {
-    await expectFailedOpenToPreserveDocument(temporaryDirectory, /EISDIR/);
+    await expectFailedOpenToPreserveDocument(temporaryDirectory);
   } finally {
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }

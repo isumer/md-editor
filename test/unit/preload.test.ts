@@ -27,19 +27,30 @@ describe("preload bridge", () => {
     await import("../../src/preload/preload");
     expect(electron.exposeInMainWorld).toHaveBeenCalledTimes(1);
     const api = electron.exposeInMainWorld.mock.calls[0]?.[1];
-    expect(electron.exposeInMainWorld.mock.calls[0]?.[0]).toBe("mdApi");
+    expect(electron.exposeInMainWorld.mock.calls[0]?.[0]).toBe("api");
+    expect(Object.keys(api).sort()).toMatchInlineSnapshot(`
+      [
+        "onMenuCommand",
+        "onOpenRequest",
+        "openExternal",
+        "openFile",
+        "readyForOpenRequests",
+        "saveFile",
+        "saveFileAs",
+      ]
+    `);
 
     await api.openFile();
-    await api.saveFile({ path: "/tmp/a.md", text: "a" });
-    await api.saveFileAs({ path: null, text: "b" });
+    await api.saveFile({ grant: "grant-a", text: "a" });
+    await api.saveFileAs({ grant: null, text: "b" });
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
     expect(electron.invoke.mock.calls).toEqual([
-      ["file:open"],
-      ["file:save", { path: "/tmp/a.md", text: "a" }],
-      ["file:save-as", { path: null, text: "b" }],
-      ["link:open-external", "https://example.com"],
-      ["file:open-requests-ready"],
+      ["file:open", {}],
+      ["file:save", { grant: "grant-a", text: "a" }],
+      ["file:save-as", { grant: null, text: "b" }],
+      ["link:open-external", { url: "https://example.com" }],
+      ["file:open-requests-ready", {}],
     ]);
 
     const listener = vi.fn();
@@ -53,7 +64,10 @@ describe("preload bridge", () => {
     const openListener = vi.fn();
     const unsubscribeOpen = api.onOpenRequest(openListener);
     const openIpcListener = electron.on.mock.calls[1]?.[1];
-    const request = { ok: true, value: { path: "/tmp/open.md", text: "open" } };
+    const request = {
+      ok: true,
+      value: { grant: "grant-open", name: "open.md", text: "open" },
+    };
     openIpcListener({}, request);
     expect(openListener).toHaveBeenCalledWith(request);
     unsubscribeOpen();
