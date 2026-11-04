@@ -201,6 +201,33 @@ test("an edit made while Save is in flight stays dirty and off disk", {
   }
 });
 
+test("Save writes exactly the edited document version", {
+  tag: "@AC-R5-18",
+  annotation: { type: "AC-R5-18" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-version-save-"));
+  const currentPath = path.join(temporaryDirectory, "current.md");
+  await fs.writeFile(currentPath, "# Before\n", "utf8");
+  const { application, page } = await launchEditor(currentPath);
+
+  try {
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await expect(editor).toContainText("Before");
+    await editor.click();
+    await page.keyboard.press("Control+A");
+    const edited = "# Exact version\n\nSaved from the mirror.";
+    await page.keyboard.type(edited);
+
+    await clickMenuItem(application, "file-save");
+
+    await expect.poll(() => readTextOrNull(currentPath)).toBe(edited);
+    await expect(page).not.toHaveTitle(/•/);
+  } finally {
+    await application.close();
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test("the Open menu item opens the file chosen by its dialog", {
   tag: "@AC-R5-15",
   annotation: { type: "AC-R5-15" },

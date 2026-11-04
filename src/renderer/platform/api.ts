@@ -5,8 +5,12 @@ import type {
   ReleaseDocumentRequest,
 } from "../../shared/ipc/file";
 import type {
+  AttachDocumentInput,
+  ChangeDocumentMessage,
+  DetachDocumentMessage,
   ReadDocumentResponse,
-  WriteDocumentResponse,
+  SaveDocumentInput,
+  SaveDocumentResponse,
 } from "../../shared/ipc/io";
 import type { MenuCommand } from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
@@ -27,10 +31,22 @@ export function readDocument(grant: string): Promise<Result<ReadDocumentResponse
   return api.readDocument(grant);
 }
 
-export function writeDocument(
-  request: { grant: string; text: string },
-): Promise<Result<WriteDocumentResponse>> {
-  return api.writeDocument(request);
+export function attachDocument(request: AttachDocumentInput): Promise<Result<void>> {
+  return api.attachDocument(request);
+}
+
+export function saveDocument(
+  request: SaveDocumentInput,
+): Promise<Result<SaveDocumentResponse>> {
+  return api.saveDocument(request);
+}
+
+export function sendChanges(request: Omit<ChangeDocumentMessage, "op">): void {
+  api.sendChanges(request);
+}
+
+export function detachDocument(request: Omit<DetachDocumentMessage, "op">): void {
+  api.detachDocument(request);
 }
 
 export function releaseDocument(request: ReleaseDocumentRequest): Promise<Result<void>> {
