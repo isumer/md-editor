@@ -4,25 +4,23 @@ import type {
   IpcResult,
   MdApi,
   MenuCommand,
+  OpenRequestReady,
   OpenedFile,
   SaveFileRequest,
   SavedFile,
 } from "../shared/api";
 
 const channels = {
-  initialFile: "file:initial",
   openFile: "file:open",
   saveFile: "file:save",
   saveFileAs: "file:save-as",
   openExternal: "link:open-external",
   menuCommand: "menu:command",
+  openRequest: "file:open-request",
+  readyForOpenRequests: "file:open-requests-ready",
 } as const;
 
 const mdApi: MdApi = {
-  getInitialFile: () =>
-    ipcRenderer.invoke(channels.initialFile) as Promise<
-      IpcResult<OpenedFile | null>
-    >,
   openFile: () =>
     ipcRenderer.invoke(channels.openFile) as Promise<
       IpcResult<OpenedFile | null>
@@ -37,12 +35,26 @@ const mdApi: MdApi = {
     >,
   openExternal: (url: string) =>
     ipcRenderer.invoke(channels.openExternal, url) as Promise<IpcResult<void>>,
+  readyForOpenRequests: () =>
+    ipcRenderer.invoke(channels.readyForOpenRequests) as Promise<
+      IpcResult<OpenRequestReady>
+    >,
   onMenuCommand: (listener: (command: MenuCommand) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, command: MenuCommand) => {
       listener(command);
     };
     ipcRenderer.on(channels.menuCommand, handler);
     return () => ipcRenderer.removeListener(channels.menuCommand, handler);
+  },
+  onOpenRequest: (listener: (request: IpcResult<OpenedFile>) => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      request: IpcResult<OpenedFile>,
+    ) => {
+      listener(request);
+    };
+    ipcRenderer.on(channels.openRequest, handler);
+    return () => ipcRenderer.removeListener(channels.openRequest, handler);
   },
 };
 

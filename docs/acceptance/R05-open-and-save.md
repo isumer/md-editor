@@ -51,7 +51,7 @@ When the File menu is inspected
 Then Open, Save and Save As exist with ids `file-open`, `file-save`, `file-save-as` and accelerators CmdOrCtrl+O, CmdOrCtrl+S, CmdOrCtrl+Shift+S
 
 ### AC-R5-09 — Opening a file never silently discards unsaved changes
-status: planned
+status: implemented
 Given the current document has unsaved changes
 When another file is opened (menu, second launch, open-file)
 Then the user is asked before the changes are discarded, and cancelling keeps them

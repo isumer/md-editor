@@ -1,10 +1,11 @@
 export const IPC_CHANNELS = {
-  initialFile: "file:initial",
   openFile: "file:open",
   saveFile: "file:save",
   saveFileAs: "file:save-as",
   openExternal: "link:open-external",
   menuCommand: "menu:command",
+  openRequest: "file:open-request",
+  readyForOpenRequests: "file:open-requests-ready",
 } as const;
 
 export type IpcSuccess<T> = { ok: true; value: T };
@@ -27,11 +28,17 @@ export interface SaveFileRequest {
 
 export type MenuCommand = "open" | "save" | "saveAs";
 
+export interface OpenRequestReady {
+  notice: string | null;
+  productName: string;
+}
+
 export interface MdApi {
-  getInitialFile(): Promise<IpcResult<OpenedFile | null>>;
   openFile(): Promise<IpcResult<OpenedFile | null>>;
   saveFile(request: SaveFileRequest): Promise<IpcResult<SavedFile | null>>;
   saveFileAs(request: SaveFileRequest): Promise<IpcResult<SavedFile | null>>;
   openExternal(url: string): Promise<IpcResult<void>>;
+  readyForOpenRequests(): Promise<IpcResult<OpenRequestReady>>;
   onMenuCommand(listener: (command: MenuCommand) => void): () => void;
+  onOpenRequest(listener: (request: IpcResult<OpenedFile>) => void): () => void;
 }

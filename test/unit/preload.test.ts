@@ -29,17 +29,17 @@ describe("preload bridge", () => {
     const api = electron.exposeInMainWorld.mock.calls[0]?.[1];
     expect(electron.exposeInMainWorld.mock.calls[0]?.[0]).toBe("mdApi");
 
-    await api.getInitialFile();
     await api.openFile();
     await api.saveFile({ path: "/tmp/a.md", text: "a" });
     await api.saveFileAs({ path: null, text: "b" });
     await api.openExternal("https://example.com");
+    await api.readyForOpenRequests();
     expect(electron.invoke.mock.calls).toEqual([
-      ["file:initial"],
       ["file:open"],
       ["file:save", { path: "/tmp/a.md", text: "a" }],
       ["file:save-as", { path: null, text: "b" }],
       ["link:open-external", "https://example.com"],
+      ["file:open-requests-ready"],
     ]);
 
     const listener = vi.fn();
@@ -49,5 +49,17 @@ describe("preload bridge", () => {
     expect(listener).toHaveBeenCalledWith("save");
     unsubscribe();
     expect(electron.removeListener).toHaveBeenCalledWith("menu:command", ipcListener);
+
+    const openListener = vi.fn();
+    const unsubscribeOpen = api.onOpenRequest(openListener);
+    const openIpcListener = electron.on.mock.calls[1]?.[1];
+    const request = { ok: true, value: { path: "/tmp/open.md", text: "open" } };
+    openIpcListener({}, request);
+    expect(openListener).toHaveBeenCalledWith(request);
+    unsubscribeOpen();
+    expect(electron.removeListener).toHaveBeenCalledWith(
+      "file:open-request",
+      openIpcListener,
+    );
   });
 });
