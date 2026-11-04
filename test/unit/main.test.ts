@@ -238,7 +238,7 @@ describe("main process", () => {
     expect(fileSystem.rename).toHaveBeenCalledWith(
       // Separator-agnostic: on Windows the temp path is joined with backslashes.
       expect.stringMatching(/[\\/]tmp[\\/]save\.md\.[^\\/]+\.tmp$/),
-      "/tmp/save.md",
+      path.resolve("/tmp/save.md"),
     );
 
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
