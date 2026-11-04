@@ -96,6 +96,7 @@ test("updates the preview after editing", {
   const { application, page } = await launchEditor(fixturePath);
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
+    await expect(editor).toContainText("Sample document");
     await editor.click();
     await page.keyboard.press("Control+End");
     await page.keyboard.type("\n\n## Added");
@@ -119,6 +120,8 @@ test("saves edits atomically and clears the dirty marker", {
 
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
+    // The argv file arrives after the io-worker port; typing earlier edits an untitled buffer.
+    await expect(editor).toContainText("Sample document");
     await editor.click();
     await page.keyboard.press("Control+End");
     await page.keyboard.type("\n\nsaved text");
@@ -167,6 +170,7 @@ test("an open request asks before discarding dirty changes", {
 
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
+    await expect(editor).toContainText("Sample document");
     await editor.click();
     await page.keyboard.type("dirty change");
     const dialogHandled = new Promise<void>((resolve, reject) => {
