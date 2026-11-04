@@ -174,7 +174,7 @@ test("an edit made while Save is in flight stays dirty and off disk", {
     await expect(page).toHaveTitle(/•/);
     await page.evaluate((insertedText) => {
       document.documentElement.dataset["saveRaceEdit"] = "waiting";
-      const removeListener = window.mdApi.onMenuCommand((command) => {
+      const removeListener = window.api.onMenuCommand((command) => {
         if (command !== "save") {
           return;
         }
@@ -271,3 +271,29 @@ test("the Save As menu item writes the path chosen by its dialog", {
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+if (process.platform !== "win32") {
+  test("saving a read-only file names it and explains the permission failure", {
+    tag: "@AC-R5-16",
+    annotation: { type: "AC-R5-16" },
+  }, async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-read-only-"));
+    const readOnlyPath = path.join(temporaryDirectory, "read-only.md");
+    await fs.writeFile(readOnlyPath, "# Read only\n", { mode: 0o400 });
+    const { application, page } = await launchEditor(readOnlyPath);
+    try {
+      await expect(page.getByTestId("editor")).toContainText("Read only");
+      await appendEditorText(page, "\nblocked edit");
+
+      await clickMenuItem(application, "file-save");
+
+      await expect(page.getByTestId("status")).toContainText("read-only.md");
+      await expect(page.getByTestId("status")).toContainText("permission");
+      expect(await fs.readFile(readOnlyPath, "utf8")).toBe("# Read only\n");
+    } finally {
+      await application.close();
+      await fs.chmod(readOnlyPath, 0o600);
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+}
