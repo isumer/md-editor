@@ -11,3 +11,9 @@ status: planned
 Given a 50 KB Markdown document is open
 When the user types (30+ samples after warm-up)
 Then the preview reflects each keystroke with p95 < 50 ms
+
+### AC-PERF-03 — A file named on the command line is editable soon after launch
+status: planned
+Given the app is launched with a Markdown file argument
+When the window appears
+Then the file's text is in the editor and accepts typing within 2 s of launch
