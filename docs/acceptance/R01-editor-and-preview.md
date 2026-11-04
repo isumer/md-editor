@@ -29,3 +29,9 @@ status: implemented
 Given several edits were made in quick succession
 When an older render result arrives after a newer one was applied
 Then the older result is discarded
+
+### AC-R1-06 — A failed render keeps the last good preview
+status: planned
+Given the preview shows a rendered document
+When a later render fails
+Then the previous preview stays visible, an error is shown, and the next successful render replaces both
