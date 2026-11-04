@@ -29,3 +29,9 @@ status: implemented
 Given raw HTML with an id equal to a DOM property name (e.g. `id="location"`)
 When it is previewed
 Then that element has no id
+
+### AC-SEC-06 — Packaged binaries carry the hardening fuses
+status: planned
+Given a packaged build for any platform
+When its Electron fuses are read
+Then RunAsNode, NODE_OPTIONS and --inspect are disabled, the app loads only from its ASAR with integrity validation, and cookie encryption is on
