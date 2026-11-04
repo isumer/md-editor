@@ -57,37 +57,37 @@ When another file is opened (menu, second launch, open-file)
 Then the user is asked before the changes are discarded, and cancelling keeps them
 
 ### AC-R5-10 — Save As writes to the chosen path and adopts it
-status: planned
+status: implemented
 Given an open document
 When the user chooses File > Save As and picks a new path
 Then the new file holds the text, the original file is unchanged, and later saves go to the new path
 
 ### AC-R5-11 — Saving an untitled document asks for a path
-status: planned
+status: implemented
 Given a new, never-saved document with text
 When the user chooses File > Save
 Then a save dialog is shown, and the file is written to the chosen path
 
 ### AC-R5-12 — A cancelled dialog changes nothing
-status: planned
+status: implemented
 Given an open, dirty document
 When the user cancels an Open or Save As dialog
 Then the document, its path, its dirty marker and the files on disk are unchanged
 
 ### AC-R5-13 — A file that cannot be read leaves the current document intact
-status: planned
+status: implemented
 Given an open document
 When opening another file fails (missing, no permission, not decodable)
 Then the status bar names the failure and the current document is unchanged
 
 ### AC-R5-14 — An edit made while a save is in flight stays unsaved
-status: planned
+status: implemented
 Given a save has started
 When the user types before it completes
 Then after it completes the document is still marked dirty and the file holds the text as of the save request
 
 ### AC-R5-15 — File menu items run their commands
-status: planned
+status: implemented
 Given the app is running
 When File > Open, Save or Save As is activated from the menu
 Then the corresponding action runs (dialog shown or file written), not only the item existing
