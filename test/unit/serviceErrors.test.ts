@@ -66,6 +66,19 @@ describe("service errors", () => {
     )).toMatchObject({ retryable: true });
   });
 
+  it("AC-R5-19: tells the user an out-of-sync file service can be retried", () => {
+    expect(formatMessage("file.outOfSync", { file: "notes.md" }))
+      .toBe(
+        "Could not save “notes.md”: the file service lost track of the document. Try again.",
+      );
+    expect(serviceError(
+      "OUT_OF_SYNC",
+      "file.outOfSync",
+      {},
+      true,
+    )).toMatchObject({ retryable: true, params: {} });
+  });
+
   it.each([
     "file.notFound",
     "file.isDirectory",
