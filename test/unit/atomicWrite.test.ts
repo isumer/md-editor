@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 describe("atomicWrite", () => {
-  it("writes new content", async () => {
+  it("AC-R5-02: writes new content", async () => {
     const directory = await temporaryDirectory();
     const target = path.join(directory, "document.md");
 
@@ -36,7 +36,7 @@ describe("atomicWrite", () => {
     await expect(fs.readFile(target, "utf8")).resolves.toBe("new content");
   });
 
-  it("overwrites existing content", async () => {
+  it("AC-R5-02: overwrites existing content", async () => {
     const directory = await temporaryDirectory();
     const target = path.join(directory, "document.md");
     await fs.writeFile(target, "old content", "utf8");
@@ -46,7 +46,7 @@ describe("atomicWrite", () => {
     await expect(fs.readFile(target, "utf8")).resolves.toBe("replacement");
   });
 
-  it("keeps the original and removes the temporary file when writing fails", async () => {
+  it("AC-R5-03: keeps the original and removes the temporary file when writing fails", async () => {
     const directory = await temporaryDirectory();
     const target = path.join(directory, "document.md");
     await fs.writeFile(target, "original", "utf8");
@@ -77,7 +77,64 @@ describe("atomicWrite", () => {
     expect((await fs.readdir(directory)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
-  it("serialises writes to the same resolved path", async () => {
+  it("AC-R5-03: reports a target path that cannot be resolved", async () => {
+    const resolutionFailure = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    const fileSystem: AtomicWriteFs = {
+      async open(): Promise<AtomicWriteHandle> {
+        throw new Error("open should not run");
+      },
+      async rename() {},
+      async unlink() {},
+      async realpath() {
+        throw resolutionFailure;
+      },
+      async stat() {
+        return { mode: 0o644 };
+      },
+      async chmod() {},
+    };
+
+    await expect(
+      atomicWrite("/virtual/document.md", "replacement", fileSystem),
+    ).rejects.toMatchObject({ cause: resolutionFailure });
+  });
+
+  it("AC-R5-03: reports a target that cannot be inspected", async () => {
+    const statFailure = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    const fileSystem: AtomicWriteFs = {
+      async open(): Promise<AtomicWriteHandle> {
+        throw new Error("open should not run");
+      },
+      async rename() {},
+      async unlink() {},
+      async realpath(filePath) {
+        return filePath;
+      },
+      async stat() {
+        throw statFailure;
+      },
+      async chmod() {},
+    };
+
+    await expect(
+      atomicWrite("/virtual/document.md", "replacement", fileSystem),
+    ).rejects.toMatchObject({ cause: statFailure });
+  });
+
+  it("AC-R5-03: cleans up when the target directory does not exist", async () => {
+    const directory = await temporaryDirectory();
+    const target = path.join(directory, "missing", "document.md");
+
+    await expect(atomicWrite(target, "content")).rejects.toThrow(
+      `Could not atomically write ${target}`,
+    );
+  });
+
+  it("AC-R5-04: serialises writes to the same resolved path", async () => {
     let openCount = 0;
     let finalContent = "";
     let secondRename: (() => void) | undefined;
@@ -130,7 +187,7 @@ describe("atomicWrite", () => {
     expect(finalContent).toBe("second");
   });
 
-  it.skipIf(process.platform === "win32")("updates a symlink target without replacing the link", async () => {
+  it.skipIf(process.platform === "win32")("AC-R5-05: updates a symlink target without replacing the link", async () => {
     const directory = await temporaryDirectory();
     const realTarget = path.join(directory, "real.md");
     const linkTarget = path.join(directory, "linked.md");
@@ -143,7 +200,7 @@ describe("atomicWrite", () => {
     await expect(fs.readFile(realTarget, "utf8")).resolves.toBe("new content");
   });
 
-  it.skipIf(process.platform === "win32")("preserves the target file mode", async () => {
+  it.skipIf(process.platform === "win32")("AC-R5-06: preserves the target file mode", async () => {
     const directory = await temporaryDirectory();
     const target = path.join(directory, "document.md");
     await fs.writeFile(target, "old content", { encoding: "utf8", mode: 0o640 });
@@ -154,7 +211,7 @@ describe("atomicWrite", () => {
     expect((await fs.stat(target)).mode & 0o7777).toBe(0o640);
   });
 
-  it("retries transient Windows rename failures with backoff", async () => {
+  it("AC-R5-07: retries transient Windows rename failures with backoff", async () => {
     const renameFailures = [
       Object.assign(new Error("locked once"), { code: "EPERM" }),
       Object.assign(new Error("locked twice"), { code: "EACCES" }),
@@ -200,7 +257,7 @@ describe("atomicWrite", () => {
     expect(delays).toEqual([50, 100, 200]);
   });
 
-  it("cleans up after exhausting Windows rename retries", async () => {
+  it("AC-R5-07: cleans up after exhausting Windows rename retries", async () => {
     const renameFailures = Array.from({ length: 6 }, (_, index) =>
       Object.assign(new Error(`locked ${index}`), { code: "EPERM" }),
     );
