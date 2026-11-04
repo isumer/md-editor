@@ -121,7 +121,8 @@ describe("atomicWrite", () => {
     };
 
     await expect(
-      atomicWrite("/virtual/document.md", "replacement", fileSystem),
+      // The mode is read only on POSIX, so pin the platform to reach the stat branch everywhere.
+      atomicWrite("/virtual/document.md", "replacement", fileSystem, "linux"),
     ).rejects.toMatchObject({ cause: statFailure });
   });
 
