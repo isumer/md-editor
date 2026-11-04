@@ -3,9 +3,14 @@ import path from "node:path";
 
 import { app, BrowserWindow } from "electron";
 
-import { IPC_CHANNELS, type IpcResult, type OpenedFile } from "../../shared/api";
-import { handleIpc, ipcFailure } from "../ipc/result";
-import { isFile, readDocument } from "../services/file";
+import {
+  FILE_CHANNELS,
+  fileContracts,
+  type OpenedFile,
+} from "../../shared/ipc/file";
+import { toServiceError, type Result } from "../../shared/ipc/result";
+import { handle } from "../ipc/handle";
+import { fileService, isFile } from "../services/file";
 import { createMenu } from "./menu";
 import { getMainWindow } from "./window";
 
@@ -153,15 +158,15 @@ async function deliverOpenRequest(filePath: string): Promise<void> {
     return;
   }
   try {
-    const opened = await readDocument(filePath);
-    mainWindow.webContents.send(IPC_CHANNELS.openRequest, {
+    const opened = await fileService.openPath(mainWindow.id, filePath);
+    mainWindow.webContents.send(FILE_CHANNELS.openRequest, {
       ok: true,
       value: opened,
-    } satisfies IpcResult<OpenedFile>);
+    } satisfies Result<OpenedFile>);
   } catch (error) {
     mainWindow.webContents.send(
-      IPC_CHANNELS.openRequest,
-      ipcFailure(error) satisfies IpcResult<OpenedFile>,
+      FILE_CHANNELS.openRequest,
+      { ok: false, error: toServiceError(error) } satisfies Result<OpenedFile>,
     );
   }
 }
@@ -169,7 +174,7 @@ async function deliverOpenRequest(filePath: string): Promise<void> {
 const openRequests = new OpenRequests({ deliver: deliverOpenRequest, isFile });
 
 export function registerOpenRequestIpcHandler(): void {
-  handleIpc(IPC_CHANNELS.readyForOpenRequests, async () => {
+  handle(fileContracts.openRequestsReady, async () => {
     await openRequests.setRendererReady();
     return { notice: startupNotice, productName: app.getName() };
   });

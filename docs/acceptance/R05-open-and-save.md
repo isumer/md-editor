@@ -93,7 +93,7 @@ When File > Open, Save or Save As is activated from the menu
 Then the corresponding action runs (dialog shown or file written), not only the item existing
 
 ### AC-R5-16 — Failures are explained in words that name the file
-status: planned
+status: implemented
 Given an open or save fails (missing, is a folder, no permission, disk full, changed on disk)
 When the status bar reports it
 Then the message names the file and the reason in plain words, and does not show a raw system code alone

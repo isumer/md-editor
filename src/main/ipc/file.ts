@@ -1,9 +1,12 @@
-import { IPC_CHANNELS } from "../../shared/api";
-import { saveDocument, showOpenDialog } from "../services/file";
-import { handleIpc } from "./result";
+import { fileContracts } from "../../shared/ipc/file";
+import { fileService } from "../services/file";
+import { handle } from "./handle";
 
 export function registerFileIpcHandlers(): void {
-  handleIpc(IPC_CHANNELS.openFile, showOpenDialog);
-  handleIpc(IPC_CHANNELS.saveFile, async (request: unknown) => saveDocument(request, false));
-  handleIpc(IPC_CHANNELS.saveFileAs, async (request: unknown) => saveDocument(request, true));
+  handle(fileContracts.openFile, async (_request, context) =>
+    fileService.open(context.windowId));
+  handle(fileContracts.saveFile, async (request, context) =>
+    fileService.save(context.windowId, request));
+  handle(fileContracts.saveFileAs, async (request, context) =>
+    fileService.saveAs(context.windowId, request));
 }

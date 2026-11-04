@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// One shared Electron fake keeps this pre-existing process-lifecycle harness coherent.
 const electron = vi.hoisted(() => {
   const ipcHandlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
   const appHandlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -11,7 +12,12 @@ const electron = vi.hoisted(() => {
   class BrowserWindowMock {
     static instances: BrowserWindowMock[] = [];
     static getAllWindows = vi.fn(() => BrowserWindowMock.instances);
+    static fromId = vi.fn((id: number) =>
+      BrowserWindowMock.instances.find((window) => window.id === id) ?? null);
+    static fromWebContents = vi.fn((webContents: unknown) =>
+      BrowserWindowMock.instances.find((window) => window.webContents === webContents) ?? null);
 
+    readonly id: number;
     readonly options: Record<string, unknown>;
     readonly windowHandlers = new Map<string, (...args: any[]) => unknown>();
     readonly webHandlers = new Map<string, (...args: any[]) => unknown>();
@@ -21,8 +27,12 @@ const electron = vi.hoisted(() => {
     focus = vi.fn();
     restore = vi.fn();
     isMinimized = vi.fn(() => false);
-    loadFile = vi.fn(async () => undefined);
+    readonly mainFrame = { url: "" };
+    loadFile = vi.fn(async (filePath: string) => {
+      this.mainFrame.url = new URL(`file://${filePath}`).href;
+    });
     webContents = {
+      mainFrame: this.mainFrame,
       on: vi.fn((event: string, handler: (...args: any[]) => unknown) => {
         this.webHandlers.set(event, handler);
       }),
@@ -33,6 +43,7 @@ const electron = vi.hoisted(() => {
     };
 
     constructor(options: Record<string, unknown>) {
+      this.id = BrowserWindowMock.instances.length + 1;
       this.options = options;
       BrowserWindowMock.instances.push(this);
     }
@@ -104,6 +115,8 @@ const electron = vi.hoisted(() => {
       BrowserWindowMock.instances.length = 0;
       BrowserWindowMock.getAllWindows.mockReset();
       BrowserWindowMock.getAllWindows.mockImplementation(() => BrowserWindowMock.instances);
+      BrowserWindowMock.fromId.mockClear();
+      BrowserWindowMock.fromWebContents.mockClear();
     },
   };
 });
@@ -166,7 +179,14 @@ async function invoke(channel: string, ...args: unknown[]) {
   if (!handler) {
     throw new Error(`Missing IPC handler ${channel}`);
   }
-  return handler({}, ...args);
+  const window = electron.BrowserWindowMock.instances[0];
+  if (!window) {
+    throw new Error("IPC invocation requires an application window");
+  }
+  return handler({
+    sender: window.webContents,
+    senderFrame: window.webContents.mainFrame,
+  }, ...args);
 }
 
 async function readyApplication(): Promise<void> {
@@ -228,7 +248,7 @@ describe("main process", () => {
     await loadMain();
     await readyApplication();
 
-    await expect(invoke("file:open-requests-ready")).resolves.toEqual({
+    await expect(invoke("file:open-requests-ready", {})).resolves.toEqual({
       ok: true,
       value: { notice: null, productName: "MD Editor" },
     });
@@ -275,29 +295,31 @@ describe("main process", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("read only"));
     await loadMain();
+    await readyApplication();
 
     electron.dialog.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
       filePaths: ["/tmp/before-ready.md"],
     });
     fileSystem.readFile.mockResolvedValueOnce("before ready");
-    await expect(invoke("file:open")).resolves.toEqual({
+    fileSystem.realpath.mockResolvedValueOnce("/tmp/before-ready.md");
+    const firstOpen = await invoke("file:open", {});
+    expect(firstOpen).toMatchObject({
       ok: true,
-      value: { path: "/tmp/before-ready.md", text: "before ready" },
+      value: { name: "before-ready.md", text: "before ready" },
     });
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
       filePath: "/tmp/before-ready-save.md",
     });
-    await expect(invoke("file:save", { path: null, text: "before ready" }))
-      .resolves.toEqual({
+    await expect(invoke("file:save", { grant: null, text: "before ready" }))
+      .resolves.toMatchObject({
         ok: true,
-        value: { path: "/tmp/before-ready-save.md" },
+        value: { name: "before-ready-save.md" },
       });
     fileSystem.handle.writeFile.mockClear();
     fileSystem.handle.sync.mockClear();
     fileSystem.rename.mockClear();
-    await readyApplication();
     expect([...electron.ipcHandlers.keys()]).toEqual([
       "file:open",
       "file:save",
@@ -308,67 +330,109 @@ describe("main process", () => {
 
     electron.dialog.showOpenDialog.mockResolvedValueOnce({
       canceled: false,
+      filePaths: ["/tmp/canonical-failure.md"],
+    });
+    fileSystem.readFile.mockResolvedValueOnce("read before canonical failure");
+    fileSystem.realpath.mockRejectedValueOnce(Object.assign(
+      new Error("canonical permission denied"),
+      { code: "EACCES" },
+    ));
+    await expect(invoke("file:open", {})).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "PERMISSION_DENIED",
+        params: { file: "canonical-failure.md" },
+      },
+    });
+
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
       filePaths: ["/tmp/open.md"],
     });
     fileSystem.readFile.mockResolvedValue("opened text");
-    await expect(invoke("file:open")).resolves.toEqual({
+    fileSystem.realpath.mockResolvedValueOnce("/tmp/open.md");
+    const secondOpen = await invoke("file:open", {});
+    expect(secondOpen).toMatchObject({
       ok: true,
-      value: { path: "/tmp/open.md", text: "opened text" },
+      value: { name: "open.md", text: "opened text" },
     });
     electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
-    await expect(invoke("file:open")).resolves.toEqual({ ok: true, value: null });
+    await expect(invoke("file:open", {})).resolves.toEqual({ ok: true, value: null });
     electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [] });
-    await expect(invoke("file:open")).resolves.toEqual({ ok: true, value: null });
+    await expect(invoke("file:open", {})).resolves.toEqual({ ok: true, value: null });
 
-    await expect(invoke("file:save", { path: "/tmp/save.md", text: "new" }))
-      .resolves.toEqual({ ok: true, value: { path: "/tmp/save.md" } });
+    const openGrant = (secondOpen as { value: { grant: string } }).value.grant;
+    await expect(invoke("file:save", { grant: openGrant, text: "new" }))
+      .resolves.toEqual({
+        ok: true,
+        value: { grant: openGrant, name: "open.md" },
+      });
     expect(fileSystem.handle.writeFile).toHaveBeenCalledWith("new", { encoding: "utf8" });
     expect(fileSystem.handle.sync).toHaveBeenCalledTimes(1);
     expect(fileSystem.rename).toHaveBeenCalledWith(
       // Separator-agnostic: on Windows the temp path is joined with backslashes.
-      expect.stringMatching(/[\\/]tmp[\\/]save\.md\.[^\\/]+\.tmp$/),
-      path.resolve("/tmp/save.md"),
+      expect.stringMatching(/[\\/]tmp[\\/]open\.md\.[^\\/]+\.tmp$/),
+      path.resolve("/tmp/open.md"),
     );
+
+    fileSystem.access.mockRejectedValueOnce(Object.assign(
+      new Error("read only"),
+      { code: "EACCES" },
+    ));
+    await expect(invoke("file:save", { grant: openGrant, text: "blocked" }))
+      .resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: "PERMISSION_DENIED",
+          params: { file: "open.md" },
+        },
+      });
 
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
       filePath: "/tmp/save-as.md",
     });
-    await expect(invoke("file:save-as", { path: null, text: "save as" }))
-      .resolves.toEqual({ ok: true, value: { path: "/tmp/save-as.md" } });
+    await expect(invoke("file:save-as", { grant: openGrant, text: "save as" }))
+      .resolves.toMatchObject({ ok: true, value: { name: "save-as.md" } });
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
-    await expect(invoke("file:save", { path: null, text: "cancel" }))
+    await expect(invoke("file:save-as", { grant: null, text: "cancel" }))
+      .resolves.toEqual({ ok: true, value: null });
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+    await expect(invoke("file:save", { grant: null, text: "cancel" }))
       .resolves.toEqual({ ok: true, value: null });
     electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false });
-    await expect(invoke("file:save", { path: null, text: "no path" }))
+    await expect(invoke("file:save", { grant: null, text: "no path" }))
       .resolves.toEqual({ ok: true, value: null });
 
-    for (const invalid of [null, {}, { path: null }, { path: 1, text: "x" }, { path: null, text: 1 }]) {
+    for (const invalid of [null, {}, { grant: null }, { grant: 1, text: "x" }, { grant: null, text: 1 }]) {
       await expect(invoke("file:save", invalid)).resolves.toMatchObject({
         ok: false,
-        code: "BAD_REQUEST",
+        error: { code: "BAD_REQUEST" },
       });
     }
     electron.dialog.showOpenDialog.mockRejectedValueOnce("dialog failed");
-    await expect(invoke("file:open")).resolves.toEqual({
+    await expect(invoke("file:open", {})).resolves.toMatchObject({
       ok: false,
-      code: "UNKNOWN",
-      message: "dialog failed",
+      error: { code: "UNKNOWN" },
     });
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
-      await expect(invoke("link:open-external", url)).resolves.toEqual({
+      await expect(invoke("link:open-external", { url })).resolves.toEqual({
         ok: true,
         value: undefined,
       });
     }
-    for (const url of [42, "not a url", "file:///tmp/private.md"]) {
-      await expect(invoke("link:open-external", url)).resolves.toMatchObject({
+    for (const [url, code] of [
+      [42, "BAD_REQUEST"],
+      ["not a url", "BAD_REQUEST"],
+      ["file:///tmp/private.md", "UNSUPPORTED_SCHEME"],
+    ] as const) {
+      await expect(invoke("link:open-external", { url })).resolves.toMatchObject({
         ok: false,
-        code: "BAD_REQUEST",
+        error: { code },
       });
     }
-    await expect(invoke("file:open-requests-ready")).resolves.toEqual({
+    await expect(invoke("file:open-requests-ready", {})).resolves.toEqual({
       ok: true,
       value: {
         notice: "Portable data is not writable; using the default profile.",
@@ -393,6 +457,7 @@ describe("main process", () => {
       return { isFile: () => true };
     });
     fileSystem.readFile.mockResolvedValue("startup text");
+    fileSystem.realpath.mockImplementation(async (filePath: string) => filePath);
 
     await loadMain();
     for (const entry of addedProcessListeners) {
@@ -420,12 +485,16 @@ describe("main process", () => {
       "userData",
       path.join("media", "data"),
     );
-    await invoke("file:open-requests-ready");
+    await invoke("file:open-requests-ready", {});
     expect(firstWindow?.webContents.send).toHaveBeenCalledWith(
       "file:open-request",
       {
         ok: true,
-        value: { path: path.resolve("document.md"), text: "startup text" },
+        value: {
+          grant: expect.any(String),
+          name: "document.md",
+          text: "startup text",
+        },
       },
     );
     firstWindow?.webContents.send.mockClear();
@@ -444,7 +513,8 @@ describe("main process", () => {
       {
         ok: true,
         value: {
-          path: path.resolve(path.join("sender", "cwd"), "second.md"),
+          grant: expect.any(String),
+          name: "second.md",
           text: "second-instance text",
         },
       },
@@ -458,7 +528,10 @@ describe("main process", () => {
     electron.appHandlers.get("open-file")?.(openFileEvent, "/tmp/from-finder.md");
     await vi.waitFor(() => expect(firstWindow?.webContents.send).toHaveBeenCalledWith(
       "file:open-request",
-      { ok: false, code: "UNKNOWN", message: "open-file failed" },
+      {
+        ok: false,
+        error: expect.objectContaining({ code: "UNKNOWN" }),
+      },
     ));
     expect(openFileEvent.preventDefault).toHaveBeenCalledOnce();
     firstWindow?.webContents.send.mockClear();
@@ -484,7 +557,7 @@ describe("main process", () => {
       ["electron", "/tmp/while-closed.md"],
       path.parse("/tmp/while-closed.md").root,
     );
-    await invoke("file:open-requests-ready");
+    await invoke("file:open-requests-ready", {});
     if (firstWindow) {
       firstWindow.destroyed = false;
     }

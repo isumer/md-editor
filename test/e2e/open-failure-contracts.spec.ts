@@ -13,8 +13,7 @@ import {
 
 async function expectFailedOpenToPreserveDocument(
   failedPath: string,
-  // Today a directory read reports EISDIR without the path; 3b adds named, user-facing errors.
-  expectedStatus: string | RegExp = path.basename(failedPath),
+  expectedStatus: string,
 ): Promise<void> {
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -35,25 +34,31 @@ async function expectFailedOpenToPreserveDocument(
 }
 
 test("opening a missing file names the failure and keeps the current document", {
-  tag: "@AC-R5-13",
-  annotation: { type: "AC-R5-13" },
+  tag: ["@AC-R5-13", "@AC-R5-16"],
+  annotation: [{ type: "AC-R5-13" }, { type: "AC-R5-16" }],
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-missing-open-"));
   const missingPath = path.join(temporaryDirectory, "missing.md");
   try {
-    await expectFailedOpenToPreserveDocument(missingPath);
+    await expectFailedOpenToPreserveDocument(
+      missingPath,
+      "Could not access “missing.md”: it was not found.",
+    );
   } finally {
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
 
 test("opening a directory names the failure and keeps the current document", {
-  tag: "@AC-R5-13",
-  annotation: { type: "AC-R5-13" },
+  tag: ["@AC-R5-13", "@AC-R5-16"],
+  annotation: [{ type: "AC-R5-13" }, { type: "AC-R5-16" }],
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-directory-open-"));
   try {
-    await expectFailedOpenToPreserveDocument(temporaryDirectory, /EISDIR/);
+    await expectFailedOpenToPreserveDocument(
+      temporaryDirectory,
+      `Could not open “${path.basename(temporaryDirectory)}”: it is a folder.`,
+    );
   } finally {
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
@@ -61,15 +66,18 @@ test("opening a directory names the failure and keeps the current document", {
 
 if (process.platform !== "win32") {
   test("opening a file without read permission names the failure and keeps the document", {
-    tag: "@AC-R5-13",
-    annotation: { type: "AC-R5-13" },
+    tag: ["@AC-R5-13", "@AC-R5-16"],
+    annotation: [{ type: "AC-R5-13" }, { type: "AC-R5-16" }],
   }, async () => {
     const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-unreadable-"));
     const unreadablePath = path.join(temporaryDirectory, "unreadable.md");
     await fs.writeFile(unreadablePath, "# Must not open\n", { mode: 0o600 });
     await fs.chmod(unreadablePath, 0o000);
     try {
-      await expectFailedOpenToPreserveDocument(unreadablePath);
+      await expectFailedOpenToPreserveDocument(
+        unreadablePath,
+        "Could not access “unreadable.md”: permission was denied.",
+      );
     } finally {
       await fs.chmod(unreadablePath, 0o600);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });

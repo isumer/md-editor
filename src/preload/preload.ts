@@ -1,61 +1,81 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type {
-  IpcResult,
-  MdApi,
-  MenuCommand,
+  FILE_CHANNELS as SharedFileChannels,
   OpenRequestReady,
   OpenedFile,
-  SaveFileRequest,
   SavedFile,
-} from "../shared/api";
+  SaveFileRequest,
+} from "../shared/ipc/file";
+import type { LINK_CHANNELS as SharedLinkChannels } from "../shared/ipc/link";
+import type {
+  MENU_CHANNELS as SharedMenuChannels,
+  MenuCommand,
+} from "../shared/ipc/menu";
+import type { Result } from "../shared/ipc/result";
 
-const channels = {
+// A sandboxed preload cannot require our modules, so channels are copied; satisfies keeps them in step.
+const FILE_CHANNELS = {
   openFile: "file:open",
   saveFile: "file:save",
   saveFileAs: "file:save-as",
-  openExternal: "link:open-external",
-  menuCommand: "menu:command",
+  openRequestsReady: "file:open-requests-ready",
   openRequest: "file:open-request",
-  readyForOpenRequests: "file:open-requests-ready",
-} as const;
+} as const satisfies typeof SharedFileChannels;
+const LINK_CHANNELS = {
+  openExternal: "link:open-external",
+} as const satisfies typeof SharedLinkChannels;
+const MENU_CHANNELS = {
+  command: "menu:command",
+} as const satisfies typeof SharedMenuChannels;
 
-const mdApi: MdApi = {
-  openFile: () =>
-    ipcRenderer.invoke(channels.openFile) as Promise<
-      IpcResult<OpenedFile | null>
-    >,
-  saveFile: (request: SaveFileRequest) =>
-    ipcRenderer.invoke(channels.saveFile, request) as Promise<
-      IpcResult<SavedFile | null>
-    >,
-  saveFileAs: (request: SaveFileRequest) =>
-    ipcRenderer.invoke(channels.saveFileAs, request) as Promise<
-      IpcResult<SavedFile | null>
-    >,
-  openExternal: (url: string) =>
-    ipcRenderer.invoke(channels.openExternal, url) as Promise<IpcResult<void>>,
-  readyForOpenRequests: () =>
-    ipcRenderer.invoke(channels.readyForOpenRequests) as Promise<
-      IpcResult<OpenRequestReady>
-    >,
-  onMenuCommand: (listener: (command: MenuCommand) => void) => {
+interface Api {
+  openFile(): Promise<Result<OpenedFile | null>>;
+  saveFile(request: SaveFileRequest): Promise<Result<SavedFile | null>>;
+  saveFileAs(request: SaveFileRequest): Promise<Result<SavedFile | null>>;
+  openExternal(url: string): Promise<Result<void>>;
+  readyForOpenRequests(): Promise<Result<OpenRequestReady>>;
+  onMenuCommand(listener: (command: MenuCommand) => void): () => void;
+  onOpenRequest(listener: (request: Result<OpenedFile>) => void): () => void;
+}
+
+const api: Api = {
+  openFile: () => ipcRenderer.invoke(FILE_CHANNELS.openFile, {}) as Promise<
+    Result<OpenedFile | null>
+  >,
+  saveFile: (request) => ipcRenderer.invoke(
+    FILE_CHANNELS.saveFile,
+    request,
+  ) as Promise<Result<SavedFile | null>>,
+  saveFileAs: (request) => ipcRenderer.invoke(
+    FILE_CHANNELS.saveFileAs,
+    request,
+  ) as Promise<Result<SavedFile | null>>,
+  openExternal: (url) => ipcRenderer.invoke(
+    LINK_CHANNELS.openExternal,
+    { url },
+  ) as Promise<Result<void>>,
+  readyForOpenRequests: () => ipcRenderer.invoke(
+    FILE_CHANNELS.openRequestsReady,
+    {},
+  ) as Promise<Result<OpenRequestReady>>,
+  onMenuCommand: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, command: MenuCommand) => {
       listener(command);
     };
-    ipcRenderer.on(channels.menuCommand, handler);
-    return () => ipcRenderer.removeListener(channels.menuCommand, handler);
+    ipcRenderer.on(MENU_CHANNELS.command, handler);
+    return () => ipcRenderer.removeListener(MENU_CHANNELS.command, handler);
   },
-  onOpenRequest: (listener: (request: IpcResult<OpenedFile>) => void) => {
+  onOpenRequest: (listener) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      request: IpcResult<OpenedFile>,
+      request: Result<OpenedFile>,
     ) => {
       listener(request);
     };
-    ipcRenderer.on(channels.openRequest, handler);
-    return () => ipcRenderer.removeListener(channels.openRequest, handler);
+    ipcRenderer.on(FILE_CHANNELS.openRequest, handler);
+    return () => ipcRenderer.removeListener(FILE_CHANNELS.openRequest, handler);
   },
 };
 
-contextBridge.exposeInMainWorld("mdApi", mdApi);
+contextBridge.exposeInMainWorld("api", api);
