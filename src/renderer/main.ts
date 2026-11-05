@@ -66,12 +66,6 @@ interface RenderWorkerPort {
   onerror: ((event: ErrorEvent) => void) | null;
 }
 
-type RenderWorkerFactory = (url: URL) => RenderWorkerPort;
-
-interface RenderWorkerInjection {
-  __mdEditorRenderWorkerFactory?: RenderWorkerFactory;
-}
-
 function defaultRenderWorkerFactory(url: URL): RenderWorkerPort {
   return new Worker(url, { type: "module" });
 }
@@ -79,11 +73,9 @@ function defaultRenderWorkerFactory(url: URL): RenderWorkerPort {
 const editorHost = requiredElement<HTMLElement>("#editor");
 const preview = requiredElement<HTMLElement>("#preview");
 const status = requiredElement<HTMLElement>("#status");
-// E2E substitutes this factory to exercise worker failure recovery.
-const createRenderWorker =
-  (globalThis as RenderWorkerInjection).__mdEditorRenderWorkerFactory ??
-  defaultRenderWorkerFactory;
-const renderWorker = createRenderWorker(new URL(renderWorkerUrl, window.location.href));
+const renderWorker = defaultRenderWorkerFactory(
+  new URL(renderWorkerUrl, window.location.href),
+);
 const documentState = createDocumentState();
 const replication = new DocumentReplication();
 

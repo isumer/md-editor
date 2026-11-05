@@ -33,11 +33,22 @@ export interface RenderDetachMessage {
   docId: string;
 }
 
+// The preview has applied one fill batch and is ready for the next. The worker
+// keeps at most one batch in flight so the main thread can stay responsive.
+export interface RenderFillReadyMessage {
+  op: "fill-ready";
+  docId: string;
+  epoch: number;
+  version: number;
+  token: number;
+}
+
 export type RenderWorkerRequest =
   | RenderAttachMessage
   | RenderChangeMessage
   | RenderRequest
-  | RenderDetachMessage;
+  | RenderDetachMessage
+  | RenderFillReadyMessage;
 
 interface RenderResultVersion {
   id: number;
@@ -77,6 +88,7 @@ export type RenderResult =
     ok: true;
     mode: "append";
     blocks: readonly RenderBlock[];
+    fillToken: number;
     complete: boolean;
   })
   | (RenderResultVersion & {
@@ -228,7 +240,17 @@ function validDetach(value: unknown): value is RenderDetachMessage {
   return data !== null && data["op"] === "detach" && validDocId(data["docId"]);
 }
 
+function validFillReady(value: unknown): value is RenderFillReadyMessage {
+  const data = exactData(
+    value,
+    ["op", "docId", "epoch", "version", "token"],
+  );
+  return data !== null && data["op"] === "fill-ready" &&
+    validDocId(data["docId"]) && validVersion(data["epoch"]) &&
+    validVersion(data["version"]) && validVersion(data["token"]);
+}
+
 export function isRenderWorkerRequest(value: unknown): value is RenderWorkerRequest {
   return validAttach(value) || validChange(value) || validRender(value) ||
-    validDetach(value);
+    validDetach(value) || validFillReady(value);
 }
