@@ -126,6 +126,11 @@ describe("chordForEvent", () => {
 });
 
 describe("bindingForEvent", () => {
+  it("AC-R1-08: leaves Cmd+Y unbound on macOS and keeps Ctrl+Y redo elsewhere", () => {
+    expect(bindingForEvent(event("y", { metaKey: true }), "darwin")).toBeUndefined();
+    expect(bindingForEvent(event("y", { ctrlKey: true }), "linux")).toBe("redo");
+  });
+
   it("returns the command for a bound chord and nothing for an unknown one", () => {
     expect(bindingForEvent(event("s", { ctrlKey: true }), "linux")).toBe("file.save");
     expect(bindingForEvent(event("s", { ctrlKey: true, shiftKey: true }), "linux"))
