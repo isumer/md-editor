@@ -301,7 +301,7 @@ describe("io-worker supervisor lifecycle", () => {
     await exhaustRestarts(harness);
     const failurePort = harness.channels.at(-1)?.port1 as FakePort;
     failurePort.emit("message", { data: { op: "read" } });
-    failurePort.emit("message", { data: { id: "io-2", op: "write" } });
+    failurePort.emit("message", { data: { id: "io-2", op: "save" } });
 
     expect(received.at(-1)).toBe(harness.channels.at(-1)?.port2);
     expect(failurePort.messages).toEqual([{

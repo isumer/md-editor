@@ -105,13 +105,13 @@ When the process that reads and writes files dies and the user then saves
 Then the save writes the same file without asking for a path again, and a save that was in flight at the crash reports a retryable failure and leaves the document marked unsaved
 
 ### AC-R5-18 — Save writes the version the user saved without resending the document
-status: planned
+status: implemented
 Given a document is open and edited
 When the user saves
 Then the save request names a document version and carries no text, the file holds the text exactly as of that version, and edits typed while the save is in flight are not written and keep the document marked unsaved
 
 ### AC-R5-19 — The file process's copy of a document never saves the wrong text
-status: planned
+status: implemented
 Given a document is edited, replaced by another, or the file process restarts, in any interleaving
 When the user saves
 Then the file holds the editor's text at the saved version, or (if the file process's copy was lost or behind) the editor resends the document once and the save then succeeds; changes from an earlier load of the document are ignored
