@@ -77,3 +77,15 @@ status: implemented
 Given the page sends attach, change, save or detach messages over its port
 When a message has extra keys, wrong types, out-of-range or non-consecutive versions, an old epoch, a malformed change set, or names another window's document
 Then the file process drops or refuses it without changing any document copy or file, and still answers the next valid message
+
+### AC-SEC-14 — The app runs from its own origin and serves only its bundle
+status: planned
+Given the app window is open
+When the page reads `location.origin` and requests a file outside the bundle through `app://` (a `..` escape, an encoded escape, an absolute path, another host)
+Then the origin is `app://bundle`, the bundle files load, and every outside request is refused with 404 and no file content
+
+### AC-SEC-15 — The page policy blocks inline script, eval and file images
+status: planned
+Given the page is running with its content security policy
+When an inline script or `eval` is attempted, or an image is requested from a `file:` URL
+Then a `securitypolicyviolation` is reported for each, nothing runs or loads, and the live window reports sandbox, context isolation and web security on and Node integration off
