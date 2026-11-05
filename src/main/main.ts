@@ -25,11 +25,14 @@ import {
   registerApplicationEvents,
   registerOpenRequestIpcHandler,
 } from "./app/startup";
+import { applyMenuContribution } from "./app/menu";
+import { createContributionPump } from "./app/menuContribution";
 import { createWindow, setMainWindow } from "./app/window";
 import { GrantTable } from "./grants/grantTable";
 import { createIoWorkerSupervisor } from "./io/ioWorker";
 import { registerFileIpcHandlers } from "./ipc/file";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
+import { registerMenuIpcHandler } from "./ipc/menu";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 
@@ -56,6 +59,7 @@ const ioWorker = createIoWorkerSupervisor(
 );
 const fileService = new DocumentGrantService(grants, new FileDialogs(), ioWorker);
 const openRequests = createOpenRequests(fileService);
+const menuContributions = createContributionPump({ apply: applyMenuContribution });
 
 process.on("uncaughtException", (error) => {
   logProcessEvent("uncaughtException", error);
@@ -91,6 +95,7 @@ async function attachIoPort(window: BrowserWindow): Promise<void> {
 registerFileIpcHandlers(fileService);
 registerLinkIpcHandler();
 registerOpenRequestIpcHandler(openRequests);
+registerMenuIpcHandler(menuContributions);
 registerApplicationEvents(createApplicationWindow, logProcessEvent, openRequests);
 app.on("before-quit", () => ioWorker.stop());
 void initializeApplication(

@@ -56,6 +56,7 @@ describe("preload bridge", () => {
       [
         "attachDocument",
         "chooseSaveTarget",
+        "contributeMenu",
         "detachDocument",
         "onMenuCommand",
         "onOpenRequest",
@@ -74,12 +75,20 @@ describe("preload bridge", () => {
     await api.releaseDocument({ grant: "grant-a" });
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
+    await api.contributeMenu({
+      fileMenuTitle: "File",
+      items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
+    });
     expect(electron.invoke.mock.calls).toEqual([
       ["file:open", {}],
       ["file:choose-save-target", { grant: "grant-a" }],
       ["file:release-document", { grant: "grant-a" }],
       ["link:open-external", { url: "https://example.com" }],
       ["file:open-requests-ready", {}],
+      ["menu:contribute", {
+        fileMenuTitle: "File",
+        items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
+      }],
     ]);
 
     const port = new FakePort();
@@ -341,8 +350,8 @@ describe("preload bridge", () => {
     const listener = vi.fn();
     const unsubscribe = api.onMenuCommand(listener);
     const menuCall = electron.on.mock.calls.find(([channel]) => channel === "menu:command");
-    menuCall?.[1]({}, "save");
-    expect(listener).toHaveBeenCalledWith("save");
+    menuCall?.[1]({}, "file-save");
+    expect(listener).toHaveBeenCalledWith("file-save");
     unsubscribe();
     expect(electron.removeListener).toHaveBeenCalledWith("menu:command", menuCall?.[1]);
 

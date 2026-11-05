@@ -19,7 +19,8 @@ import type {
 import type { LINK_CHANNELS as SharedLinkChannels } from "../shared/ipc/link";
 import type {
   MENU_CHANNELS as SharedMenuChannels,
-  MenuCommand,
+  MenuCommandMessage,
+  MenuContribution,
 } from "../shared/ipc/menu";
 import type { Result } from "../shared/ipc/result";
 
@@ -36,6 +37,7 @@ const LINK_CHANNELS = {
 } as const satisfies typeof SharedLinkChannels;
 const MENU_CHANNELS = {
   command: "menu:command",
+  contribute: "menu:contribute",
 } as const satisfies typeof SharedMenuChannels;
 
 interface RendererPort {
@@ -230,7 +232,8 @@ interface Api {
   releaseDocument(request: ReleaseDocumentRequest): Promise<Result<void>>;
   openExternal(url: string): Promise<Result<void>>;
   readyForOpenRequests(): Promise<Result<OpenRequestReady>>;
-  onMenuCommand(listener: (command: MenuCommand) => void): () => void;
+  onMenuCommand(listener: (command: MenuCommandMessage) => void): () => void;
+  contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
 }
 
@@ -287,12 +290,16 @@ const api: Api = {
     {},
   ) as Promise<Result<OpenRequestReady>>,
   onMenuCommand: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, command: MenuCommand) => {
+    const handler = (_event: Electron.IpcRendererEvent, command: MenuCommandMessage) => {
       listener(command);
     };
     ipcRenderer.on(MENU_CHANNELS.command, handler);
     return () => ipcRenderer.removeListener(MENU_CHANNELS.command, handler);
   },
+  contributeMenu: (request) => ipcRenderer.invoke(
+    MENU_CHANNELS.contribute,
+    request,
+  ) as Promise<Result<void>>,
   onOpenRequest: (listener) => {
     const handler = (
       _event: Electron.IpcRendererEvent,

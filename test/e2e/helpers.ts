@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   _electron as electron,
+  expect,
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
@@ -56,6 +57,12 @@ export async function clickMenuItem(
   application: ElectronApplication,
   menuItemId: string,
 ): Promise<void> {
+  // The renderer contributes the File action items after it has wired its commands.
+  await expect.poll(
+    () => application.evaluate(({ Menu }, id) =>
+      Boolean(Menu.getApplicationMenu()?.getMenuItemById(id)), menuItemId),
+    { timeout: 5_000 },
+  ).toBe(true);
   const clicked = await application.evaluate(({ Menu }, id) => {
     const item = Menu.getApplicationMenu()?.getMenuItemById(id);
     if (!item) {
