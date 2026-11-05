@@ -31,7 +31,7 @@ When an older render result arrives after a newer one was applied
 Then the older result is discarded
 
 ### AC-R1-06 — A failed render keeps the last good preview
-status: planned
+status: implemented
 Given the preview shows a rendered document
 When a later render fails
 Then the previous preview stays visible, an error is shown, and the next successful render replaces both
@@ -49,19 +49,19 @@ When the user presses CmdOrCtrl+Z and then CmdOrCtrl+Shift+Z (or CmdOrCtrl+Y)
 Then the edit is undone and then redone, the preview follows both, and the title's dirty marker reflects the final state
 
 ### AC-R1-09 — Preview patching touches only the changed block
-status: planned
+status: implemented
 Given a document with at least three paragraphs is previewed
 When the user types in paragraph 3
 Then every preview element for the other paragraphs is the same DOM node as before, and paragraph 3's element is updated
 
 ### AC-R1-10 — Editing a large document re-parses only the touched chunks
-status: planned
+status: implemented
 Given a 20 MB Markdown document is open
 When the user edits one paragraph
 Then the render worker re-parses only the chunks containing the edit (counted, not timed: the parse count stays far below the whole document)
 
 ### AC-R1-11 — An image outside the edited region is not re-requested
-status: planned
+status: implemented
 Given a document with an image in one block and text in another is previewed
 When the user edits the text block
 Then the image is not re-requested (its request count does not increase)
