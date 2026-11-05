@@ -201,6 +201,7 @@ test("the preload exposes only the fixed named API", {
       keys: [
         "attachDocument",
         "chooseSaveTarget",
+        "contributeMenu",
         "detachDocument",
         "onMenuCommand",
         "onOpenRequest",

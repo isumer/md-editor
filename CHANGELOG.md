@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Keyboard shortcuts now come from one place in the editor: Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (Cmd on macOS) open, save, undo and redo, and also work with a non-Latin keyboard layout such as Russian. The File menu still shows these shortcuts. On Windows, AltGr letters (Ctrl+Alt) are always typed, never taken as shortcuts.
+- The menu now has Edit (Cut, Copy, Paste, Select All), Window and Help menus; on macOS it has the standard application menu.
 - The app now loads from its own private address instead of a local file, serves only its own files, and no longer lets the page load images from local file paths.
 
 - Typing no longer builds a copy of the whole document for the preview: the preview worker keeps its own copy fed by the same small changes, and always renders exactly the version it names, asking for the document again if it fell behind.
