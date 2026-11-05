@@ -68,7 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         run: npm run check:coverage
       - name: Run end-to-end tests
-        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g "AC-PERF-09: fling-scrolling the 500 KB" --repeat-each 3
+        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g "500 KB preview has no frame" --repeat-each 3
       - name: Check acceptance criteria
         run: npm run check:acceptance
       - name: Add JUnit summary
