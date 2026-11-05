@@ -1,9 +1,12 @@
+import { Text } from "@codemirror/state";
+
 export interface DocumentState {
   currentGrant: string | null;
   currentName: string | null;
   dirty: boolean;
   applyingDocument: boolean;
   productName: string;
+  saved: Text;
 }
 
 export function createDocumentState(): DocumentState {
@@ -13,6 +16,7 @@ export function createDocumentState(): DocumentState {
     dirty: false,
     applyingDocument: false,
     productName: "",
+    saved: Text.empty,
   };
 }
 

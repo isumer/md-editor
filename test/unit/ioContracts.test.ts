@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   ioRequestId,
+  ioMessageOperation,
   isIoReply,
+  isIoOneWayMessage,
   isIoRequest,
 } from "../../src/shared/ipc/io";
 import {
@@ -21,15 +23,29 @@ function withOwnProto<T extends object>(value: T): T {
 }
 
 describe("io-worker contracts", () => {
-  it("AC-SEC-12: accepts only exact read and write requests", () => {
+  it("AC-SEC-12 AC-SEC-13: accepts only exact read, attach, and save requests", () => {
     expect(isIoRequest({ id: "1", op: "read", grant: "grant" })).toBe(true);
-    expect(isIoRequest({ id: "2", op: "write", grant: "grant", text: "text" }))
-      .toBe(true);
+    expect(isIoRequest({
+      id: "2",
+      op: "attach",
+      docId: "doc",
+      epoch: 1,
+      version: 0,
+      text: "text",
+    })).toBe(true);
+    expect(isIoRequest({
+      id: "3",
+      op: "save",
+      grant: "grant",
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+    })).toBe(true);
 
     expect(isIoRequest({ id: "1", op: "read", grant: "grant", extra: true }))
       .toBe(false);
     expect(isIoRequest({ id: 1, op: "read", grant: "grant" })).toBe(false);
-    expect(isIoRequest({ id: "1", op: "write", grant: "grant", text: 42 }))
+    expect(isIoRequest({ id: "1", op: "save", grant: "grant", text: "forbidden" }))
       .toBe(false);
     expect(isIoRequest(withOwnProto({ id: "1", op: "read", grant: "grant" })))
       .toBe(false);
@@ -44,10 +60,80 @@ describe("io-worker contracts", () => {
     expect(isIoRequest(hostileProxy)).toBe(false);
     expect(isIoRequest({
       id: "oversized",
-      op: "write",
-      grant: "grant",
+      op: "attach",
+      docId: "doc",
+      epoch: 0,
+      version: 0,
       text: oversizedText,
     })).toBe(false);
+  });
+
+  it("AC-R5-18: refuses a save request that carries document text", () => {
+    expect(isIoRequest({
+      id: "save",
+      op: "save",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+      text: "must not cross the port",
+    })).toBe(false);
+  });
+
+  it("AC-SEC-13: accepts only exact consecutive change and detach messages", () => {
+    const change = {
+      op: "change",
+      docId: "doc",
+      epoch: 2,
+      fromVersion: 4,
+      toVersion: 5,
+      changes: [3, [0, "line one", "line two"]],
+    };
+    expect(isIoOneWayMessage(change)).toBe(true);
+    expect(isIoOneWayMessage({ op: "detach", docId: "doc" })).toBe(true);
+
+    expect(isIoOneWayMessage({ ...change, extra: true })).toBe(false);
+    expect(isIoOneWayMessage({ ...change, toVersion: 6 })).toBe(false);
+    expect(isIoOneWayMessage({ ...change, changes: [[1, 2]] })).toBe(false);
+    expect(isIoOneWayMessage(withOwnProto({ ...change }))).toBe(false);
+
+    const accessorChange = { ...change };
+    Object.defineProperty(accessorChange, "docId", { get: () => "doc" });
+    const accessorChanges = [0];
+    Object.defineProperty(accessorChanges, "0", { get: () => 0 });
+    const extraChanges = [0];
+    Object.defineProperty(extraChanges, "extra", { value: true });
+    const hostileChanges = new Proxy([], {
+      ownKeys: () => { throw new Error("hostile changes"); },
+    });
+    for (const changes of [{}, [[]], [[0, 1]], accessorChanges, extraChanges,
+      hostileChanges]) {
+      expect(isIoOneWayMessage({ ...change, changes })).toBe(false);
+    }
+    expect(isIoOneWayMessage(accessorChange)).toBe(false);
+  });
+
+  it("AC-SEC-13: reads a candidate operation without invoking hostile input", () => {
+    expect(ioMessageOperation({ op: "change" })).toBe("change");
+    expect(ioMessageOperation(null)).toBeNull();
+    expect(ioMessageOperation(new Proxy({}, {
+      getOwnPropertyDescriptor: () => { throw new Error("hostile operation"); },
+    }))).toBeNull();
+  });
+
+  it("AC-SEC-13: rejects unsafe epochs and versions", () => {
+    const attach = {
+      id: "attach",
+      op: "attach",
+      docId: "doc",
+      epoch: 0,
+      version: 0,
+      text: "",
+    };
+    for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(isIoRequest({ ...attach, epoch: invalid })).toBe(false);
+      expect(isIoRequest({ ...attach, version: invalid })).toBe(false);
+    }
   });
 
   it("AC-SEC-12: accepts only exact typed replies", () => {
@@ -57,6 +143,14 @@ describe("io-worker contracts", () => {
     })).toBe(true);
     expect(isIoReply({
       id: "2",
+      result: { ok: true, value: { name: "note.md", version: 2 } },
+    })).toBe(true);
+    expect(isIoReply({
+      id: "attach",
+      result: { ok: true, value: {} },
+    })).toBe(true);
+    expect(isIoReply({
+      id: "3",
       result: { ok: false, error: {
         code: "BAD_REQUEST",
         messageKey: "request.invalid",
@@ -146,7 +240,7 @@ function failure(params: unknown) {
 
 // io.ts and ioControl.ts each carry their own validators (shared/ imports nothing).
 const replyValidators = [
-  { name: "port", isReply: isIoReply, success: { name: "a.md" } },
+  { name: "port", isReply: isIoReply, success: { name: "a.md", version: 1 } },
   {
     name: "control",
     isReply: isRegisterGrantReply,

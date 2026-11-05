@@ -1,3 +1,5 @@
+import type { Text } from "@codemirror/state";
+
 import type { DocumentReference } from "../shared/ipc/file";
 import type { Result } from "../shared/ipc/result";
 import { formatMessage } from "../shared/messages/en";
@@ -8,6 +10,11 @@ import {
   messageParams,
   settleDocumentReplacement,
 } from "./core/document";
+import {
+  DocumentReplication,
+  type ReplicatedVersion,
+  saveReplicatedDocument,
+} from "./core/replication";
 import { createEditor } from "./editor/editor";
 import {
   wirePreviewLinks,
@@ -15,14 +22,17 @@ import {
 } from "./features/preview/preview";
 import { RenderScheduler } from "./features/preview/renderScheduler";
 import {
+  attachDocument,
   chooseSaveTarget,
+  detachDocument,
   onMenuCommand,
   onOpenRequest,
   openFile,
   readDocument,
   readyForOpenRequests,
   releaseDocument,
-  writeDocument,
+  saveDocument as saveDocumentVersion,
+  sendChanges,
 } from "./platform/api";
 import "./styles.css";
 
@@ -42,6 +52,7 @@ const renderWorker = new Worker(
   { type: "module" },
 );
 const documentState = createDocumentState();
+const replication = new DocumentReplication();
 
 let statusFromPreview = false;
 
@@ -69,14 +80,32 @@ const scheduler = new RenderScheduler((request: RenderRequest) => {
 const editor = createEditor(
   editorHost,
   documentState,
-  (text) => scheduler.schedule(text),
-  updateTitle,
+  {
+    onDocumentChanged: (text) => scheduler.schedule(text),
+    onChanges: (changes) => sendChanges(replication.changed(changes)),
+    updateTitle,
+  },
 );
 
 wireRenderWorker(renderWorker, scheduler, preview, showPreviewStatus);
 wirePreviewLinks(preview, showStatus);
 
-function displayDocument(documentFile: DocumentReference & { text: string }): void {
+async function attachText(
+  document: Text,
+  version: ReplicatedVersion,
+  fileName: string | null,
+): Promise<void> {
+  const result = await attachDocument({ ...version, text: document.toString() });
+  if (!result.ok) {
+    valueOrStatus(result, fileName);
+  }
+}
+
+async function displayDocument(
+  documentFile: DocumentReference & { text: string },
+): Promise<void> {
+  const replaced = replication.replace();
+  detachDocument({ docId: replaced.detachedDocId });
   documentState.applyingDocument = true;
   documentState.currentGrant = documentFile.grant;
   documentState.currentName = documentFile.name;
@@ -85,11 +114,13 @@ function displayDocument(documentFile: DocumentReference & { text: string }): vo
     selection: { anchor: 0 },
   });
   documentState.applyingDocument = false;
+  documentState.saved = editor.state.doc;
   documentState.dirty = false;
   updateTitle();
   scheduler.schedule(documentFile.text);
   showStatus();
   editor.focus();
+  await attachText(editor.state.doc, replaced.current, documentFile.name);
 }
 
 function valueOrStatus<T>(result: Result<T>, fileName: string | null = null): T | undefined {
@@ -135,7 +166,7 @@ async function loadDocument(reference: DocumentReference): Promise<void> {
     release: releaseGrant,
   });
   if (accepted) {
-    displayDocument({ ...reference, text: read.text });
+    await displayDocument({ ...reference, text: read.text });
   }
 }
 
@@ -150,58 +181,80 @@ function showUnexpectedError(error: unknown): void {
   showStatus(error instanceof Error ? error.message : String(error));
 }
 
-function markSavedIfCurrent(text: string): void {
-  if (editor.state.doc.toString() === text) {
-    documentState.dirty = false;
-  }
+function markSaved(document: Text): void {
+  documentState.saved = document;
+  documentState.dirty = !editor.state.doc.eq(document);
   updateTitle();
 }
 
-async function saveToCurrentGrant(text: string, grant: string): Promise<void> {
+interface SaveSnapshot {
+  document: Text;
+  version: ReplicatedVersion;
+}
+
+async function saveSnapshot(
+  snapshot: SaveSnapshot,
+  grant: string,
+  fileName: string | null,
+): Promise<string | undefined> {
   const saved = valueOrStatus(
-    await writeDocument({ grant, text }),
-    documentState.currentName,
+    await saveReplicatedDocument({
+      grant,
+      document: snapshot.document,
+      version: snapshot.version,
+      attach: attachDocument,
+      save: saveDocumentVersion,
+    }),
+    fileName,
   );
   if (saved) {
-    documentState.currentName = saved.name;
-    markSavedIfCurrent(text);
+    markSaved(snapshot.document);
     showStatus();
+    return saved.name;
+  }
+  return undefined;
+}
+
+async function saveToCurrentGrant(snapshot: SaveSnapshot, grant: string): Promise<void> {
+  const name = await saveSnapshot(snapshot, grant, documentState.currentName);
+  if (name) {
+    documentState.currentName = name;
+    updateTitle();
   }
 }
 
-async function saveToNewGrant(text: string): Promise<void> {
+async function saveToNewGrant(snapshot: SaveSnapshot): Promise<void> {
   const target = valueOrStatus(await chooseSaveTarget({
     grant: documentState.currentGrant,
   }));
   if (!target) {
     return;
   }
-  const saved = valueOrStatus(
-    await writeDocument({ grant: target.grant, text }),
-    target.name,
-  );
-  if (!saved) {
+  const name = await saveSnapshot(snapshot, target.grant, target.name);
+  if (!name) {
     await releaseGrant(target.grant);
     return;
   }
   const previousGrant = documentState.currentGrant;
   documentState.currentGrant = target.grant;
-  documentState.currentName = saved.name;
-  markSavedIfCurrent(text);
-  showStatus();
+  documentState.currentName = name;
+  updateTitle();
   if (previousGrant) {
     await releaseGrant(previousGrant);
   }
 }
 
-async function saveDocument(saveAs: boolean): Promise<void> {
-  const text = editor.state.doc.toString();
+async function saveEditorDocument(saveAs: boolean): Promise<void> {
+  const snapshot = {
+    document: editor.state.doc,
+    version: replication.current(),
+  };
   try {
     const grant = documentState.currentGrant;
     if (!saveAs && grant) {
-      await saveToCurrentGrant(text, grant);
+      await saveToCurrentGrant(snapshot, grant);
     } else {
-      await saveToNewGrant(text);
+      await saveToNewGrant(snapshot);
     }
   } catch (error) {
     showUnexpectedError(error);
@@ -212,9 +265,9 @@ onMenuCommand((command) => {
   if (command === "open") {
     void openDocument();
   } else if (command === "save") {
-    void saveDocument(false);
+    void saveEditorDocument(false);
   } else {
-    void saveDocument(true);
+    void saveEditorDocument(true);
   }
 });
 
@@ -224,6 +277,7 @@ async function initializeOpenRequests(): Promise<void> {
   scheduler.schedule(editor.state.doc.toString());
   updateTitle();
   try {
+    await attachText(editor.state.doc, replication.current(), null);
     const ready = valueOrStatus(await readyForOpenRequests());
     if (ready) {
       documentState.productName = ready.productName;
