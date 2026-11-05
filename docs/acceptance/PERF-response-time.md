@@ -23,3 +23,9 @@ status: planned
 Given a 20 MB document is open
 When the user types one character
 Then the message sent to the file process for that edit is the change (under 1 KB), not a copy of the document
+
+### AC-PERF-05 — Typing copies no whole document on the editor's thread
+status: planned
+Given a 20 MB document is open
+When the user types one character
+Then the editor's thread builds no whole-document string for that edit, and the message sent to the render process is the change (under 1 KB)
