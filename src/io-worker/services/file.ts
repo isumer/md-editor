@@ -2,11 +2,13 @@ import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 
 import { atomicWrite } from "../../node-shared/atomicWrite";
+import { resolvePathUnderRoot } from "../../node-shared/pathPolicy";
 import type {
   AttachDocumentInput,
   ChangeDocumentMessage,
   SaveDocumentInput,
 } from "../../shared/ipc/io";
+import type { ResolvedAsset } from "../../shared/ipc/ioControl";
 import { serviceError, toServiceError } from "../../shared/ipc/result";
 import { IoGrantTable } from "../grants";
 import { IoMirrors } from "../mirrors";
@@ -66,6 +68,27 @@ export class IoFileService {
     const canonical = await canonicalPath(filePath, mustExist);
     this.grants.register(windowId, handle, canonical);
     return { canonicalPath: canonical, name: path.basename(canonical) };
+  }
+
+  async resolveAsset(
+    windowId: number,
+    grant: string,
+    relativePath: string,
+  ): Promise<ResolvedAsset> {
+    const documentPath = this.grants.resolve(windowId, grant);
+    const resolved = await resolvePathUnderRoot(
+      path.dirname(documentPath),
+      relativePath,
+    );
+    if (resolved.ok) {
+      return { path: resolved.path };
+    }
+    if (resolved.reason === "io") {
+      throw toServiceError(resolved.error, {
+        file: path.basename(relativePath),
+      });
+    }
+    throw serviceError("BAD_REQUEST", "request.invalid");
   }
 
   async read(windowId: number, grant: string): Promise<{ name: string; text: string }> {
