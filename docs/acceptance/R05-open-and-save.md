@@ -115,3 +115,15 @@ status: implemented
 Given a document is edited, replaced by another, or the file process restarts, in any interleaving
 When the user saves
 Then the file holds the editor's text at the saved version, or (if the file process's copy was lost or behind) the editor resends the document once and the save then succeeds; changes from an earlier load of the document are ignored
+
+### AC-R5-20 — Open, Save and Save As run from the keyboard
+status: planned
+Given the app is running
+When the user presses CmdOrCtrl+O, CmdOrCtrl+S or CmdOrCtrl+Shift+S
+Then the same action runs as clicking the menu item (a dialog is shown or the file is written), and the menu item shows that chord without registering it as a native accelerator
+
+### AC-R5-21 — The File menu action items come from the renderer and update in place
+status: planned
+Given the app is running
+When the renderer contributes the File action items and later changes one item's enabled or checked state
+Then the menu shows those items with their ids, titles and displayed chords, and the state change patches that item in place without rebuilding the menu or losing its id

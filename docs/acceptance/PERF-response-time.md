@@ -29,3 +29,9 @@ status: implemented
 Given a 20 MB document is open
 When the user types one character
 Then the editor's thread builds no whole-document string for that edit, and the message sent to the render process is the change (under 1 KB)
+
+### AC-PERF-06 — Menu state pushes are coalesced and cheap in main
+status: planned
+Given the renderer posts a burst of menu state changes
+When main applies them
+Then at most one update reaches the menu per 100 ms and each update costs under 2 ms in main

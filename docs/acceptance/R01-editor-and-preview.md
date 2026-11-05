@@ -41,3 +41,9 @@ status: implemented
 Given a document is edited, replaced by another, or the render process restarts, in any interleaving
 When the preview renders
 Then the preview shows the document text exactly as of the version the result names, a result for an older document or version than one already shown is ignored, and a render process that lost or fell behind on its copy is given the document again before it renders
+
+### AC-R1-08 — Undo and Redo are keyboard commands the keymap owns
+status: planned
+Given an open document that has been edited
+When the user presses CmdOrCtrl+Z and then CmdOrCtrl+Shift+Z (or CmdOrCtrl+Y)
+Then the edit is undone and then redone, the preview follows both, and the title's dirty marker reflects the final state
