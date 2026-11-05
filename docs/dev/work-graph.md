@@ -12,7 +12,7 @@ Update a row when an item is queued, merged or sent back.
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | queued |
 | 042 | 13 | export fixtures under test/fixtures/ (see branch auto/nim/042-…) | main | nim | review queued (053) |
 | 054 | 6 | test/fixtures/workspace/** | main | side | review queued (062, candidate redo) |
-| 055 | 14 | test/fixtures/stability/** | main | nim | reviewing (066) |
+| 055 | 14 | test/fixtures/stability/** | main | nim | candidate (merge/055) |
 | bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | candidate merge/slice-7-binary-detection (review passed) |
 | log-fixture | 7 | test/fixtures/log/** | main | side | review queued (067) |
 | md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | queued |
