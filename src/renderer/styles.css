@@ -53,8 +53,23 @@ body {
   line-height: 1.55;
 }
 
-#preview > :first-child {
+#preview > :first-child,
+.preview-block > :first-child {
   margin-top: 0;
+}
+
+/* Off-screen regions skip layout and paint but keep their space. Blocks are
+   grouped into pages and pages into sections: content-visibility checks scale
+   with the number of contained elements, so one wrapper per block makes
+   scrolling worse as the document grows. */
+.preview-page {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1200px;
+}
+
+.preview-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60000px;
 }
 
 #preview pre {
