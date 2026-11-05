@@ -54,7 +54,9 @@ describe("preload bridge", () => {
     expect(electron.exposeInMainWorld.mock.calls[0]?.[0]).toBe("api");
     expect(Object.keys(api).sort()).toMatchInlineSnapshot(`
       [
+        "attachDocument",
         "chooseSaveTarget",
+        "detachDocument",
         "onMenuCommand",
         "onOpenRequest",
         "openExternal",
@@ -62,7 +64,8 @@ describe("preload bridge", () => {
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
-        "writeDocument",
+        "saveDocument",
+        "sendChanges",
       ]
     `);
 
@@ -82,10 +85,46 @@ describe("preload bridge", () => {
     const port = new FakePort();
     portListener({ ports: [port] });
     const read = api.readDocument("grant-a");
-    const write = api.writeDocument({ grant: "grant-a", text: "text" });
+    const attach = api.attachDocument({
+      docId: "doc",
+      epoch: 1,
+      version: 0,
+      text: "text",
+    });
+    api.sendChanges({
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    });
+    const save = api.saveDocument({
+      grant: "grant-a",
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+    });
+    api.detachDocument({ docId: "doc" });
     expect(port.messages).toEqual([
       { id: "io-1", op: "read", grant: "grant-a" },
-      { id: "io-2", op: "write", grant: "grant-a", text: "text" },
+      { id: "io-2", op: "attach", docId: "doc", epoch: 1, version: 0, text: "text" },
+      {
+        op: "change",
+        docId: "doc",
+        epoch: 1,
+        fromVersion: 0,
+        toVersion: 1,
+        changes: [4, [0, "!"]],
+      },
+      {
+        id: "io-3",
+        op: "save",
+        grant: "grant-a",
+        docId: "doc",
+        epoch: 1,
+        version: 1,
+      },
+      { op: "detach", docId: "doc" },
     ]);
     port.reply({
       id: "io-1",
@@ -93,10 +132,18 @@ describe("preload bridge", () => {
     });
     port.reply({
       id: "io-2",
-      result: { ok: true, value: { name: "note.md" } },
+      result: { ok: true, value: {} },
+    });
+    port.reply({
+      id: "io-3",
+      result: { ok: true, value: { name: "note.md", version: 1 } },
     });
     await expect(read).resolves.toMatchObject({ ok: true, value: { text: "opened" } });
-    await expect(write).resolves.toMatchObject({ ok: true, value: { name: "note.md" } });
+    await expect(attach).resolves.toMatchObject({ ok: true, value: {} });
+    await expect(save).resolves.toMatchObject({
+      ok: true,
+      value: { name: "note.md", version: 1 },
+    });
   });
 
   it("AC-R5-17: fails pending requests when a replacement port arrives", async () => {
@@ -105,7 +152,13 @@ describe("preload bridge", () => {
     const first = new FakePort();
     const replacement = new FakePort();
     client.attach(first);
-    const pending = client.request({ op: "write", grant: "grant", text: "pending" });
+    const pending = client.request({
+      op: "save",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 0,
+    });
 
     client.attach(replacement);
 
@@ -120,20 +173,90 @@ describe("preload bridge", () => {
     expect(first.close).toHaveBeenCalledOnce();
   });
 
-  it("AC-R5-17: queues requests until the first port arrives", async () => {
+  it("AC-R5-17: queues requests and one-way messages in one FIFO", async () => {
     const { IoPortClient } = await loadPreload();
     const client = new IoPortClient();
-    const pending = client.request({ op: "read", grant: "grant" });
+    const attached = client.request({
+      op: "attach",
+      docId: "doc",
+      epoch: 0,
+      version: 0,
+      text: "opened",
+    });
+    client.send({
+      op: "change",
+      docId: "doc",
+      epoch: 0,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [6, [0, "!"]],
+    });
+    const saved = client.request({
+      op: "save",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+    client.send({ op: "detach", docId: "doc" });
     const port = new FakePort();
 
     client.attach(port);
 
-    expect(port.messages).toEqual([{ id: "io-1", op: "read", grant: "grant" }]);
+    expect(port.messages).toEqual([
+      { id: "io-1", op: "attach", docId: "doc", epoch: 0, version: 0, text: "opened" },
+      {
+        op: "change",
+        docId: "doc",
+        epoch: 0,
+        fromVersion: 0,
+        toVersion: 1,
+        changes: [6, [0, "!"]],
+      },
+      {
+        id: "io-2",
+        op: "save",
+        grant: "grant",
+        docId: "doc",
+        epoch: 0,
+        version: 1,
+      },
+      { op: "detach", docId: "doc" },
+    ]);
     port.reply({
       id: "io-1",
-      result: { ok: true, value: { name: "note.md", text: "opened" } },
+      result: { ok: true, value: {} },
     });
-    await expect(pending).resolves.toMatchObject({ ok: true });
+    port.reply({
+      id: "io-2",
+      result: { ok: true, value: { name: "note.md", version: 1 } },
+    });
+    await expect(attached).resolves.toMatchObject({ ok: true });
+    await expect(saved).resolves.toMatchObject({ ok: true });
+  });
+
+  it("AC-PERF-04: sendChanges posts exactly the delta without text", async () => {
+    const { api, portListener } = await loadPreload();
+    const port = new FakePort();
+    portListener({ ports: [port] });
+
+    api.sendChanges({
+      docId: "large",
+      epoch: 7,
+      fromVersion: 10,
+      toVersion: 11,
+      changes: [20 * 1024 * 1024, [0, "!"]],
+    });
+
+    expect(port.messages).toEqual([{
+      op: "change",
+      docId: "large",
+      epoch: 7,
+      fromVersion: 10,
+      toVersion: 11,
+      changes: [20 * 1024 * 1024, [0, "!"]],
+    }]);
+    expect(port.messages[0]).not.toHaveProperty("text");
   });
 
   it("AC-SEC-12: ignores malformed and unmatched replies until the real one arrives", async () => {
@@ -147,6 +270,21 @@ describe("preload bridge", () => {
     void pending.then(settled);
     const getter = { result: { ok: true, value: {} } };
     Object.defineProperty(getter, "id", { enumerable: true, get: () => "io-1" });
+    const failure = (params: unknown) => ({
+      id: "io-1",
+      result: {
+        ok: false,
+        error: {
+          code: "NOT_FOUND",
+          messageKey: "file.notFound",
+          params,
+          retryable: false,
+        },
+      },
+    });
+    const hostileParams = new Proxy({}, {
+      ownKeys: () => { throw new Error("hostile params"); },
+    });
 
     for (const reply of [
       null,
@@ -157,6 +295,9 @@ describe("preload bridge", () => {
       { id: 1, result: { ok: true } },
       { id: "io-1", result: "ok" },
       getter,
+      failure(null),
+      failure({ [Symbol("file")]: "a.md" }),
+      failure(hostileParams),
       new Proxy({}, { ownKeys: () => { throw new Error("hostile proxy"); } }),
       { id: "io-unknown", result: { ok: true, value: {} } },
     ]) {
@@ -167,6 +308,32 @@ describe("preload bridge", () => {
 
     port.reply({ id: "io-1", result: { ok: true, value: { name: "a.md", text: "a" } } });
     await expect(pending).resolves.toEqual({ ok: true, value: { name: "a.md", text: "a" } });
+  });
+
+  it("AC-SEC-12: accepts an exact typed failure reply", async () => {
+    const { IoPortClient } = await loadPreload();
+    const client = new IoPortClient();
+    const port = new FakePort();
+    client.attach(port);
+    const pending = client.request({ op: "read", grant: "missing" });
+
+    port.reply({
+      id: "io-1",
+      result: {
+        ok: false,
+        error: {
+          code: "NOT_FOUND",
+          messageKey: "file.notFound",
+          params: { file: "missing.md" },
+          retryable: false,
+        },
+      },
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      error: { code: "NOT_FOUND", params: { file: "missing.md" } },
+    });
   });
 
   it("AC-SEC-11: forwards only fixed menu and open-request subscriptions", async () => {

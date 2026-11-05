@@ -2,6 +2,7 @@ export type MessageKey =
   | "request.invalid"
   | "grant.invalid"
   | "file.workerRestarted"
+  | "file.outOfSync"
   | "sender.forbidden"
   | "link.invalid"
   | "link.unsupportedScheme"
@@ -17,6 +18,7 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "request.invalid": "The request was not valid.",
   "grant.invalid": "The file permission is no longer valid.",
   "file.workerRestarted": "Could not save “{file}”: the file service restarted. Try again.",
+  "file.outOfSync": "Could not save “{file}”: the file service lost track of the document. Try again.",
   "sender.forbidden": "This frame is not allowed to use application services.",
   "link.invalid": "The link is not a valid URL.",
   "link.unsupportedScheme": "This kind of link cannot be opened.",

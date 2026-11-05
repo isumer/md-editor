@@ -73,7 +73,7 @@ When a message presents a raw path, an unknown, revoked or other-window grant, o
 Then the file process refuses it with a typed error before touching the disk, and stays responsive
 
 ### AC-SEC-13 — Document copies in the file process accept only valid changes from their own window
-status: planned
+status: implemented
 Given the page sends attach, change, save or detach messages over its port
 When a message has extra keys, wrong types, out-of-range or non-consecutive versions, an old epoch, a malformed change set, or names another window's document
 Then the file process drops or refuses it without changing any document copy or file, and still answers the next valid message

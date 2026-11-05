@@ -1,8 +1,13 @@
 import {
+  ioMessageOperation,
   ioRequestId,
+  isIoOneWayMessage,
   isIoRequest,
   type IoReply,
+  type IoOneWayMessage,
   type IoRequest,
+  type ReadDocumentResponse,
+  type SaveDocumentResponse,
 } from "../shared/ipc/io";
 import {
   serviceError,
@@ -22,14 +27,30 @@ async function runRequest(
   request: IoRequest,
   windowId: number,
   service: IoFileService,
-): Promise<Result<{ name: string; text: string } | { name: string }>> {
+): Promise<Result<ReadDocumentResponse | SaveDocumentResponse | Record<string, never>>> {
   try {
-    const value = request.op === "read"
-      ? await service.read(windowId, request.grant)
-      : await service.write(windowId, request.grant, request.text);
-    return { ok: true, value };
+    if (request.op === "read") {
+      return { ok: true, value: await service.read(windowId, request.grant) };
+    }
+    if (request.op === "attach") {
+      service.attach(windowId, request);
+      return { ok: true, value: {} };
+    }
+    return { ok: true, value: await service.save(windowId, request) };
   } catch (error) {
     return { ok: false, error: toServiceError(error) };
+  }
+}
+
+function runOneWay(
+  message: IoOneWayMessage,
+  windowId: number,
+  service: IoFileService,
+): void {
+  if (message.op === "change") {
+    service.change(windowId, message);
+  } else {
+    service.detach(windowId, message.docId);
   }
 }
 
@@ -50,8 +71,13 @@ export function attachIoPort(
 ): void {
   port.on("message", (event) => {
     const id = ioRequestId(event.data);
+    if (isIoOneWayMessage(event.data)) {
+      runOneWay(event.data, windowId, service);
+      return;
+    }
     if (!isIoRequest(event.data)) {
-      if (id) {
+      const operation = ioMessageOperation(event.data);
+      if (id && operation !== "change" && operation !== "detach") {
         port.postMessage(badRequest(id));
       }
       return;
@@ -71,6 +97,7 @@ export class IoPortRegistry {
 
   attach(windowId: number, port: IoWorkerPort): void {
     this.ports.get(windowId)?.close?.();
+    this.service.revokeWindow(windowId);
     this.ports.set(windowId, port);
     attachIoPort(port, windowId, this.service);
   }
@@ -78,5 +105,6 @@ export class IoPortRegistry {
   revokeWindow(windowId: number): void {
     this.ports.get(windowId)?.close?.();
     this.ports.delete(windowId);
+    this.service.revokeWindow(windowId);
   }
 }

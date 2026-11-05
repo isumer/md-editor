@@ -13,21 +13,21 @@ import {
 } from "./helpers";
 
 type InvalidSaveKind =
-  | "missing-text"
-  | "non-string-text"
+  | "missing-version"
+  | "fractional-version"
   | "object-grant"
   | "own-proto"
-  | "oversized-text";
+  | "oversized-attach";
 
 const invalidSaveCases: ReadonlyArray<{
   kind: InvalidSaveKind;
   name: string;
 }> = [
-  { kind: "missing-text", name: "a request without text" },
-  { kind: "non-string-text", name: "a request whose text is not a string" },
+  { kind: "missing-version", name: "a request without a version" },
+  { kind: "fractional-version", name: "a request whose version is fractional" },
   { kind: "object-grant", name: "a request whose grant is an object" },
   { kind: "own-proto", name: "a request with an own __proto__ key" },
-  { kind: "oversized-text", name: "a request with 257 MiB of text" },
+  { kind: "oversized-attach", name: "an attach request with 257 MiB of text" },
 ];
 
 async function openGrant(
@@ -44,24 +44,28 @@ async function openGrant(
   return grant;
 }
 
-// Text cases carry a live grant so the text check is what refuses them. The preload rebuilds
-// port messages, so the own __proto__ case goes to the IPC contract that receives the object.
+// Port cases carry a live grant so field validation, not grant validation, refuses them.
 async function sendInvalidSave(
   page: Page,
   kind: InvalidSaveKind,
   grant: string,
 ): Promise<unknown> {
   return page.evaluate(async ({ invalidKind, liveGrant }) => {
-    const writeDocument = window.api.writeDocument as unknown as (
+    const saveDocument = window.api.saveDocument as unknown as (
       value: unknown,
     ) => Promise<unknown>;
     switch (invalidKind) {
-      case "missing-text":
-        return writeDocument({ grant: liveGrant });
-      case "non-string-text":
-        return writeDocument({ grant: liveGrant, text: 42 });
+      case "missing-version":
+        return saveDocument({ grant: liveGrant, docId: "doc", epoch: 0 });
+      case "fractional-version":
+        return saveDocument({
+          grant: liveGrant,
+          docId: "doc",
+          epoch: 0,
+          version: 0.5,
+        });
       case "object-grant":
-        return writeDocument({ grant: {}, text: "must not be written" });
+        return saveDocument({ grant: {}, docId: "doc", epoch: 0, version: 0 });
       case "own-proto": {
         const hostile = { grant: liveGrant };
         Object.defineProperty(hostile, "__proto__", {
@@ -73,8 +77,17 @@ async function sendInvalidSave(
         ) => Promise<unknown>;
         return chooseSaveTarget(hostile);
       }
-      case "oversized-text":
-        return writeDocument({ grant: liveGrant, text: "x".repeat(257 * 1024 * 1024) });
+      case "oversized-attach": {
+        const attachDocument = window.api.attachDocument as unknown as (
+          value: unknown,
+        ) => Promise<unknown>;
+        return attachDocument({
+          docId: "doc",
+          epoch: 0,
+          version: 0,
+          text: "x".repeat(257 * 1024 * 1024),
+        });
+      }
     }
   }, { invalidKind: kind, liveGrant: grant });
 }
@@ -186,7 +199,9 @@ test("the preload exposes only the fixed named API", {
 
     expect(shape).toEqual({
       keys: [
+        "attachDocument",
         "chooseSaveTarget",
+        "detachDocument",
         "onMenuCommand",
         "onOpenRequest",
         "openExternal",
@@ -194,7 +209,8 @@ test("the preload exposes only the fixed named API", {
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
-        "writeDocument",
+        "saveDocument",
+        "sendChanges",
       ],
       legacyGlobal: false,
     });
@@ -214,11 +230,20 @@ test("the file-save contract rejects raw and forged grants", {
     await expect(page.getByTestId("editor")).toContainText("Sample document");
 
     for (const grant of [targetPath, "forged-grant"]) {
-      const result = await page.evaluate(async ({ candidate, text }) =>
-        window.api.writeDocument({ grant: candidate, text }), {
-        candidate: grant,
-        text: "must not be written",
-      });
+      const result = await page.evaluate(async (candidate) => {
+        await window.api.attachDocument({
+          docId: "security-doc",
+          epoch: 0,
+          version: 0,
+          text: "must not be written",
+        });
+        return window.api.saveDocument({
+          grant: candidate,
+          docId: "security-doc",
+          epoch: 0,
+          version: 0,
+        });
+      }, grant);
       expect(result).toMatchObject({
         ok: false,
         error: { code: "GRANT_INVALID" },
@@ -249,8 +274,20 @@ test("the file-save contract rejects a released grant", {
     }
     await page.evaluate(async (grant) => window.api.releaseDocument({ grant }), firstGrant);
 
-    const result = await page.evaluate(async (grant) =>
-      window.api.writeDocument({ grant, text: "must not be written" }), firstGrant);
+    const result = await page.evaluate(async (grant) => {
+      await window.api.attachDocument({
+        docId: "released-doc",
+        epoch: 0,
+        version: 0,
+        text: "must not be written",
+      });
+      return window.api.saveDocument({
+        grant,
+        docId: "released-doc",
+        epoch: 0,
+        version: 0,
+      });
+    }, firstGrant);
 
     expect(result).toMatchObject({
       ok: false,
