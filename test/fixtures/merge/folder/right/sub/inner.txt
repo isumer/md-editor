@@ -1,0 +1,3 @@
+inner heading
+shared baseline line
+inner footer

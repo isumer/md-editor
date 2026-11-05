@@ -1,4 +1,9 @@
 import type { DocumentReference } from "../shared/ipc/file";
+import type {
+  MenuCommandMessage,
+  MenuContribution,
+  MenuItemId,
+} from "../shared/ipc/menu";
 import type { Result } from "../shared/ipc/result";
 import { formatMessage } from "../shared/messages/en";
 import type {
@@ -7,18 +12,21 @@ import type {
   RenderResponse,
   RenderResync,
 } from "../shared/workers/render";
+import { createCommandRegistry } from "./core/commands";
+import { createContextKeys } from "./core/contextKeys";
 import {
   createDocumentState,
   documentTitle,
   messageParams,
   settleDocumentReplacement,
 } from "./core/document";
+import { installKeymap } from "./core/keymap";
 import {
   DocumentReplication,
   type ReplicatedVersion,
   saveReplicatedDocument,
 } from "./core/replication";
-import { createEditor } from "./editor/editor";
+import { createEditor, dispatchRedo, dispatchUndo } from "./editor/editor";
 import {
   wirePreviewLinks,
   wireRenderWorker,
@@ -29,6 +37,7 @@ import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
   chooseSaveTarget,
+  contributeMenu,
   detachDocument,
   onMenuCommand,
   onOpenRequest,
@@ -120,8 +129,103 @@ const editor = createEditor(
       renderWorker.postMessage(message);
     },
     updateTitle,
+    onStateChanged: () => refreshContextKeys(),
   },
 );
+
+const contextKeys = createContextKeys();
+const commandContext = { contextKeys };
+const commands = createCommandRegistry();
+const menuItemCommands: Readonly<Record<MenuItemId, string>> = {
+  "file-open": "file.open",
+  "file-save": "file.save",
+  "file-save-as": "file.saveAs",
+};
+
+function refreshContextKeys(): void {
+  const keys = new Set<string>();
+  if (editor.hasFocus) {
+    keys.add("editorFocus");
+  }
+  if (editor.state.selection.ranges.some((range) => !range.empty)) {
+    keys.add("hasSelection");
+  }
+  contextKeys.set(keys);
+}
+
+function platformName(): string {
+  if (navigator.platform.startsWith("Mac")) {
+    return "darwin";
+  }
+  return navigator.platform.startsWith("Win") ? "win32" : "linux";
+}
+
+commands.register({
+  id: "file.open",
+  titleKey: "menu.open",
+  run: () => openDocument(),
+});
+commands.register({
+  id: "file.save",
+  titleKey: "menu.save",
+  run: () => saveEditorDocument(false),
+});
+commands.register({
+  id: "file.saveAs",
+  titleKey: "menu.saveAs",
+  run: () => saveEditorDocument(true),
+});
+commands.register({
+  id: "undo",
+  titleKey: "menu.undo",
+  run: () => {
+    dispatchUndo(editor);
+  },
+});
+commands.register({
+  id: "redo",
+  titleKey: "menu.redo",
+  run: () => {
+    dispatchRedo(editor);
+  },
+});
+
+function menuContribution(): MenuContribution {
+  return {
+    fileMenuTitle: formatMessage("menu.file", {}),
+    items: [
+      { id: "file-open", title: formatMessage("menu.open", {}), accelerator: "CmdOrCtrl+O" },
+      { id: "file-save", title: formatMessage("menu.save", {}), accelerator: "CmdOrCtrl+S" },
+      {
+        id: "file-save-as",
+        title: formatMessage("menu.saveAs", {}),
+        accelerator: "CmdOrCtrl+Shift+S",
+      },
+    ],
+  };
+}
+
+async function publishMenuContribution(): Promise<void> {
+  valueOrStatus(await contributeMenu(menuContribution()));
+}
+
+function runMenuCommand(menuItemId: MenuCommandMessage): void {
+  const commandId = menuItemCommands[menuItemId];
+  if (commandId !== undefined) {
+    void commands.run(commandId, commandContext, undefined, "menu");
+  }
+}
+
+onMenuCommand(runMenuCommand);
+installKeymap(document, {
+  registry: commands,
+  context: commandContext,
+  platform: platformName(),
+});
+refreshContextKeys();
+editor.contentDOM.addEventListener("focus", refreshContextKeys);
+editor.contentDOM.addEventListener("blur", refreshContextKeys);
+void publishMenuContribution().catch(showUnexpectedError);
 
 function resyncRenderWorker(response: RenderResync): void {
   const current = replication.current();
@@ -327,16 +431,6 @@ async function saveEditorDocument(saveAs: boolean): Promise<void> {
     showUnexpectedError(error);
   }
 }
-
-onMenuCommand((command) => {
-  if (command === "open") {
-    void openDocument();
-  } else if (command === "save") {
-    void saveEditorDocument(false);
-  } else {
-    void saveEditorDocument(true);
-  }
-});
 
 onOpenRequest(handleOpenRequest);
 

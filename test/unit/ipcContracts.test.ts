@@ -12,8 +12,10 @@ import {
   LINK_CHANNELS,
 } from "../../src/shared/ipc/link";
 import {
-  isMenuCommand,
+  isMenuContribution,
+  isMenuItemId,
   MENU_CHANNELS,
+  MENU_ITEM_IDS,
 } from "../../src/shared/ipc/menu";
 
 function withOwnProto<T extends object>(value: T): T {
@@ -84,7 +86,7 @@ describe("IPC contracts", () => {
     expect(isOpenExternalRequest(hostileProxy)).toBe(false);
   });
 
-  it("AC-SEC-11: contract channel names and menu commands are fixed", () => {
+  it("AC-SEC-11: contract channel names and menu item ids are fixed", () => {
     expect(FILE_CHANNELS).toEqual({
       openFile: "file:open",
       chooseSaveTarget: "file:choose-save-target",
@@ -93,8 +95,15 @@ describe("IPC contracts", () => {
       openRequest: "file:open-request",
     });
     expect(LINK_CHANNELS).toEqual({ openExternal: "link:open-external" });
-    expect(MENU_CHANNELS).toEqual({ command: "menu:command" });
-    expect(["open", "save", "saveAs"].every(isMenuCommand)).toBe(true);
-    expect(isMenuCommand("unknown")).toBe(false);
+    expect(MENU_CHANNELS).toEqual({
+      command: "menu:command",
+      contribute: "menu:contribute",
+    });
+    expect(MENU_ITEM_IDS.every(isMenuItemId)).toBe(true);
+    expect(isMenuItemId("unknown")).toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
+    })).toBe(true);
   });
 });
