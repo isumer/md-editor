@@ -16,13 +16,13 @@ describe("RenderScheduler", () => {
     const requests: ScheduledRender[] = [];
     const scheduler = new RenderScheduler((request) => requests.push(request), () => now);
 
-    scheduler.schedule("hello");
+    scheduler.schedule();
     await vi.advanceTimersByTimeAsync(149);
     expect(requests).toEqual([]);
 
     now = 150;
     await vi.advanceTimersByTimeAsync(1);
-    expect(requests).toEqual([{ id: 1, text: "hello" }]);
+    expect(requests).toEqual([{ id: 1 }]);
   });
 
   it("AC-R1-02: renders continuous changes by 500 ms", async () => {
@@ -31,11 +31,11 @@ describe("RenderScheduler", () => {
     const requests: ScheduledRender[] = [];
     const scheduler = new RenderScheduler((request) => requests.push(request), () => now);
 
-    scheduler.schedule("0");
+    scheduler.schedule();
     for (let time = 100; time <= 400; time += 100) {
       await vi.advanceTimersByTimeAsync(100);
       now = time;
-      scheduler.schedule(String(time));
+      scheduler.schedule();
     }
     expect(requests).toEqual([]);
 
@@ -43,7 +43,7 @@ describe("RenderScheduler", () => {
     expect(requests).toEqual([]);
     now = 500;
     await vi.advanceTimersByTimeAsync(1);
-    expect(requests).toEqual([{ id: 1, text: "400" }]);
+    expect(requests).toEqual([{ id: 1 }]);
   });
 
   it("AC-R1-05: does not apply a result older than the newest applied result", () => {
@@ -60,7 +60,7 @@ describe("RenderScheduler", () => {
     const requests: ScheduledRender[] = [];
     const scheduler = new RenderScheduler((request) => requests.push(request), () => 0);
 
-    scheduler.schedule("discarded");
+    scheduler.schedule();
     scheduler.dispose();
     scheduler.dispose();
     await vi.runAllTimersAsync();
