@@ -1,70 +1,173 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   RenderScheduler,
   type ScheduledRender,
 } from "../../src/renderer/features/preview/renderScheduler";
 
-afterEach(() => {
-  vi.useRealTimers();
-});
+interface Harness {
+  scheduler: RenderScheduler;
+  requests: ScheduledRender[];
+  latencies: number[];
+  setNow(value: number): void;
+  runFrame(): void;
+  runTimers(): void;
+}
+
+function harness(): Harness {
+  let now = 0;
+  let nextHandle = 1;
+  const requests: ScheduledRender[] = [];
+  const latencies: number[] = [];
+  const frames = new Map<number, () => void>();
+  const timers = new Map<number, { callback: () => void; dueAt: number }>();
+  const scheduler = new RenderScheduler((request) => requests.push(request), {
+    now: () => now,
+    maximumWaitMilliseconds: 100,
+    requestFrame: (callback) => {
+      const handle = nextHandle;
+      nextHandle += 1;
+      frames.set(handle, callback);
+      return handle;
+    },
+    cancelFrame: (handle) => frames.delete(handle),
+    setTimer: (callback, milliseconds) => {
+      const handle = nextHandle;
+      nextHandle += 1;
+      timers.set(handle, { callback, dueAt: now + milliseconds });
+      return handle;
+    },
+    clearTimer: (handle) => timers.delete(handle),
+    onApplied: (latency) => latencies.push(latency),
+  });
+  return {
+    scheduler,
+    requests,
+    latencies,
+    setNow(value) {
+      now = value;
+    },
+    runFrame() {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) {
+        callback();
+      }
+    },
+    runTimers() {
+      for (const [handle, timer] of [...timers.entries()]) {
+        if (timer.dueAt <= now) {
+          timers.delete(handle);
+          timer.callback();
+        }
+      }
+    },
+  };
+}
 
 describe("RenderScheduler", () => {
-  it("AC-R1-02: renders a single change after 150 ms", async () => {
-    vi.useFakeTimers();
-    let now = 0;
-    const requests: ScheduledRender[] = [];
-    const scheduler = new RenderScheduler((request) => requests.push(request), () => now);
+  it("AC-R1-02: dispatches a burst at most once per animation frame", () => {
+    const testHarness = harness();
 
-    scheduler.schedule();
-    await vi.advanceTimersByTimeAsync(149);
-    expect(requests).toEqual([]);
+    testHarness.scheduler.schedule();
+    testHarness.scheduler.schedule();
+    testHarness.scheduler.schedule();
+    expect(testHarness.requests).toEqual([]);
 
-    now = 150;
-    await vi.advanceTimersByTimeAsync(1);
-    expect(requests).toEqual([{ id: 1 }]);
+    testHarness.runFrame();
+    expect(testHarness.requests).toEqual([{ id: 1 }]);
+
+    testHarness.scheduler.schedule();
+    testHarness.runFrame();
+    expect(testHarness.requests).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
-  it("AC-R1-02: renders continuous changes by 500 ms", async () => {
-    vi.useFakeTimers();
-    let now = 0;
-    const requests: ScheduledRender[] = [];
-    const scheduler = new RenderScheduler((request) => requests.push(request), () => now);
+  it("AC-R1-02: dispatches the last edit within the maximum wait when frames stall", () => {
+    const testHarness = harness();
 
-    scheduler.schedule();
-    for (let time = 100; time <= 400; time += 100) {
-      await vi.advanceTimersByTimeAsync(100);
-      now = time;
-      scheduler.schedule();
-    }
-    expect(requests).toEqual([]);
+    testHarness.scheduler.schedule();
+    testHarness.setNow(99);
+    testHarness.runTimers();
+    expect(testHarness.requests).toEqual([]);
 
-    await vi.advanceTimersByTimeAsync(99);
-    expect(requests).toEqual([]);
-    now = 500;
-    await vi.advanceTimersByTimeAsync(1);
-    expect(requests).toEqual([{ id: 1 }]);
+    testHarness.scheduler.schedule();
+    testHarness.setNow(100);
+    testHarness.runTimers();
+    expect(testHarness.requests).toEqual([{ id: 1 }]);
   });
 
   it("AC-R1-05: does not apply a result older than the newest applied result", () => {
-    const scheduler = new RenderScheduler(() => undefined, () => 0);
+    const testHarness = harness();
     const applied: string[] = [];
 
-    expect(scheduler.applyResult(2, "new", (value) => applied.push(value))).toBe(true);
-    expect(scheduler.applyResult(1, "old", (value) => applied.push(value))).toBe(false);
+    expect(testHarness.scheduler.applyResult(2, "new", (value) => applied.push(value)))
+      .toBe(true);
+    expect(testHarness.scheduler.applyResult(1, "old", (value) => applied.push(value)))
+      .toBe(false);
     expect(applied).toEqual(["new"]);
   });
 
-  it("AC-R1-02: cancels a pending render when disposed", async () => {
-    vi.useFakeTimers();
+  it("AC-R1-02: measures each coalesced burst from its first change to its result", () => {
+    const testHarness = harness();
+
+    testHarness.scheduler.schedule();
+    testHarness.setNow(16);
+    testHarness.scheduler.schedule();
+    testHarness.runFrame();
+    testHarness.setNow(30);
+    testHarness.scheduler.applyResult(1, "result", () => undefined);
+
+    expect(testHarness.latencies).toEqual([30]);
+  });
+
+  it("AC-R1-02: uses the window animation frame and timer when no options are given", () => {
+    const frames: (() => void)[] = [];
     const requests: ScheduledRender[] = [];
-    const scheduler = new RenderScheduler((request) => requests.push(request), () => 0);
+    const cancelFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => {
+      frames.push(callback);
+      return 7;
+    });
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    const scheduler = new RenderScheduler((request) => requests.push(request));
+
+    scheduler.schedule();
+    expect(frames).toHaveLength(1);
+    frames[0]?.();
+    expect(requests).toEqual([{ id: 1 }]);
+    expect(cancelFrame).toHaveBeenCalledWith(7);
+
+    scheduler.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-R1-02: a frame that fires after disposal does nothing", () => {
+    const frames: (() => void)[] = [];
+    const requests: ScheduledRender[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => {
+      frames.push(callback);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    const scheduler = new RenderScheduler((request) => requests.push(request));
 
     scheduler.schedule();
     scheduler.dispose();
-    scheduler.dispose();
-    await vi.runAllTimersAsync();
+    frames[0]?.();
 
     expect(requests).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-R1-02: cancels pending frames and timers when disposed", () => {
+    const testHarness = harness();
+
+    testHarness.scheduler.schedule();
+    testHarness.scheduler.dispose();
+    testHarness.scheduler.dispose();
+    testHarness.runFrame();
+    testHarness.runTimers();
+
+    expect(testHarness.requests).toEqual([]);
   });
 });

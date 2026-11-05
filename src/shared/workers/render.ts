@@ -46,8 +46,38 @@ interface RenderResultVersion {
   version: number;
 }
 
+export interface RenderBlock {
+  id: string;
+  startLine: number;
+  endLine: number;
+  html: string;
+}
+
+export interface RenderBlockPatch {
+  block: RenderBlock;
+  after: string | null;
+}
+
 export type RenderResult =
-  | (RenderResultVersion & { ok: true; html: string })
+  | (RenderResultVersion & {
+    ok: true;
+    mode: "replace";
+    blocks: readonly RenderBlock[];
+    complete: boolean;
+  })
+  | (RenderResultVersion & {
+    ok: true;
+    mode: "append";
+    blocks: readonly RenderBlock[];
+    complete: boolean;
+  })
+  | (RenderResultVersion & {
+    ok: true;
+    mode: "patch";
+    blocks: readonly RenderBlockPatch[];
+    removed: readonly string[];
+    complete: boolean;
+  })
   | (RenderResultVersion & { ok: false; message: string });
 
 export interface RenderResync extends RenderResultVersion {
