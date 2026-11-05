@@ -1,3 +1,5 @@
+import type { Text } from "@codemirror/state";
+
 import type { DocumentReference } from "../shared/ipc/file";
 import type {
   MenuCommandMessage,
@@ -438,7 +440,7 @@ async function initializeOpenRequests(): Promise<void> {
   scheduler.schedule();
   updateTitle();
   try {
-    await attachText(editor.state.doc, replication.current(), null);
+    await attachText(editor.state.doc.toString(), replication.current(), null);
     const ready = valueOrStatus(await readyForOpenRequests());
     if (ready) {
       windowId = ready.windowId;

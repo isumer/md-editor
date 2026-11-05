@@ -58,6 +58,14 @@ export interface RenderBlockPatch {
   after: string | null;
 }
 
+// Blocks after `after` (or all blocks when null) moved by `delta` lines. Kept
+// out of band so a line-count change does not require re-sending unchanged
+// blocks or rewriting every block's DOM.
+export interface RenderLineShift {
+  after: string | null;
+  delta: number;
+}
+
 export type RenderResult =
   | (RenderResultVersion & {
     ok: true;
@@ -76,6 +84,7 @@ export type RenderResult =
     mode: "patch";
     blocks: readonly RenderBlockPatch[];
     removed: readonly string[];
+    lineShifts?: readonly RenderLineShift[];
     complete: boolean;
   })
   | (RenderResultVersion & { ok: false; message: string });

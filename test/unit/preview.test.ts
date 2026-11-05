@@ -39,6 +39,10 @@ function send(worker: FakeWorker, response: RenderResponse): void {
   worker.onmessage?.({ data: response } as unknown as MessageEvent<RenderResponse>);
 }
 
+function blocks(preview: HTMLElement): HTMLElement[] {
+  return [...preview.querySelectorAll<HTMLElement>(".preview-block")];
+}
+
 describe("preview render flow", () => {
   it("AC-R1-07: ignores a render result from an older document epoch", () => {
     const preview = document.createElement("div");
@@ -121,7 +125,7 @@ describe("preview render flow", () => {
       complete: true,
     });
 
-    expect([...preview.children].map((element) => element.textContent))
+    expect(blocks(preview).map((element) => element.textContent))
       .toEqual(["one", "two edited"]);
   });
 
@@ -227,7 +231,7 @@ describe("preview render flow", () => {
       ],
       complete: true,
     });
-    const elements = [...preview.children];
+    const elements = blocks(preview);
 
     send(worker, {
       id: 2,
@@ -244,10 +248,10 @@ describe("preview render flow", () => {
       complete: true,
     });
 
-    expect([...preview.children]).toEqual(elements);
-    expect(preview.children[2]?.textContent).toBe("three edited");
-    expect(preview.children[0]?.textContent).toBe("one");
-    expect(preview.children[1]?.textContent).toBe("two");
+    expect(blocks(preview)).toEqual(elements);
+    expect(blocks(preview)[2]?.textContent).toBe("three edited");
+    expect(blocks(preview)[0]?.textContent).toBe("one");
+    expect(blocks(preview)[1]?.textContent).toBe("two");
   });
 
   it("AC-R1-09: inserts a new block after its anchor and removes deleted blocks", () => {
@@ -282,7 +286,7 @@ describe("preview render flow", () => {
       complete: true,
     });
 
-    expect([...preview.children].map((element) => element.textContent))
+    expect(blocks(preview).map((element) => element.textContent))
       .toEqual(["one", "three"]);
   });
 });
