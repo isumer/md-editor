@@ -15,7 +15,7 @@ Update a row when an item is queued, merged or sent back.
 | 055 | 14 | test/fixtures/stability/** | main | nim | candidate (merge/055) |
 | bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | candidate merge/slice-7-binary-detection (review passed) |
 | log-fixture | 7 | test/fixtures/log/** | main | side | review queued (067) |
-| md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | queued |
+| md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | merged |
 | find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | queued |
 
 ## Notes
