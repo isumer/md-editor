@@ -1,0 +1,6 @@
+# Binary detection fixtures are byte-sensitive; keep the committed bytes exact on checkout.
+nul-byte.bin -text
+nul-at-start.bin -text
+utf16le-bom.txt -text
+invalid-utf8.bin -text
+tiny.png -text
