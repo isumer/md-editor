@@ -25,6 +25,7 @@ Update a row when an item is queued, merged or sent back.
 | gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | candidate de06eb1 |
 | slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | queued (865) |
 | languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | queued (866) |
+| slice6-tree-generator | 6 | test/fixtures/workspace/generate-tree.mjs, test/fixtures/workspace/README.md | main | dev | queued (870) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
