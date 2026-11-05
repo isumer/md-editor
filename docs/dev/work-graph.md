@@ -19,7 +19,7 @@ Update a row when an item is queued, merged or sent back.
 | md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | merged (092003d) |
 | find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | merged (20faee8) |
 | compare-gen | 10 | test/fixtures/compare/generate-folders.mjs, test/fixtures/compare/README.md | main | side | merged (ce1e212) |
-| replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | in review (088) |
+| replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | candidate 8035265 |
 | git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | merged (82c7b0a) |
 | conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | merged (0724cc9) |
 | gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | candidate de06eb1 |
