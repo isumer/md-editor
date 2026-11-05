@@ -23,8 +23,8 @@ Update a row when an item is queued, merged or sent back.
 | git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | merged (82c7b0a) |
 | conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | merged (0724cc9) |
 | gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | candidate de06eb1 |
-| slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | queued (language detection) |
-| languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | queued (fixture README) |
+| slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | queued (865) |
+| languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | queued (866) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
