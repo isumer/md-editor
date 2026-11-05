@@ -37,4 +37,24 @@ describe("sanitizeRenderedHtml", () => {
 
     expect(result).toBe("<p>Safe</p>");
   });
+
+  it("AC-SEC-16: allows doc-asset URLs only on image sources", () => {
+    const result = sanitizeRenderedHtml(
+      '<img src="doc-asset://1/grant/pic.png" ' +
+        'srcset="doc-asset://1/grant/pic.png 2x">' +
+        '<a href="doc-asset://1/grant/secret.md">Link</a>' +
+        '<video src="doc-asset://1/grant/clip.mp4"></video>',
+    );
+
+    expect(result).toContain('<img src="doc-asset://1/grant/pic.png"');
+    expect(result).toContain("srcset=\"doc-asset://1/grant/pic.png 2x\"");
+    expect(result).toContain("<a>Link</a>");
+    expect(result).toContain("<video></video>");
+  });
+
+  it("AC-SEC-16: keeps relative image sources for the rewrite step", () => {
+    const result = sanitizeRenderedHtml('<img src="images/pic.png">');
+
+    expect(result).toBe('<img src="images/pic.png">');
+  });
 });

@@ -2,6 +2,7 @@ import {
   controlRequestId,
   isIoControlRequest,
   type RegisterGrantReply,
+  type ResolveAssetReply,
 } from "../shared/ipc/ioControl";
 import { serviceError, toServiceError } from "../shared/ipc/result";
 import type { IoGrantTable } from "./grants";
@@ -49,6 +50,8 @@ export class IoControlHandler {
     }
     if (data.type === "registerGrant") {
       void this.register(data);
+    } else if (data.type === "resolveAsset") {
+      void this.resolveAsset(data);
     } else if (data.type === "revokeGrant") {
       this.grants.revoke(data.windowId, data.handle);
     } else if (data.type === "revokeWindow") {
@@ -82,6 +85,30 @@ export class IoControlHandler {
         id: request.id,
         result: { ok: false, error: toServiceError(error) },
       } satisfies RegisterGrantReply);
+    }
+  }
+
+  private async resolveAsset(request: {
+    id: string;
+    windowId: number;
+    grant: string;
+    relativePath: string;
+  }): Promise<void> {
+    try {
+      const value = await this.files.resolveAsset(
+        request.windowId,
+        request.grant,
+        request.relativePath,
+      );
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value },
+      } satisfies ResolveAssetReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies ResolveAssetReply);
     }
   }
 }

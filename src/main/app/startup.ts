@@ -183,9 +183,13 @@ export function createOpenRequests(fileService: DocumentGrantService): OpenReque
 }
 
 export function registerOpenRequestIpcHandler(openRequests: OpenRequests): void {
-  handle(fileContracts.openRequestsReady, async () => {
+  handle(fileContracts.openRequestsReady, async (_request, context) => {
     await openRequests.setRendererReady();
-    return { notice: startupNotice, productName: app.getName() };
+    return {
+      notice: startupNotice,
+      productName: app.getName(),
+      windowId: context.windowId,
+    };
   });
 }
 

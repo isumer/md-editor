@@ -131,6 +131,66 @@ describe("io-worker supervisor", () => {
     });
   });
 
+  it("AC-SEC-17: resolves an asset through the worker and validates the reply", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    const child = harness.children[0] as FakeChild;
+    child.emit("spawn");
+
+    const resolution = harness.supervisor.resolveAsset(7, "grant", "images/pic.png");
+    await vi.waitFor(() => expect(child.posts).toHaveLength(1));
+    const request = child.posts[0]?.message as {
+      id: string;
+      type: string;
+      windowId: number;
+      grant: string;
+      relativePath: string;
+    };
+    expect(request).toMatchObject({
+      type: "resolveAsset",
+      windowId: 7,
+      grant: "grant",
+      relativePath: "images/pic.png",
+    });
+
+    child.emit("message", {
+      id: request.id,
+      result: { ok: true, value: { path: "/documents/images/pic.png" } },
+    });
+
+    await expect(resolution).resolves.toEqual({
+      ok: true,
+      value: { path: "/documents/images/pic.png" },
+    });
+  });
+
+  it("AC-SEC-17: rejects a malformed asset reply as a bad request", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    const child = harness.children[0] as FakeChild;
+    child.emit("spawn");
+    const resolution = harness.supervisor.resolveAsset(7, "grant", "pic.png");
+    await vi.waitFor(() => expect(child.posts).toHaveLength(1));
+    const request = child.posts[0]?.message as { id: string };
+
+    child.emit("message", { id: request.id, result: { ok: true, value: {} } });
+
+    await expect(resolution).resolves.toMatchObject({
+      ok: false,
+      error: { code: "BAD_REQUEST" },
+    });
+  });
+
+  it("AC-SEC-17: a stopped supervisor refuses asset resolution", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    harness.children[0]?.emit("spawn");
+    harness.supervisor.stop();
+
+    await expect(harness.supervisor.resolveAsset(7, "grant", "pic.png"))
+      .resolves.toMatchObject({ ok: false, error: { code: "WORKER_RESTARTED" } });
+  });
+
   it("AC-R5-17: stops after five restarts in sixty seconds", async () => {
     const harness = createHarness();
     harness.supervisor.start();
