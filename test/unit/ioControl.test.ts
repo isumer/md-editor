@@ -175,6 +175,54 @@ describe("io-worker control boundary", () => {
     expect(() => grants.resolve(1, "grant")).toThrow();
   });
 
+  it("AC-SEC-16 AC-SEC-17: resolves assets only under the granted document folder", async () => {
+    const { grants, parent } = createHandler();
+    const folder = path.join(temporaryDirectory, "documents");
+    const documentPath = path.join(folder, "note.md");
+    const imagePath = path.join(folder, "images", "pic.png");
+    const outsidePath = path.join(temporaryDirectory, "outside.png");
+    await fs.mkdir(path.dirname(imagePath), { recursive: true });
+    await fs.writeFile(documentPath, "text", "utf8");
+    await fs.writeFile(imagePath, "png", "utf8");
+    await fs.writeFile(outsidePath, "outside", "utf8");
+    grants.register(1, "document", documentPath);
+    grants.register(2, "other-window", documentPath);
+
+    const requests = [
+      { id: "inside", windowId: 1, grant: "document", relativePath: "images/pic.png" },
+      { id: "escape", windowId: 1, grant: "document", relativePath: "../outside.png" },
+      { id: "other", windowId: 2, grant: "document", relativePath: "images/pic.png" },
+      { id: "unknown", windowId: 1, grant: "missing", relativePath: "images/pic.png" },
+      { id: "absent", windowId: 1, grant: "document", relativePath: "missing.png" },
+    ];
+    for (const request of requests) {
+      parent.send({ type: "resolveAsset", ...request });
+    }
+    await expect.poll(() => parent.replies.length).toBe(requests.length);
+
+    const replies = parent.replies as Array<{
+      id: string;
+      result: { ok: boolean; value?: { path: string }; error?: { code: string } };
+    }>;
+    const reply = (id: string) => replies.find((candidate) => candidate.id === id);
+    expect(reply("inside")).toEqual({
+      id: "inside",
+      result: { ok: true, value: { path: imagePath } },
+    });
+    expect(reply("escape")).toMatchObject({
+      result: { ok: false, error: { code: "BAD_REQUEST" } },
+    });
+    expect(reply("other")).toMatchObject({
+      result: { ok: false, error: { code: "GRANT_INVALID" } },
+    });
+    expect(reply("unknown")).toMatchObject({
+      result: { ok: false, error: { code: "GRANT_INVALID" } },
+    });
+    expect(reply("absent")).toMatchObject({
+      result: { ok: false, error: { code: "NOT_FOUND" } },
+    });
+  });
+
   it("AC-SEC-07: the io-worker entry answers main over its parent port", async () => {
     const parent = new FakeParent();
     Object.defineProperty(process, "parentPort", { configurable: true, value: parent });

@@ -20,12 +20,14 @@ interface RenderWorkerWiring {
   showStatus(message?: string): void;
   currentVersion(): ReplicatedVersion;
   onResync(response: RenderResync): void;
+  rewriteHtml(html: string): string;
 }
 
 function applyRenderResult(result: RenderResult, wiring: RenderWorkerWiring): void {
   wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
-      wiring.preview.innerHTML = sanitizeRenderedHtml(appliedResponse.html);
+      const sanitized = sanitizeRenderedHtml(appliedResponse.html);
+      wiring.preview.innerHTML = wiring.rewriteHtml(sanitized);
       wiring.showStatus();
     } else {
       wiring.showStatus(appliedResponse.message);
