@@ -13,6 +13,7 @@ const SAMPLES = 30;
 const TWENTY_MEGABYTES = "20971520";
 const large50 = path.join(repositoryRoot, "test/fixtures/big/large-50kb.md");
 const large500 = path.join(repositoryRoot, "test/fixtures/big/large-500kb.md");
+const DOCUMENT_START = process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home";
 
 let temporaryDirectory = "";
 let large20 = "";
@@ -153,7 +154,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
 async function placeCaretInFirstLine(page: Page): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+Home");
+  await page.keyboard.press(DOCUMENT_START);
   // The editor wraps lines, so End targets the visual end of the heading's first line.
   await page.keyboard.press("End");
 }
