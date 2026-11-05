@@ -1,0 +1,3 @@
+conflict heading
+shared baseline line
+conflict footer

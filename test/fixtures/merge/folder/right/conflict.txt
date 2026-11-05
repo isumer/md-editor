@@ -1,0 +1,3 @@
+conflict heading
+right version of the conflicting line
+conflict footer
