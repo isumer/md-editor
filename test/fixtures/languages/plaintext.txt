@@ -1,0 +1,2 @@
+Plain text has no syntax highlighting.
+Just ordinary lines of text.
