@@ -1,0 +1,3 @@
+added-right heading
+this file exists only on the right
+added-right footer
