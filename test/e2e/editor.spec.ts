@@ -71,15 +71,13 @@ test("exposes stable File menu items with their accelerators", {
 }, async () => {
   const { application } = await launchEditor(fixturePath);
   try {
-    const menuItems = await application.evaluate(({ Menu }) => {
+    await expect.poll(() => application.evaluate(({ Menu }) => {
       const menu = Menu.getApplicationMenu();
       return ["file-open", "file-save", "file-save-as"].map((id) => {
         const item = menu?.getMenuItemById(id);
         return { id: item?.id, accelerator: item?.accelerator };
       });
-    });
-
-    expect(menuItems).toEqual([
+    }), { timeout: 5_000 }).toEqual([
       { id: "file-open", accelerator: "CmdOrCtrl+O" },
       { id: "file-save", accelerator: "CmdOrCtrl+S" },
       { id: "file-save-as", accelerator: "CmdOrCtrl+Shift+S" },

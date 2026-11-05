@@ -43,7 +43,7 @@ When the preview renders
 Then the preview shows the document text exactly as of the version the result names, a result for an older document or version than one already shown is ignored, and a render process that lost or fell behind on its copy is given the document again before it renders
 
 ### AC-R1-08 — Undo and Redo are keyboard commands the keymap owns
-status: planned
+status: implemented
 Given an open document that has been edited
 When the user presses CmdOrCtrl+Z and then CmdOrCtrl+Shift+Z (or CmdOrCtrl+Y)
 Then the edit is undone and then redone, the preview follows both, and the title's dirty marker reflects the final state
@@ -65,3 +65,9 @@ status: planned
 Given a document with an image in one block and text in another is previewed
 When the user edits the text block
 Then the image is not re-requested (its request count does not increase)
+
+### AC-R1-12 — A stuck render worker is restarted and the editor stays responsive
+status: planned
+Given the render worker stops responding (stuck in a loop)
+When the user keeps typing
+Then the worker is restarted within 2.5 s, the editor stays responsive throughout, and the preview recovers
