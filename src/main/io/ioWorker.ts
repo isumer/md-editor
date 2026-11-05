@@ -8,7 +8,9 @@ import {
 import { ioRequestId } from "../../shared/ipc/io";
 import {
   isRegisterGrantReply,
+  isResolveAssetReply,
   type RegisteredGrant,
+  type ResolvedAsset,
 } from "../../shared/ipc/ioControl";
 import {
   serviceError,
@@ -25,8 +27,8 @@ interface IoWorkerDependencies {
   logExit(code: number, signal: string | null): void;
 }
 
-interface PendingRegistration {
-  resolve(result: Result<RegisteredGrant>): void;
+interface PendingControl {
+  resolve(result: Result<unknown>): void;
 }
 
 type PortReceiver = (port: MessagePortMain) => void;
@@ -43,14 +45,14 @@ function workerRestarted(): ServiceError {
   );
 }
 
-function failedRegistration(): Result<RegisteredGrant> {
+function failedControl<T>(): Result<T> {
   return { ok: false, error: workerRestarted() };
 }
 
 export class IoWorkerSupervisor {
   private child: UtilityProcess | null = null;
   private generationReady: Promise<void> = Promise.resolve();
-  private readonly pending = new Map<string, PendingRegistration>();
+  private readonly pending = new Map<string, PendingControl>();
   private readonly receivers = new Map<number, PortReceiver>();
   private readonly restartTimes: number[] = [];
   private readonly failurePorts: MessagePortMain[] = [];
@@ -88,8 +90,30 @@ export class IoWorkerSupervisor {
   ): Promise<Result<RegisteredGrant>> {
     await this.generationReady;
     return this.child && !this.stopped
-      ? this.sendRegistration(windowId, handle, filePath, mustExist)
-      : failedRegistration();
+      ? this.sendControl<RegisteredGrant>({
+          type: "registerGrant",
+          windowId,
+          handle,
+          path: filePath,
+          mustExist,
+        })
+      : failedControl();
+  }
+
+  async resolveAsset(
+    windowId: number,
+    grant: string,
+    relativePath: string,
+  ): Promise<Result<ResolvedAsset>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<ResolvedAsset>({
+          type: "resolveAsset",
+          windowId,
+          grant,
+          relativePath,
+        })
+      : failedControl();
   }
 
   async revokeGrant(windowId: number, handle: string): Promise<void> {
@@ -126,23 +150,26 @@ export class IoWorkerSupervisor {
   }
 
   private handleReply(message: unknown): void {
-    if (!isRegisterGrantReply(message)) {
+    const reply = isRegisterGrantReply(message) || isResolveAssetReply(message)
+      ? message
+      : null;
+    if (!reply) {
       const id = ioRequestId(message);
       if (id) {
-        this.settleRegistration(id, {
+        this.settleControl(id, {
           ok: false,
           error: serviceError("BAD_REQUEST", "request.invalid"),
         });
       }
       return;
     }
-    const result: Result<RegisteredGrant> = message.result.ok
-      ? message.result
-      : { ok: false, error: toServiceError(message.result.error) };
-    this.settleRegistration(message.id, result);
+    const result: Result<unknown> = reply.result.ok
+      ? reply.result
+      : { ok: false, error: toServiceError(reply.result.error) };
+    this.settleControl(reply.id, result);
   }
 
-  private settleRegistration(id: string, result: Result<RegisteredGrant>): void {
+  private settleControl(id: string, result: Result<unknown>): void {
     const pending = this.pending.get(id);
     if (pending) {
       this.pending.delete(id);
@@ -150,31 +177,21 @@ export class IoWorkerSupervisor {
     }
   }
 
-  private sendRegistration(
-    windowId: number,
-    handle: string,
-    filePath: string,
-    mustExist: boolean,
-  ): Promise<Result<RegisteredGrant>> {
+  private sendControl<T>(request: Record<string, unknown>): Promise<Result<T>> {
     const id = `control-${this.nextRequestId++}`;
     return new Promise((resolve) => {
-      this.pending.set(id, { resolve });
+      this.pending.set(id, {
+        resolve: (result) => resolve(result as Result<T>),
+      });
       const child = this.child;
       if (!child) {
-        this.settleRegistration(id, failedRegistration());
+        this.settleControl(id, failedControl());
         return;
       }
       try {
-        child.postMessage({
-          type: "registerGrant",
-          id,
-          windowId,
-          handle,
-          path: filePath,
-          mustExist,
-        });
+        child.postMessage({ id, ...request });
       } catch {
-        this.settleRegistration(id, failedRegistration());
+        this.settleControl(id, failedControl());
       }
     });
   }
@@ -205,12 +222,13 @@ export class IoWorkerSupervisor {
     await this.spawnChild();
     for (const [windowId] of this.receivers) {
       for (const grant of this.grants.entries(windowId)) {
-        await this.sendRegistration(
+        await this.sendControl<RegisteredGrant>({
+          type: "registerGrant",
           windowId,
-          grant.handle,
-          grant.canonicalPath,
-          false,
-        );
+          handle: grant.handle,
+          path: grant.canonicalPath,
+          mustExist: false,
+        });
       }
     }
     for (const [windowId, receive] of this.receivers) {
@@ -229,7 +247,7 @@ export class IoWorkerSupervisor {
     channel.port1.on("message", (event) => {
       const id = ioRequestId(event.data);
       if (id) {
-        channel.port1.postMessage({ id, result: failedRegistration() });
+        channel.port1.postMessage({ id, result: failedControl() });
       }
     });
     channel.port1.start();
@@ -239,7 +257,7 @@ export class IoWorkerSupervisor {
 
   private failPending(): void {
     for (const pending of this.pending.values()) {
-      pending.resolve(failedRegistration());
+      pending.resolve(failedControl());
     }
     this.pending.clear();
   }

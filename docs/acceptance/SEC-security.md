@@ -91,13 +91,13 @@ When an inline script or `eval` is attempted, or an image is requested from a `f
 Then a `securitypolicyviolation` is reported for each, nothing runs or loads, and the live window reports sandbox, context isolation and web security on and Node integration off
 
 ### AC-SEC-16 — Document images resolve only inside the document's folder tree
-status: planned
+status: implemented
 Given a Markdown document whose folder holds an image and whose text references it by a relative path
 When the preview rewrites the reference to `doc-asset://` and the app serves it
 Then the image inside the document's folder loads; and a reference that escapes the folder — via `..`, `%2e%2e`, `%2f..`, a backslash, an absolute path, a UNC path, a device name or an ADS — is refused with 404 and no bytes outside the folder are read
 
 ### AC-SEC-17 — `doc-asset://` honours grants and window keying and streams without buffering
-status: planned
+status: implemented
 Given a `doc-asset://` request
 When its window id or grant is unknown, revoked, or names another window's document
 Then it is refused with 404 and no file content; a valid request for a file inside the document's folder streams the bytes with the right content type, without decoding or buffering them in main

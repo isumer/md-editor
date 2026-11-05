@@ -1,4 +1,5 @@
 export const MAX_CONTROL_PATH_LENGTH = 32 * 1024;
+export const MAX_ASSET_RELATIVE_PATH_LENGTH = 32 * 1024;
 
 export interface RegisterGrantRequest {
   type: "registerGrant";
@@ -25,15 +26,28 @@ export interface AttachPortRequest {
   windowId: number;
 }
 
+export interface ResolveAssetRequest {
+  type: "resolveAsset";
+  id: string;
+  windowId: number;
+  grant: string;
+  relativePath: string;
+}
+
 export type IoControlRequest =
   | RegisterGrantRequest
   | RevokeGrantRequest
   | RevokeWindowRequest
-  | AttachPortRequest;
+  | AttachPortRequest
+  | ResolveAssetRequest;
 
 export interface RegisteredGrant {
   canonicalPath: string;
   name: string;
+}
+
+export interface ResolvedAsset {
+  path: string;
 }
 
 export interface ControlError {
@@ -47,6 +61,13 @@ export interface RegisterGrantReply {
   id: string;
   result:
     | { ok: true; value: RegisteredGrant }
+    | { ok: false; error: ControlError };
+}
+
+export interface ResolveAssetReply {
+  id: string;
+  result:
+    | { ok: true; value: ResolvedAsset }
     | { ok: false; error: ControlError };
 }
 
@@ -116,9 +137,23 @@ function isWindowMessage(
     validWindowId(request["windowId"]);
 }
 
+function isResolveAsset(value: unknown): value is ResolveAssetRequest {
+  const request = exactData(
+    value,
+    ["type", "id", "windowId", "grant", "relativePath"],
+  );
+  return request !== null && request["type"] === "resolveAsset" &&
+    validId(request["id"]) && validWindowId(request["windowId"]) &&
+    validHandle(request["grant"]) &&
+    typeof request["relativePath"] === "string" &&
+    request["relativePath"].length > 0 &&
+    request["relativePath"].length <= MAX_ASSET_RELATIVE_PATH_LENGTH;
+}
+
 export function isIoControlRequest(value: unknown): value is IoControlRequest {
   return isRegister(value) || isRevokeGrant(value) ||
-    isWindowMessage(value, "revokeWindow") || isWindowMessage(value, "attachPort");
+    isWindowMessage(value, "revokeWindow") || isWindowMessage(value, "attachPort") ||
+    isResolveAsset(value);
 }
 
 export function controlRequestId(value: unknown): string | null {
@@ -165,10 +200,19 @@ function validRegisteredGrant(value: unknown): boolean {
     typeof grant["name"] === "string";
 }
 
-function validResult(value: unknown): boolean {
+function validResolvedAsset(value: unknown): boolean {
+  const asset = exactData(value, ["path"]);
+  return asset !== null && typeof asset["path"] === "string" &&
+    asset["path"].length > 0;
+}
+
+function validResult(
+  value: unknown,
+  validValue: (candidate: unknown) => boolean,
+): boolean {
   const success = exactData(value, ["ok", "value"]);
   if (success && success["ok"] === true) {
-    return validRegisteredGrant(success["value"]);
+    return validValue(success["value"]);
   }
   const failure = exactData(value, ["ok", "error"]);
   return failure !== null && failure["ok"] === false && validError(failure["error"]);
@@ -176,5 +220,12 @@ function validResult(value: unknown): boolean {
 
 export function isRegisterGrantReply(value: unknown): value is RegisterGrantReply {
   const reply = exactData(value, ["id", "result"]);
-  return reply !== null && validId(reply["id"]) && validResult(reply["result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], validRegisteredGrant);
+}
+
+export function isResolveAssetReply(value: unknown): value is ResolveAssetReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], validResolvedAsset);
 }
