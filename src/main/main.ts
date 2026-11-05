@@ -36,6 +36,10 @@ import { registerMenuIpcHandler } from "./ipc/menu";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 
+// DIAG ONLY (bug/perf09-diag): A/B the Skia backend on macOS CI.
+if (process.env["MDE_DIAG_DISABLE_GRAPHITE"] === "1") {
+  app.commandLine.appendSwitch("disable-features", "SkiaGraphite");
+}
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
 protocol.registerSchemesAsPrivileged([

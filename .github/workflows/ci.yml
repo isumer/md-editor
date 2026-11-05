@@ -68,7 +68,12 @@ jobs:
         if: runner.os == 'Linux'
         run: npm run check:coverage
       - name: Run end-to-end tests
-        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g "500 KB preview has no frame" --repeat-each 3
+        continue-on-error: true
+        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g "preview has no frame" --repeat-each 3
+      - name: Run end-to-end tests without Graphite
+        env:
+          MDE_DIAG_DISABLE_GRAPHITE: "1"
+        run: npx playwright test test/e2e/preview-perf.spec.ts -g "preview has no frame" --repeat-each 3 --output test-results-ganesh
       - name: Check acceptance criteria
         run: npm run check:acceptance
       - name: Add JUnit summary
@@ -82,6 +87,7 @@ jobs:
           path: |
             reports/
             test-results/
+            test-results-ganesh/
             playwright-report/
           if-no-files-found: ignore
       - name: Upload coverage
