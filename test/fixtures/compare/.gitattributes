@@ -1,0 +1,2 @@
+# Compare fixtures are byte-sensitive: trailing spaces, tabs, and CRLF must survive checkout.
+* -text
