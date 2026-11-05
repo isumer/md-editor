@@ -12,9 +12,11 @@ Update a row when an item is queued, merged or sent back.
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | queued |
 | 042 | 13 | export fixtures under test/fixtures/ (see branch auto/nim/042-…) | main | nim | review queued (053) |
 | 054 | 6 | test/fixtures/workspace/** | main | side | review queued (062, candidate redo) |
-| 055 | 14 | test/fixtures/stability/** | main | nim | running |
-| bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | candidate ff8da2b waiting for CI |
-| log-fixture | 7 | test/fixtures/log/** | main | side | queued (deepseek-side) |
+| 055 | 14 | test/fixtures/stability/** | main | nim | reviewing (066) |
+| bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | candidate 0b0f663 waiting for CI |
+| log-fixture | 7 | test/fixtures/log/** | main | side | review queued (067) |
+| md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | queued |
+| find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
@@ -23,3 +25,5 @@ Update a row when an item is queued, merged or sent back.
 - New module parts own new files only. Wiring into shared files (main
   entry, preload, command registry, menu, renderer main) is a separate
   dev item.
+- No src module part can be queued while slice 5 owns all of src/**.
+  Side and NIM take fixtures and test data until it merges.
