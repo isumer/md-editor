@@ -76,3 +76,20 @@ The folder merge therefore has five clean one-sided changes (`edit-left.txt`,
 `edit-right.txt`, `sub/inner.txt`, `added-left.txt`, `added-right.txt`), two
 clean one-sided deletions (`remove-left.txt`, `remove-right.txt`), one
 unchanged file (`common.txt`) and one conflict (`conflict.txt`).
+
+## `git-roundtrip.mjs`
+
+Run `node test/fixtures/merge/git-roundtrip.mjs <target-dir>` to create a
+git repository with one unresolved conflict. The script reads the three
+fixture files from its own directory and writes only inside `<target-dir>`.
+
+The script commits `base.txt` as `doc.txt` on `main`. Branch `left` commits
+`left.txt` as `doc.txt`. Branch `right` starts from `main` and commits
+`right.txt` as `doc.txt`. The script then checks out `left`, merges `right`
+and leaves the conflict in the working tree. It prints the absolute path of
+`doc.txt` and the `git status --porcelain` lines.
+
+The script is deterministic: it sets a fixed author, committer and date, and
+sets `core.autocrlf=false`. Two runs produce the same commit ids. The exit
+codes are 0 on success, 2 when `<target-dir>` exists and is not empty, and 3
+when `git` is not on `PATH`.
