@@ -259,6 +259,23 @@ describe("incremental render state", () => {
     expect(state.document).toBe(document);
   });
 
+  it("AC-R1-10: a stale published chunk makes a cached show fall back", () => {
+    const source = "[a][ref]\n\ntext\n\n[ref]: https://one.example";
+    const document = textFrom(source);
+    const state = new IncrementalRenderState("doc", 1, 0, document, (value) => value);
+    state.initial();
+    expect(state.show()).not.toBeNull();
+
+    const from = source.indexOf("one");
+    const change = ChangeSet.of(
+      { from, to: from + 3, insert: "two" },
+      document.length,
+    );
+    state.applyChange(document, change.apply(document), 0, 1, change.toJSON());
+
+    expect(state.show()).toBeNull();
+  });
+
   it("AC-R1-10: finds a reuse boundary past the chunks already split", () => {
     const leading = Array.from(
       { length: 11 },
@@ -563,5 +580,105 @@ describe("render worker cache lifecycle", () => {
 
     expect(scope.results()[0]).toMatchObject({ mode: "replace", blocks: [] });
     expect(scope.results()[1]).toMatchObject({ mode: "patch", blocks: [] });
+  });
+
+  it("AC-R4-01: shows a cached render without parsing again", () => {
+    const scope = new FakeScope();
+    const render = vi.fn((source: string) => source);
+    const handler = new RenderWorkerHandler(scope.postMessage, render);
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: "# one" });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+    const first = scope.results()[0];
+    render.mockClear();
+
+    handler.handle({ op: "show", id: 2, docId: "doc", epoch: 1, version: 0 });
+
+    const shown = scope.results()[1];
+    expect(shown).toMatchObject({
+      id: 2,
+      mode: "replace",
+      cached: true,
+      complete: true,
+    });
+    expect(shown?.ok && shown.mode === "replace" ? shown.blocks : [])
+      .toEqual(first?.ok && first.mode === "replace" ? first.blocks : null);
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("AC-R4-01: falls back to a render when no cached state matches", () => {
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: "one" });
+
+    handler.handle({ op: "show", id: 1, docId: "doc", epoch: 1, version: 0 });
+    expect(scope.results()[0]).toMatchObject({ id: 1, mode: "replace" });
+    expect(scope.results()[0]).not.toMatchObject({ cached: true });
+
+    handler.handle({ op: "show", id: 2, docId: "doc", epoch: 2, version: 0 });
+    expect(scope.responses[1]).toMatchObject({ op: "resync", id: 2 });
+  });
+
+  it("AC-R4-01: a reset drops the cached render so the next show renders", () => {
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: "one" });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+
+    handler.handle({ op: "reset", docId: "doc" });
+    handler.handle({ op: "show", id: 2, docId: "doc", epoch: 1, version: 0 });
+
+    expect(scope.results()[1]).toMatchObject({ id: 2, mode: "replace" });
+    expect(scope.results()[1]).not.toMatchObject({ cached: true });
+  });
+
+  it("AC-R1-12: answers a worker ping", () => {
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+
+    handler.handle({ op: "ping", id: 7 });
+
+    expect(scope.responses).toEqual([{ op: "pong", id: 7 }]);
+  });
+
+  it("AC-PERF-11: ignores a mismatched fill acknowledgement and a pending timer", () => {
+    vi.stubGlobal("setTimeout", () => 0);
+    vi.stubGlobal("clearTimeout", () => undefined);
+    try {
+      const scope = new FakeScope();
+      const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+      const document = Array.from(
+        { length: 120 },
+        (_, index) => `paragraph ${String(index)} ${"x".repeat(20_000)}`,
+      ).join("\n\n");
+      handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: document });
+      handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+
+      handler.handle({
+        op: "fill-ready",
+        docId: "doc",
+        epoch: 1,
+        version: 0,
+        token: 999,
+      });
+      handler.handle({
+        op: "fill-ready",
+        docId: "doc",
+        epoch: 1,
+        version: 0,
+        token: 1,
+      });
+      handler.handle({
+        op: "fill-ready",
+        docId: "missing",
+        epoch: 1,
+        version: 0,
+        token: 1,
+      });
+
+      expect(scope.results().filter((result) =>
+        result.ok && result.mode === "append")).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

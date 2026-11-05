@@ -9,7 +9,11 @@ import {
   SESSION_VERSION,
   emptySession,
   parseSession,
+  type SessionControl,
+  type StoredSession,
 } from "../../src/main/app/session";
+import { serviceError } from "../../src/shared/ipc/result";
+import { SessionStore as FileSessionStore } from "../../src/io-worker/services/session";
 
 const directories: string[] = [];
 
@@ -17,6 +21,19 @@ async function temporaryDirectory(): Promise<string> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-session-"));
   directories.push(directory);
   return directory;
+}
+
+function remoteControl(): SessionControl {
+  const files = new FileSessionStore();
+  return {
+    async readSession(filePath) {
+      return { ok: true, value: await files.read(filePath) };
+    },
+    async writeSession(filePath, session) {
+      await files.write(filePath, session);
+      return { ok: true, value: undefined };
+    },
+  };
 }
 
 afterEach(async () => {
@@ -48,11 +65,11 @@ describe("session store", () => {
   it("AC-R4-08: writes and reads a session atomically", async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, "session.json");
-    const store = new SessionStore(filePath);
-    const session = {
+    const store = new SessionStore(filePath, remoteControl());
+    const session: StoredSession = {
       documents: [stored("/tmp/a.md")],
       version: SESSION_VERSION,
-    } as const;
+    };
 
     await store.write(session);
 
@@ -66,9 +83,28 @@ describe("session store", () => {
   it("AC-R4-08: a missing or corrupt file reads as an empty session", async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, "session.json");
-    const store = new SessionStore(filePath);
+    const store = new SessionStore(filePath, remoteControl());
     await expect(store.read()).resolves.toEqual(emptySession());
     await fs.writeFile(filePath, "{not json", "utf8");
     await expect(store.read()).resolves.toEqual(emptySession());
+  });
+
+  it("AC-R4-08: a refused write rejects with the worker error", async () => {
+    const store = new SessionStore("/profiles/session.json", {
+      async readSession() {
+        return { ok: true, value: emptySession() };
+      },
+      async writeSession() {
+        return {
+          ok: false,
+          error: serviceError("PERMISSION_DENIED", "file.permissionDenied", {}, true),
+        };
+      },
+    });
+
+    await expect(store.write(emptySession())).rejects.toMatchObject({
+      code: "PERMISSION_DENIED",
+      retryable: true,
+    });
   });
 });

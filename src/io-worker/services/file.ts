@@ -145,9 +145,12 @@ export class IoFileService {
     if (!document) {
       throw serviceError("OUT_OF_SYNC", "file.outOfSync", {}, true);
     }
-    this.grants.resolve(windowId, input.grant);
+    if (input.grant !== null) {
+      this.grants.resolve(windowId, input.grant);
+    }
     const drafts = this.drafts.get(windowId) ?? new Map<string, DraftDocument>();
     drafts.set(input.docId, {
+      docId: input.docId,
       grant: input.grant,
       text: document.toString(),
     });

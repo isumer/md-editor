@@ -146,6 +146,7 @@ void initializeApplication(
   () => {
     sessionStore = new SessionStore(
       path.join(app.getPath("userData"), "session.json"),
+      ioWorker,
     );
     registerSessionIpcHandler(sessionStore, fileService, closeRequests);
     registerAppProtocol(rendererDirectory);

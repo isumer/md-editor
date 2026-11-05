@@ -1,5 +1,6 @@
 export interface ScheduledRender {
   id: number;
+  show?: boolean;
 }
 
 export type TimeSource = () => number;
@@ -49,6 +50,7 @@ export class RenderScheduler {
   private frame: number | undefined;
   private timer: number | undefined;
   private pendingSince: number | undefined;
+  private showPending = false;
   private readonly dispatchedAt = new Map<number, number>();
   private nextRequestId = 1;
   private newestAppliedId = 0;
@@ -60,7 +62,8 @@ export class RenderScheduler {
     this.options = resolve(options);
   }
 
-  schedule(): void {
+  schedule(show = false): void {
+    this.showPending ||= show;
     const currentTime = this.options.now();
     this.pendingSince ??= currentTime;
     if (this.frame !== undefined || this.timer !== undefined) {
@@ -114,6 +117,8 @@ export class RenderScheduler {
     const id = this.nextRequestId;
     this.nextRequestId += 1;
     this.dispatchedAt.set(id, startedAt);
-    this.requestRender({ id });
+    const show = this.showPending;
+    this.showPending = false;
+    this.requestRender(show ? { id, show } : { id });
   }
 }

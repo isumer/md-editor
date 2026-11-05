@@ -80,4 +80,45 @@ describe("render worker heartbeat", () => {
     advance(2_000);
     expect(onStuck).not.toHaveBeenCalled();
   });
+
+  it("AC-R1-12: start is idempotent", () => {
+    const { monitor, onPing } = heartbeat();
+
+    monitor.start();
+    monitor.start();
+
+    expect(onPing).toHaveBeenCalledTimes(1);
+  });
+
+  it("AC-R1-12: a timer that fires after stop does nothing", () => {
+    const callbacks: Array<() => void> = [];
+    const onPing = vi.fn();
+    const onStuck = vi.fn();
+    const monitor = new WorkerHeartbeat({
+      onPing,
+      onStuck,
+      setTimer: (callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+      clearTimer: () => undefined,
+    });
+
+    monitor.start();
+    monitor.stop();
+    callbacks[0]?.();
+
+    expect(onPing).toHaveBeenCalledOnce();
+    expect(onStuck).not.toHaveBeenCalled();
+  });
+
+  it("AC-R1-12: uses the system timers when none are injected", () => {
+    const monitor = new WorkerHeartbeat({
+      onPing: vi.fn(),
+      onStuck: vi.fn(),
+    });
+
+    monitor.start();
+    monitor.stop();
+  });
 });

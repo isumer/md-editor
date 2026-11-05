@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -38,16 +38,66 @@ export async function launchEditor(
   // A unique profile per launch keeps session.json and Chromium state out of
   // other tests; a second launch for session restore passes the same path.
   const profileDirectory = userDataDir ?? await createUserDataDirectory();
-  const application = await electron.launch({
-    args: [
-      `--user-data-dir=${profileDirectory}`,
-      repositoryRoot,
-      ...(filePath ? [filePath] : []),
-    ],
-    cwd: repositoryRoot,
-    env: environment,
-  });
+  let application: ElectronApplication;
+  try {
+    application = await electron.launch({
+      args: [
+        `--user-data-dir=${profileDirectory}`,
+        repositoryRoot,
+        ...(filePath ? [filePath] : []),
+      ],
+      cwd: repositoryRoot,
+      env: environment,
+    });
+  } catch (error) {
+    await removeProfileDirectory(profileDirectory);
+    throw error;
+  }
   return { application, page: await application.firstWindow(), userDataDir: profileDirectory };
+}
+
+const PROFILE_PREFIX = "mdeditor-userdata-";
+
+// A crashed Playwright page cannot be reused, but the window reloads. Execute
+// an expression in the live renderer through the main process instead.
+export async function evaluateInWindow<T>(
+  application: ElectronApplication,
+  expression: string,
+): Promise<T | null> {
+  try {
+    return await application.evaluate(async ({ BrowserWindow }, source) => {
+      const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+      if (!contents) {
+        return null;
+      }
+      return contents.executeJavaScript(source, true);
+    }, expression) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+export async function removeProfileDirectory(profileDirectory: string): Promise<void> {
+  if (!path.basename(profileDirectory).startsWith(PROFILE_PREFIX)) {
+    return;
+  }
+  // A child process can recreate the directory just after removal. Remove it
+  // again until it stays gone.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await fs.rm(profileDirectory, { recursive: true, force: true }).catch(
+      () => undefined,
+    );
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 100);
+    });
+    const exists = await fs.stat(profileDirectory).then(
+      () => true,
+      () => false,
+    );
+    if (!exists) {
+      return;
+    }
+  }
 }
 
 // A dirty document makes the window-close path show the in-page prompt, so
@@ -56,18 +106,69 @@ export async function closeEditor(
   application: ElectronApplication,
   page: Page,
 ): Promise<void> {
-  const closing = application.close();
-  const prompt = page.getByTestId("close-prompt");
-  const outcome = await Promise.race([
-    prompt.waitFor({ state: "visible" }).then(() => "prompt" as const).catch(
-      () => "closed" as const,
-    ),
-    closing.then(() => "closed" as const),
-  ]);
-  if (outcome === "prompt") {
-    await prompt.getByRole("button", { name: "Discard" }).click();
+  const profileDirectory = await application.evaluate(
+    ({ app }) => app.getPath("userData"),
+  ).catch(() => null);
+  // Read the process before close: Playwright drops the connection on close.
+  const child = application.process();
+  try {
+    const closing = application.close();
+    const prompt = page.getByTestId("close-prompt");
+    const outcome = await Promise.race([
+      prompt.waitFor({ state: "visible" }).then(() => "prompt" as const).catch(
+        () => "closed" as const,
+      ),
+      closing.then(() => "closed" as const),
+    ]);
+    if (outcome === "prompt") {
+      await prompt.getByRole("button", { name: "Discard" }).click();
+    }
+    await closing;
+  } finally {
+    if (profileDirectory !== null) {
+      await waitForProcessExit(child);
+      await removeProfileDirectory(profileDirectory);
+    }
   }
-  await closing;
+}
+
+// Electron can recreate the profile directory during shutdown. Wait for the
+// process to exit, so no child process writes it after removal.
+async function waitForProcessExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      child.once("exit", () => resolve());
+    }),
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 5_000);
+    }),
+  ]);
+}
+
+export async function closeCrashedEditor(
+  application: ElectronApplication,
+): Promise<void> {
+  const profileDirectory = await application.evaluate(
+    ({ app }) => app.getPath("userData"),
+  ).catch(() => null);
+  const exited = new Promise<void>((resolve) => {
+    application.process().once("exit", () => resolve());
+  });
+  await application.evaluate(({ app }) => {
+    app.exit(0);
+  }).catch(() => undefined);
+  await Promise.race([
+    exited,
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 5_000);
+    }),
+  ]);
+  if (profileDirectory !== null) {
+    await removeProfileDirectory(profileDirectory);
+  }
 }
 
 export async function launchSecondInstance(

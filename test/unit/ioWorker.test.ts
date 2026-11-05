@@ -147,6 +147,61 @@ describe("io-worker port boundary", () => {
     await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("original");
   });
 
+  it("AC-R4-07: drafts, lists, and clears drafts through the port", async () => {
+    const port = new FakePort();
+    attachIoPort(port, 1, serviceWithGrant());
+    attach(port, "attach", "doc", "text");
+    await waitForReplies(port, 1);
+    port.replies.length = 0;
+
+    port.send({
+      id: "draft",
+      op: "draft",
+      grant: "valid",
+      docId: "doc",
+      epoch: 0,
+      version: 0,
+    });
+    port.send({ id: "drafts", op: "drafts" });
+    port.send({ op: "clear-draft", docId: "doc" });
+    port.send({ id: "drafts-after", op: "drafts" });
+    await waitForReplies(port, 3);
+
+    expect(port.replies).toEqual([
+      { id: "draft", result: { ok: true, value: {} } },
+      {
+        id: "drafts",
+        result: {
+          ok: true,
+          value: {
+            drafts: [{ docId: "doc", grant: "valid", text: "text" }],
+          },
+        },
+      },
+      { id: "drafts-after", result: { ok: true, value: { drafts: [] } } },
+    ]);
+  });
+
+  it("AC-R4-07: a draft needs an attached document and a known grant", () => {
+    const grants = new IoGrantTable();
+    const service = new IoFileService(grants);
+    service.attach(1, { docId: "doc", epoch: 0, version: 0, text: "text" });
+
+    expect(() => service.draft(1, {
+      docId: "missing",
+      grant: null,
+      epoch: 0,
+      version: 0,
+    })).toThrowError(expect.objectContaining({ code: "OUT_OF_SYNC" }));
+    expect(() => service.draft(1, {
+      docId: "doc",
+      grant: "unknown",
+      epoch: 0,
+      version: 0,
+    })).toThrowError(expect.objectContaining({ code: "GRANT_INVALID" }));
+    expect(() => service.clearDraft(9, "doc")).not.toThrow();
+  });
+
   it("AC-SEC-13: an inapplicable change requires an attach before saving", async () => {
     const port = new FakePort();
     attachIoPort(port, 1, serviceWithGrant());
@@ -333,6 +388,27 @@ describe("io-worker file service", () => {
       .resolves.toEqual({ canonicalPath: missingPath, name: "new.md" });
     await expect(service.registerGrant(1, "refused", missingPath, true))
       .rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("AC-R4-07: stores a draft for an untitled document with a null grant", () => {
+    const service = new IoFileService(new IoGrantTable());
+    service.attach(1, {
+      docId: "untitled",
+      epoch: 0,
+      version: 0,
+      text: "unsaved text",
+    });
+
+    service.draft(1, {
+      docId: "untitled",
+      epoch: 0,
+      version: 0,
+      grant: null,
+    });
+
+    expect(service.listDrafts(1)).toEqual({
+      drafts: [{ docId: "untitled", grant: null, text: "unsaved text" }],
+    });
   });
 
   it("AC-SEC-16 AC-SEC-17: resolves a document asset from its own folder only", async () => {

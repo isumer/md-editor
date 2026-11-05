@@ -246,6 +246,7 @@ function applyBlocks(
     // can apply to them.
     shifts.length = 0;
     replaceBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
+    wiring.preview.dataset["renderCache"] = result.cached === true ? "hit" : "miss";
   } else if (result.mode === "append") {
     appendBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else {
@@ -336,11 +337,14 @@ export function wireRenderWorker(
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
     const response = event.data;
     const current = wiring.currentVersion();
-    if (response.docId !== current.docId || response.epoch !== current.epoch) {
+    if ("op" in response) {
+      if (response.op === "resync" &&
+        response.docId === current.docId && response.epoch === current.epoch) {
+        wiring.onResync(response);
+      }
       return;
     }
-    if ("op" in response) {
-      wiring.onResync(response);
+    if (response.docId !== current.docId || response.epoch !== current.epoch) {
       return;
     }
     if (response.version > current.version) {

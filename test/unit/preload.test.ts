@@ -286,13 +286,54 @@ describe("preload bridge", () => {
     port.reply({ id: "io-1", result: { ok: true, value: {} } });
     port.reply({
       id: "io-2",
-      result: { ok: true, value: { drafts: [{ grant: "grant", text: "draft text" }] } },
+      result: {
+        ok: true,
+        value: { drafts: [{ docId: "doc", grant: "grant", text: "draft text" }] },
+      },
     });
     await expect(drafted).resolves.toMatchObject({ ok: true, value: {} });
     await expect(listed).resolves.toEqual({
       ok: true,
-      value: { drafts: [{ grant: "grant", text: "draft text" }] },
+      value: { drafts: [{ docId: "doc", grant: "grant", text: "draft text" }] },
     });
+  });
+
+  it("AC-R4-07: drafts, lists and clears through the named API", async () => {
+    const { api, portListener } = await loadPreload();
+    const port = new FakePort();
+    portListener({ ports: [port] });
+
+    const drafted = api.draftDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 2,
+    });
+    const listed = api.listDrafts();
+    api.clearDraft({ docId: "doc" });
+
+    expect(port.messages).toEqual([
+      { id: "io-1", op: "draft", grant: "grant", docId: "doc", epoch: 0, version: 2 },
+      { id: "io-2", op: "drafts" },
+      { op: "clear-draft", docId: "doc" },
+    ]);
+
+    port.reply({ id: "io-1", result: { ok: true, value: {} } });
+    port.reply({
+      id: "io-2",
+      result: { ok: true, value: { drafts: [{ docId: "doc", grant: null, text: "x" }] } },
+    });
+    await expect(drafted).resolves.toMatchObject({ ok: true, value: {} });
+    await expect(listed).resolves.toMatchObject({
+      ok: true,
+      value: { drafts: [{ docId: "doc", grant: null, text: "x" }] },
+    });
+
+    let invalidSettled = false;
+    void api.listDrafts().then(() => { invalidSettled = true; });
+    port.reply({ id: "io-3", result: { ok: true, value: {} } });
+    await Promise.resolve();
+    expect(invalidSettled).toBe(false);
   });
 
   it("AC-PERF-04: sendChanges posts exactly the delta without text", async () => {
@@ -427,6 +468,19 @@ describe("preload bridge", () => {
     expect(electron.removeListener).toHaveBeenCalledWith(
       "file:open-request",
       openCall?.[1],
+    );
+
+    const closeListener = vi.fn();
+    const unsubscribeClose = api.onSessionCloseRequest(closeListener);
+    const closeCall = electron.on.mock.calls.find(
+      ([channel]) => channel === "session:request-close",
+    );
+    closeCall?.[1]({}, { id: 5 });
+    expect(closeListener).toHaveBeenCalledWith({ id: 5 });
+    unsubscribeClose();
+    expect(electron.removeListener).toHaveBeenCalledWith(
+      "session:request-close",
+      closeCall?.[1],
     );
   });
 });

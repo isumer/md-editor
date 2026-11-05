@@ -87,6 +87,18 @@ const electron = vi.hoisted(() => {
           result: { ok: true, value: { path: "/tmp/asset.png" } },
         }));
       }
+      if (message.type === "readSession") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: { version: 1, documents: [] } },
+        }));
+      }
+      if (message.type === "writeSession") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: {} },
+        }));
+      }
     }
   }
 
@@ -104,6 +116,7 @@ const electron = vi.hoisted(() => {
     readonly webHandlers = new Map<string, (...args: any[]) => unknown>();
     windowOpenHandler: ((details: { url: string }) => unknown) | undefined;
     destroyed = false;
+    close = vi.fn();
     show = vi.fn();
     focus = vi.fn();
     restore = vi.fn();
@@ -119,6 +132,7 @@ const electron = vi.hoisted(() => {
       }),
       send: vi.fn(),
       postMessage: vi.fn(),
+      reload: vi.fn(),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => unknown) => {
         this.windowOpenHandler = handler;
       }),
@@ -456,6 +470,19 @@ describe("main process", () => {
     });
   });
 
+  it("AC-R1-12: reloads the renderer after a crash but not after a clean exit", async () => {
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    const processGone = window?.webHandlers.get("render-process-gone");
+
+    processGone?.({}, { reason: "clean-exit" });
+    expect(window?.webContents.reload).not.toHaveBeenCalled();
+
+    processGone?.({}, { reason: "crashed" });
+    expect(window?.webContents.reload).toHaveBeenCalledOnce();
+  });
+
   it("AC-SEC-16 AC-SEC-17: serves document assets only through the resolver", async () => {
     await loadMain();
     await readyApplication();
@@ -723,5 +750,87 @@ describe("main process", () => {
 
     electron.appHandlers.get("will-quit")?.();
     expect(replacement?.kill).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R4-06: asks the renderer before closing and writes the allowed session", async () => {
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    if (!window) {
+      throw new Error("missing application window");
+    }
+    fileSystem.access.mockResolvedValueOnce(undefined);
+    fileSystem.readFile.mockResolvedValueOnce("saved text");
+    fileSystem.realpath.mockResolvedValueOnce("/tmp/session-open.md");
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ["/tmp/session-open.md"],
+    });
+    const opened = await invoke("file:open", {});
+    const grant = (opened as { value: { grant: string } }).value.grant;
+
+    const preventDefault = vi.fn();
+    window.windowHandlers.get("close")?.({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(window.webContents.send).toHaveBeenCalledWith(
+      "session:request-close",
+      { id: 1 },
+    ));
+
+    await expect(invoke("session:close-result", {
+      allow: true,
+      documents: [
+        {
+          grant,
+          name: "session-open.md",
+          savedText: "saved text",
+          text: "unsaved text",
+        },
+        {
+          grant: "missing-grant",
+          name: "gone.md",
+          savedText: "saved",
+          text: "unsaved",
+        },
+      ],
+      id: 1,
+    })).resolves.toEqual({ ok: true, value: undefined });
+    await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+
+    const worker = electron.UtilityProcessMock.instances.at(-1);
+    const write = worker?.posts.find(({ message }) =>
+      (message as { type?: string }).type === "writeSession")?.message as
+      | { session?: { documents?: unknown[]; version?: number } }
+      | undefined;
+    expect(write?.session).toEqual({
+      documents: [{
+        name: "session-open.md",
+        path: "/tmp/session-open.md",
+        savedText: "saved text",
+        text: "unsaved text",
+      }],
+      version: 1,
+    });
+  });
+
+  it("AC-R4-06: a failing close request still closes the window", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    if (!window) {
+      throw new Error("missing application window");
+    }
+    window.webContents.send.mockImplementationOnce(() => {
+      throw new Error("renderer gone");
+    });
+
+    window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+
+    await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+    expect(errorSpy).toHaveBeenCalledWith(JSON.stringify({
+      event: "close-request",
+      message: "renderer gone",
+    }));
   });
 });

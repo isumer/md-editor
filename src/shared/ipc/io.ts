@@ -52,7 +52,7 @@ export interface DetachDocumentMessage {
 export interface DraftDocumentInput {
   docId: string;
   epoch: number;
-  grant: string;
+  grant: string | null;
   version: number;
 }
 
@@ -72,7 +72,8 @@ export interface ClearDraftMessage {
 }
 
 export interface DraftDocument {
-  grant: string;
+  docId: string;
+  grant: string | null;
   text: string;
 }
 
@@ -298,7 +299,8 @@ function validDraft(value: unknown): value is DraftDocumentRequest {
     ["id", "op", "grant", "docId", "epoch", "version"],
   );
   return data !== null && validId(data["id"]) && data["op"] === "draft" &&
-    validGrant(data["grant"]) && validDocId(data["docId"]) &&
+    (data["grant"] === null || validGrant(data["grant"])) &&
+    validDocId(data["docId"]) &&
     validVersion(data["epoch"]) && validVersion(data["version"]);
 }
 
@@ -362,8 +364,9 @@ function validDraftList(value: unknown): boolean {
   const list = exactData(value, ["drafts"]);
   const drafts = list ? arrayValues(list["drafts"]) : null;
   return drafts !== null && drafts.every((draft) => {
-    const entry = exactData(draft, ["grant", "text"]);
-    return entry !== null && validGrant(entry["grant"]) &&
+    const entry = exactData(draft, ["docId", "grant", "text"]);
+    return entry !== null && validDocId(entry["docId"]) &&
+      (entry["grant"] === null || validGrant(entry["grant"])) &&
       typeof entry["text"] === "string" &&
       entry["text"].length <= MAX_IO_TEXT_LENGTH;
   });

@@ -35,6 +35,7 @@ import {
   type DocumentRecord,
 } from "./core/document";
 import { DocumentRegistry } from "./core/documentRegistry";
+import { FrameCoalescer } from "./core/frameCoalescer";
 import { WorkerHeartbeat } from "./core/heartbeat";
 import { installKeymap } from "./core/keymap";
 import {
@@ -147,13 +148,12 @@ function syncDocumentState(document: DocumentRecord): void {
 }
 
 function syncDirty(document: DocumentRecord): void {
+  updateTabRow(document);
   if (document !== activeDocument) {
-    renderTabs();
     return;
   }
   syncDocumentState(document);
   updateTitle();
-  renderTabs();
 }
 
 interface RenderHandlers {
@@ -200,10 +200,15 @@ const scheduler = new RenderScheduler((request) => {
   if (!document) {
     return;
   }
+  const version = document.replication.current();
+  if (request.show === true) {
+    renderWorker.postMessage({ op: "show", id: request.id, ...version });
+    return;
+  }
   renderWorker.postMessage({
     op: "render",
     id: request.id,
-    ...document.replication.current(),
+    ...version,
   });
 }, {
   onApplied: (latency) => {
@@ -222,7 +227,6 @@ function reattachActiveDocument(): void {
     ...document.replication.current(),
     text: document.state.doc.toString(),
   } satisfies RenderAttachMessage);
-  renderWorker.postMessage({ op: "reset", docId: document.id });
   scheduler.schedule();
 }
 
@@ -273,9 +277,8 @@ const callbacks: EditorCallbacks = {
     if (document) {
       // Every update, including a selection change, is the tab's view state.
       document.state = editor.state;
-      document.dirty = isDocumentDirty(document);
       document.scrollTop = editor.scrollDOM.scrollTop;
-      syncDirty(document);
+      dirtyFrame.changed(document);
     }
     scheduler.schedule();
   },
@@ -288,13 +291,7 @@ const callbacks: EditorCallbacks = {
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderWorker.postMessage(message);
-    document.dirty = isDocumentDirty(document);
-    if (document.dirty) {
-      drafts.documentChanged(document.id, state.doc.length);
-    } else {
-      drafts.documentSaved(document.id);
-    }
-    syncDirty(document);
+    dirtyFrame.changed(document);
   },
   updateTitle,
   onStateChanged: () => refreshContextKeys(),
@@ -304,6 +301,25 @@ editor = createEditor(editorHost, documentState, callbacks);
 
 const drafts = new DraftScheduler({
   onDraft: (docId) => sendDraft(docId),
+});
+
+// Dirty state is evaluated at most once per frame, and only that tab row updates.
+const dirtyFrame = new FrameCoalescer<DocumentRecord>({
+  requestFrame: (callback) => {
+    requestAnimationFrame(callback);
+  },
+  apply: (document) => {
+    if (!registry.get(document.id)) {
+      return;
+    }
+    document.dirty = isDocumentDirty(document);
+    if (document.dirty) {
+      drafts.documentChanged(document.id, document.state.doc.length);
+    } else {
+      drafts.documentSaved(document.id);
+    }
+    syncDirty(document);
+  },
 });
 
 const contextKeys = createContextKeys();
@@ -404,27 +420,37 @@ function tabLabel(document: DocumentRecord): string {
   return document.name ?? "Untitled";
 }
 
+interface TabRow {
+  element: HTMLDivElement;
+  name: HTMLSpanElement;
+  dirty: HTMLSpanElement;
+  close: HTMLButtonElement;
+}
+
+const tabRows = new Map<string, TabRow>();
+
 function renderTabs(): void {
   tabsHost.replaceChildren();
-  for (const document of registry.all()) {
+  tabRows.clear();
+  for (const tabDocument of registry.all()) {
     const tab = document.createElement("div");
     tab.className = "tab";
     tab.dataset["testid"] = "tab";
-    tab.dataset["docId"] = document.id;
-    tab.dataset["name"] = tabLabel(document);
+    tab.dataset["docId"] = tabDocument.id;
+    tab.dataset["name"] = tabLabel(tabDocument);
     tab.setAttribute("role", "tab");
-    tab.setAttribute("aria-selected", String(document === activeDocument));
-    tab.tabIndex = document === activeDocument ? 0 : -1;
+    tab.setAttribute("aria-selected", String(tabDocument === activeDocument));
+    tab.tabIndex = tabDocument === activeDocument ? 0 : -1;
 
     const name = document.createElement("span");
     name.className = "tab-name";
-    name.textContent = tabLabel(document);
+    name.textContent = tabLabel(tabDocument);
 
     const dirty = document.createElement("span");
     dirty.className = "tab-dirty";
     dirty.dataset["testid"] = "tab-dirty";
     dirty.textContent = "•";
-    dirty.hidden = !document.dirty;
+    dirty.hidden = !tabDocument.dirty;
     dirty.setAttribute("aria-label", formatMessage("tab.unsaved", {}));
 
     const close = document.createElement("button");
@@ -432,23 +458,37 @@ function renderTabs(): void {
     close.className = "tab-close";
     close.dataset["testid"] = "tab-close";
     close.setAttribute("aria-label", formatMessage("tab.close", {
-      file: tabLabel(document),
+      file: tabLabel(tabDocument),
     }));
     close.textContent = "×";
-    close.addEventListener("click", (event) => {
+    close.addEventListener("click", (event: MouseEvent) => {
       event.stopPropagation();
-      void closeTab(document).catch(showUnexpectedError);
+      void closeTab(tabDocument).catch(showUnexpectedError);
     });
-    tab.addEventListener("click", () => activateDocument(document));
-    tab.addEventListener("mousedown", (event) => {
+    tab.addEventListener("click", () => activateDocument(tabDocument));
+    tab.addEventListener("mousedown", (event: MouseEvent) => {
       if (event.button === 1) {
         event.preventDefault();
-        void closeTab(document).catch(showUnexpectedError);
+        void closeTab(tabDocument).catch(showUnexpectedError);
       }
     });
     tab.append(name, dirty, close);
     tabsHost.append(tab);
+    tabRows.set(tabDocument.id, { element: tab, name, dirty, close });
   }
+}
+
+function updateTabRow(document: DocumentRecord): void {
+  const row = tabRows.get(document.id);
+  if (!row) {
+    renderTabs();
+    return;
+  }
+  const label = tabLabel(document);
+  row.element.dataset["name"] = label;
+  row.name.textContent = label;
+  row.dirty.hidden = !document.dirty;
+  row.close.setAttribute("aria-label", formatMessage("tab.close", { file: label }));
 }
 
 function activateDocument(document: DocumentRecord): void {
@@ -473,10 +513,8 @@ function activateDocument(document: DocumentRecord): void {
   });
   updateTitle();
   renderTabs();
-  renderWorker.postMessage({ op: "reset", docId: document.id });
-  preview.replaceChildren();
   showPreviewError();
-  scheduler.schedule();
+  scheduler.schedule(true);
   editor.focus();
 }
 
@@ -614,9 +652,11 @@ function removeDocument(document: DocumentRecord): void {
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
+  dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderWorker.postMessage({ op: "detach", docId: document.id });
   drafts.documentSaved(document.id);
+  clearDraft({ docId: document.id });
   if (document.grant) {
     void releaseGrant(document.grant);
   }
@@ -672,6 +712,7 @@ closePrompt.addEventListener("click", (event) => {
 });
 
 async function closeTab(document: DocumentRecord): Promise<void> {
+  dirtyFrame.flush();
   if (document.dirty) {
     const answer = await askClosePrompt([document]);
     const resolution = resolveClosePrompt(true, answer);
@@ -797,7 +838,7 @@ async function saveActiveDocument(saveAs: boolean): Promise<void> {
 
 function sendDraft(docId: string): void {
   const document = registry.get(docId);
-  if (!document || !document.dirty || !document.grant) {
+  if (!document || !document.dirty) {
     return;
   }
   const version = document.replication.current();
@@ -828,6 +869,7 @@ function snapshotDocuments(): {
 }
 
 async function handleSessionClose(request: SessionCloseRequest): Promise<void> {
+  dirtyFrame.flush();
   const dirty = registry.all().filter((document) => document.dirty);
   let allow = true;
   if (dirty.length > 0) {
@@ -867,6 +909,19 @@ async function recoverDrafts(): Promise<boolean> {
 }
 
 async function recoverDraft(draft: DraftDocument): Promise<boolean> {
+  if (draft.grant === null) {
+    const document = newDocument({
+      canonicalPath: null,
+      grant: null,
+      name: null,
+      savedText: "",
+      text: draft.text,
+    });
+    removePristineUntitled();
+    activateDocument(document);
+    showStatus(formatMessage("draft.recovered", { file: "Untitled" }));
+    return true;
+  }
   const read = await readDocument(draft.grant);
   if (!read.ok || registry.findByPath(read.value.canonicalPath)) {
     return false;

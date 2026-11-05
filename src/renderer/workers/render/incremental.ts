@@ -43,6 +43,8 @@ interface RenderChunk {
   startLine: number;
   endLine: number;
   rendered: boolean;
+  // Raw rendered HTML, kept so a cached show needs no second parse.
+  html: string | null;
   labels: Set<string>;
   definitionCandidate: boolean;
 }
@@ -235,8 +237,31 @@ export class IncrementalRenderState {
     return { blocks, complete: this.complete };
   }
 
-  patch(): PatchBatch {
-    const pending: { chunk: RenderChunk; index: number }[] = [];
+  // A full replace from HTML already rendered. Returns null when any published
+  // chunk is stale, so the caller can fall back to a normal render.
+  show(): RenderBatch | null {
+    const limit = Math.min(this.cursor, this.chunks.length);
+    for (let index = 0; index < limit; index += 1) {
+      const chunk = this.chunks[index] as RenderChunk;
+      if (!chunk.rendered || chunk.html === null) {
+        return null;
+      }
+    }
+    const blocks: RenderBlock[] = [];
+    for (let index = 0; index < limit; index += 1) {
+      const chunk = this.chunks[index] as RenderChunk;
+      const startLine = this.startOf(index);
+      blocks.push({
+        id: chunk.id,
+        startLine,
+        endLine: this.endOf(index),
+        html: shiftChunkDataLines(chunk.html ?? "", startLine),
+      });
+    }
+    return { blocks, complete: this.complete };
+  }
+
+  patch(): PatchBatch {    const pending: { chunk: RenderChunk; index: number }[] = [];
     for (const chunk of this.dirty) {
       // Removed chunks leave the dirty set in applyChange, so every entry exists.
       const index = this.indexOf(chunk);
@@ -595,6 +620,7 @@ export class IncrementalRenderState {
       startLine,
       endLine,
       rendered: false,
+      html: null,
       labels: new Set(),
       definitionCandidate: false,
     };
@@ -614,6 +640,7 @@ export class IncrementalRenderState {
       chunk.rendered = true;
       this.unrendered -= 1;
     }
+    chunk.html = html;
     this.dirty.delete(chunk);
     return {
       id: chunk.id,

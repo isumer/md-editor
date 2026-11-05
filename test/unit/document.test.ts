@@ -16,7 +16,10 @@ describe("document dirty tracking", () => {
   function record(text: readonly string[], savedText = Text.of(text)) {
     const state = EditorState.create({ doc: Text.of(text) });
     return createDocumentRecord({
-      replication: { current: () => ({ docId: "doc", epoch: 1, version: 0 }) },
+      replication: {
+        current: () => ({ docId: "doc", epoch: 1, version: 0 }),
+        changed: vi.fn(),
+      },
       savedText,
       state,
     });

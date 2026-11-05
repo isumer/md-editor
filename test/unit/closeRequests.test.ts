@@ -53,7 +53,7 @@ describe("close request broker", () => {
     expect(timers.size).toBe(0);
   });
 
-  it("AC-R4-05: a cancelled close resolves false and writes no session", async () => {
+  it("AC-R4-06: a cancelled close resolves false and writes no session", async () => {
     const { instance, persist } = broker();
 
     const pending = instance.request(7);
@@ -79,5 +79,18 @@ describe("close request broker", () => {
     await instance.settle(result, 7);
 
     expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("AC-R4-06: uses the system timers when none are injected", async () => {
+    const send = vi.fn();
+    const persist = vi.fn(async () => undefined);
+    const instance = new CloseRequestBroker(send, persist);
+
+    const pending = instance.request(7);
+    await instance.settle(result, 7);
+
+    await expect(pending).resolves.toBe(true);
+    expect(send).toHaveBeenCalledWith(7, 1);
+    expect(persist).toHaveBeenCalledWith(result, 7);
   });
 });

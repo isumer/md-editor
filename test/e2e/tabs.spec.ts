@@ -99,7 +99,13 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
       .toBeGreaterThan(100);
 
     await tab(page, "beta.md").click();
+    // The editor renders only the visited lines, so scroll to the top to read
+    // the replacement and then return to the end for the next edit.
+    await expect.poll(() => scroller(page).evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(150);
+    await page.keyboard.press("Control+Home");
     await expect(editor).toContainText("BETA-SELECTED");
+    await page.keyboard.press("Control+End");
     await expect(editor).toContainText("BETA-END");
     await page.keyboard.type("Z");
     await expect(editor).toContainText("BETA-ENDZ");
@@ -110,12 +116,45 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
     await page.keyboard.press("Control+z");
     await page.keyboard.press("Control+z");
     await expect(editor).not.toContainText("BETA-END");
+    await page.keyboard.press("Control+Home");
     await expect(editor).toContainText("beta-line-01");
 
     await tab(page, "alpha.md").click();
     await page.keyboard.press("Control+z");
     await expect(editor).not.toContainText("ALPHA-EDIT");
+    await page.keyboard.press("Control+Home");
     await expect(editor).toContainText("alpha-line-01");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("switching back to a tab shows its cached preview blocks without a re-render", {
+  tag: "@AC-R4-01",
+  annotation: { type: "AC-R4-01" },
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  const preview = page.getByTestId("preview");
+  const blockSnapshot = () => preview.locator(".preview-block").evaluateAll(
+    (elements) => elements.map((element) => ({
+      id: (element as HTMLElement).dataset["blockId"],
+      html: element.innerHTML,
+    })),
+  );
+  try {
+    await expect(preview.locator("h1")).toHaveText("Alpha");
+    const alphaBlocks = await blockSnapshot();
+    expect(alphaBlocks.length).toBeGreaterThan(0);
+
+    await openWithMenu(application, page, beta);
+    await expect(preview.locator("h1")).toHaveText("Beta");
+
+    await tab(page, "alpha.md").click();
+    await expect(preview.locator("h1")).toHaveText("Alpha");
+    await expect(preview).toHaveAttribute("data-render-cache", "hit");
+    await expect.poll(blockSnapshot).toEqual(alphaBlocks);
   } finally {
     await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });

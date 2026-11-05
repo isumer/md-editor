@@ -76,4 +76,14 @@ describe("draft scheduler", () => {
 
     expect(timers.size).toBe(0);
   });
+
+  it("AC-R4-07: uses the system timers when none are injected", () => {
+    const draftScheduler = new DraftScheduler({ onDraft: vi.fn() });
+
+    draftScheduler.documentChanged("doc", 10);
+    expect(draftScheduler.hasPending("doc")).toBe(true);
+    draftScheduler.documentSaved("doc");
+
+    expect(draftScheduler.hasPending("doc")).toBe(false);
+  });
 });

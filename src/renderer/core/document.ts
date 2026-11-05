@@ -1,5 +1,6 @@
-import { EditorState, Text } from "@codemirror/state";
+import { EditorState, Text, type ChangeSet } from "@codemirror/state";
 
+import type { ChangeDocumentMessage } from "../../shared/ipc/io";
 import type { ReplicatedVersion } from "./replication";
 
 export type DocumentEol = "lf" | "crlf";
@@ -32,6 +33,7 @@ export interface DocumentRecord {
 // Only the parts of DocumentReplication the document record needs.
 export interface DocumentReplicationLike {
   current(): ReplicatedVersion;
+  changed(changes: ChangeSet): ChangeDocumentMessage;
 }
 
 export interface NewDocumentInput {

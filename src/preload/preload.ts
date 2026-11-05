@@ -145,8 +145,11 @@ function validDrafts(value: unknown): boolean {
     return false;
   }
   return (list["drafts"] as readonly unknown[]).every((draft) => {
-    const entry = exactData(draft, ["grant", "text"]);
-    return entry !== null && typeof entry["grant"] === "string" &&
+    const entry = exactData(draft, ["docId", "grant", "text"]);
+    return entry !== null && typeof entry["docId"] === "string" &&
+      entry["docId"].length > 0 && entry["docId"].length <= 128 &&
+      (entry["grant"] === null ||
+        (typeof entry["grant"] === "string" && entry["grant"].length > 0)) &&
       typeof entry["text"] === "string";
   });
 }

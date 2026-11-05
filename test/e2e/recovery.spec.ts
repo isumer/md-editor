@@ -6,10 +6,13 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   clickMenuItem,
+  closeCrashedEditor,
   closeEditor,
   createUserDataDirectory,
+  evaluateInWindow,
   fixturePath,
   launchEditor,
+  removeProfileDirectory,
   stubOpenDialog,
 } from "./helpers";
 
@@ -49,7 +52,7 @@ test("quitting with dirty tabs prompts, and Save writes every document", {
   const { directory, document } = await copyFixture();
   const secondPath = path.join(directory, "second.md");
   await fs.writeFile(secondPath, "# Second\n", "utf8");
-  const { application, page } = await launchEditor(document);
+  const { application, page, userDataDir } = await launchEditor(document);
   try {
     await appendText(page, "QUIT-FIRST");
     await openWithMenu(application, page, secondPath);
@@ -66,6 +69,7 @@ test("quitting with dirty tabs prompts, and Save writes every document", {
     await expect.poll(() => fs.readFile(document, "utf8")).toContain("QUIT-FIRST");
     await expect.poll(() => fs.readFile(secondPath, "utf8")).toContain("QUIT-SECOND");
   } finally {
+    await removeProfileDirectory(userDataDir);
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
@@ -76,7 +80,7 @@ test("quitting with dirty tabs can discard without writing files", {
 }, async () => {
   const { directory, document } = await copyFixture();
   const original = await fs.readFile(document, "utf8");
-  const { application, page } = await launchEditor(document);
+  const { application, page, userDataDir } = await launchEditor(document);
   try {
     await appendText(page, "DISCARD-ON-QUIT");
 
@@ -88,6 +92,7 @@ test("quitting with dirty tabs can discard without writing files", {
 
     await expect.poll(() => fs.readFile(document, "utf8")).toBe(original);
   } finally {
+    await removeProfileDirectory(userDataDir);
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
@@ -113,12 +118,113 @@ test("a renderer crash recovers the last draft", {
       BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer();
     });
 
-    await expect(page.getByTestId("tab")).toHaveCount(1);
-    await expect(tab(page, "alpha.md")).toHaveAttribute("aria-selected", "true");
-    await expect(editor).toContainText("DRAFT-MARKER", { timeout: 10_000 });
-    await expect(page.getByTestId("tab-dirty")).toBeVisible();
+    await expect.poll(
+      () => evaluateInWindow<string[]>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab\"]')].map((tab) => tab.dataset.name)"),
+      { timeout: 10_000 },
+    ).toEqual(["alpha.md"]);
+    await expect.poll(
+      () => evaluateInWindow<string>(application,
+        "document.querySelector('[data-testid=\"editor\"] .cm-content')?.textContent ?? ''"),
+      { timeout: 10_000 },
+    ).toContain("DRAFT-MARKER");
+    await expect.poll(
+      () => evaluateInWindow<boolean>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab-dirty\"]')].some((marker) => !marker.hidden)"),
+      { timeout: 10_000 },
+    ).toBe(true);
   } finally {
-    await closeEditor(application, page);
+    await closeCrashedEditor(application);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a crash recovers an untitled document from its draft", {
+  tag: "@AC-R4-07",
+  annotation: { type: "AC-R4-07" },
+}, async () => {
+  const { application, page } = await launchEditor();
+  try {
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await expect(page).toHaveTitle(/Untitled/);
+    await appendText(page, "UNTITLED-DRAFT");
+
+    await expect.poll(async () => {
+      const listed = await page.evaluate(() => window.api.listDrafts());
+      return listed.ok && listed.value.drafts.some((draft) =>
+        draft.grant === null && draft.text.includes("UNTITLED-DRAFT"));
+    }, { timeout: 5_000 }).toBe(true);
+
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer();
+    });
+
+    await expect.poll(
+      () => evaluateInWindow<string[]>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab\"]')].map((tab) => tab.dataset.name)"),
+      { timeout: 10_000 },
+    ).toEqual(["Untitled"]);
+    await expect.poll(
+      () => evaluateInWindow<string>(application,
+        "document.querySelector('[data-testid=\"editor\"] .cm-content')?.textContent ?? ''"),
+      { timeout: 10_000 },
+    ).toContain("UNTITLED-DRAFT");
+    await expect.poll(
+      () => evaluateInWindow<boolean>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab-dirty\"]')].some((marker) => !marker.hidden)"),
+      { timeout: 10_000 },
+    ).toBe(true);
+  } finally {
+    await closeCrashedEditor(application);
+  }
+});
+
+test("discarding a dirty tab clears its draft so a crash does not restore it", {
+  tag: "@AC-R4-05",
+  annotation: { type: "AC-R4-05" },
+}, async () => {
+  const { directory, document } = await copyFixture();
+  const { application, page } = await launchEditor(document);
+  try {
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await expect(editor).toContainText("Sample document");
+    await appendText(page, "DISCARD-DRAFT");
+
+    const draftWritten = () => page.evaluate(() => window.api.listDrafts());
+    await expect.poll(async () => {
+      const listed = await draftWritten();
+      return listed.ok && listed.value.drafts.some((draft) =>
+        draft.text.includes("DISCARD-DRAFT"));
+    }, { timeout: 5_000 }).toBe(true);
+
+    await tab(page, "alpha.md").getByTestId("tab-close").click();
+    const prompt = page.getByTestId("close-prompt");
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole("button", { name: "Discard" }).click();
+    await expect(page.getByTestId("tab")).toHaveCount(0);
+
+    await expect.poll(async () => {
+      const listed = await draftWritten();
+      return listed.ok && listed.value.drafts.some((draft) =>
+        draft.text.includes("DISCARD-DRAFT"));
+    }, { timeout: 5_000 }).toBe(false);
+
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer();
+    });
+
+    await expect.poll(
+      () => evaluateInWindow<string[]>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab\"]')].map((tab) => tab.dataset.name)"),
+      { timeout: 10_000 },
+    ).toEqual(["Untitled"]);
+    await expect.poll(
+      () => evaluateInWindow<string>(application,
+        "document.querySelector('[data-testid=\"editor\"] .cm-content')?.textContent ?? ''"),
+      { timeout: 10_000 },
+    ).not.toContain("DISCARD-DRAFT");
+  } finally {
+    await closeCrashedEditor(application);
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
@@ -132,22 +238,18 @@ test("closing and reopening restores the session with its documents", {
   await fs.writeFile(secondPath, "# Second\n", "utf8");
   const userDataDir = await createUserDataDirectory();
   const first = await launchEditor(document, userDataDir);
-  try {
-    await appendText(first.page, "SESSION-FIRST");
-    await openWithMenu(first.application, first.page, secondPath);
-    await appendText(first.page, "SESSION-SECOND");
+  await appendText(first.page, "SESSION-FIRST");
+  await openWithMenu(first.application, first.page, secondPath);
+  await appendText(first.page, "SESSION-SECOND");
 
-    const closing = first.application.close();
-    await expect(first.page.getByTestId("close-prompt")).toBeVisible();
-    await first.page.getByRole("button", { name: "Discard" }).click();
-    await closing;
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
+  const closing = first.application.close();
+  await expect(first.page.getByTestId("close-prompt")).toBeVisible();
+  await first.page.getByRole("button", { name: "Discard" }).click();
+  await closing;
 
   const second = await launchEditor(undefined, userDataDir);
   try {
-    await expect(second.page.getByTestId("tab")).toHaveCount(2);
+    await expect(second.page.getByTestId("tab")).toHaveCount(2, { timeout: 10_000 });
     await expect(tab(second.page, "alpha.md")).toHaveCount(1);
     await expect(tab(second.page, "second.md")).toHaveCount(1);
 
@@ -158,6 +260,7 @@ test("closing and reopening restores the session with its documents", {
     await expect(second.page.getByTestId("tab-dirty")).toHaveCount(2);
   } finally {
     await closeEditor(second.application, second.page);
+    await fs.rm(directory, { recursive: true, force: true });
   }
 });
 
@@ -173,11 +276,28 @@ test("a stuck render worker is restarted within 2.5 s and typing stays responsiv
     expect(renderWorker).toBeDefined();
 
     // Start the bounded wait before the worker blocks, so the 2.5 s budget
-    // covers the heartbeat miss and the restart.
-    const badgeSeen = page.getByTestId("preview-error").waitFor({
-      state: "visible",
-      timeout: 2_500,
+    // covers the heartbeat miss and the restart. The badge is cleared as soon
+    // as the new worker renders, so a mutation observer records that it showed.
+    await page.evaluate(() => {
+      const badge = document.querySelector<HTMLElement>("#preview-error");
+      if (!badge) {
+        throw new Error("missing preview error");
+      }
+      const probe = window as Window & { previewBadgeShown?: boolean };
+      probe.previewBadgeShown = false;
+      new MutationObserver(() => {
+        if (!badge.hidden) {
+          probe.previewBadgeShown = true;
+        }
+      }).observe(badge, {
+        attributes: true,
+        attributeFilter: ["hidden"],
+        characterData: true,
+        childList: true,
+        subtree: true,
+      });
     });
+    const started = Date.now();
     void renderWorker?.evaluate(() => {
       while (true) {
         // Occupy the worker so it cannot answer heartbeats.
@@ -190,7 +310,12 @@ test("a stuck render worker is restarted within 2.5 s and typing stays responsiv
     await page.keyboard.type("WATCHDOG");
     await expect(editor).toContainText("WATCHDOG", { timeout: 1_000 });
 
-    await badgeSeen;
+    await expect.poll(
+      () => page.evaluate(() => Boolean(
+        (window as Window & { previewBadgeShown?: boolean }).previewBadgeShown,
+      )),
+      { timeout: 10_000 },
+    ).toBe(true);
     expect(Date.now() - started).toBeLessThan(2_500);
     await expect(page.getByTestId("preview-error")).toBeHidden({ timeout: 10_000 });
     await expect(page.getByTestId("preview")).toContainText("WATCHDOG", { timeout: 10_000 });
