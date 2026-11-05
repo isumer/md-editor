@@ -35,3 +35,9 @@ status: planned
 Given the preview shows a rendered document
 When a later render fails
 Then the previous preview stays visible, an error is shown, and the next successful render replaces both
+
+### AC-R1-07 — The preview shows the text of the version it names
+status: planned
+Given a document is edited, replaced by another, or the render process restarts, in any interleaving
+When the preview renders
+Then the preview shows the document text exactly as of the version the result names, a result for an older document or version than one already shown is ignored, and a render process that lost or fell behind on its copy is given the document again before it renders
