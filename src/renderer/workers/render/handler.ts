@@ -6,15 +6,23 @@ import type {
   RenderChangeSetJson,
   RenderRequest,
   RenderResponse,
+  RenderResult,
 } from "../../../shared/workers/render";
 import { isRenderWorkerRequest } from "../../../shared/workers/render";
 import { DocumentMirror } from "../../../shared/replication/mirror";
 import { renderMarkdown } from "./render";
+import { IncrementalRenderState } from "./incremental";
 
 interface BufferedResync {
   epoch: number;
   version: number;
   changes: RenderChangeMessage[];
+}
+
+interface CachedRender {
+  state: IncrementalRenderState;
+  fillToken: number;
+  fillTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 type PostResponse = (response: RenderResponse) => void;
@@ -31,6 +39,7 @@ function text(value: string): Text {
 export class RenderWorkerHandler {
   private readonly mirror = new DocumentMirror<Text, RenderChangeSetJson>(applyChanges);
   private readonly buffers = new Map<string, BufferedResync>();
+  private readonly renders = new Map<string, CachedRender>();
 
   constructor(
     private readonly postResponse: PostResponse,
@@ -52,8 +61,7 @@ export class RenderWorkerHandler {
         this.render(value);
         return;
       case "detach":
-        this.mirror.detach(value.docId);
-        this.buffers.delete(value.docId);
+        this.detach(value.docId);
         return;
     }
   }
@@ -65,6 +73,11 @@ export class RenderWorkerHandler {
       message.version,
       text(message.text),
     );
+    const cache = this.renders.get(message.docId);
+    if (cache && cache.state.epoch < message.epoch) {
+      this.cancelFill(cache);
+      this.renders.delete(message.docId);
+    }
     const buffer = this.buffers.get(message.docId);
     if (!buffer || message.epoch < buffer.epoch ||
       (message.epoch === buffer.epoch && message.version < buffer.version)) {
@@ -100,9 +113,36 @@ export class RenderWorkerHandler {
   }
 
   private applyChange(message: RenderChangeMessage): void {
+    const before = this.mirror.docAt(
+      message.docId,
+      message.epoch,
+      message.fromVersion,
+    );
     this.mirror.change(
       message.docId,
       message.epoch,
+      message.fromVersion,
+      message.toVersion,
+      message.changes,
+    );
+    const after = this.mirror.docAt(
+      message.docId,
+      message.epoch,
+      message.toVersion,
+    );
+    const cache = this.renders.get(message.docId);
+    if (!cache) {
+      return;
+    }
+    this.cancelFill(cache);
+    if (!before || !after || cache.state.epoch !== message.epoch ||
+      cache.state.version !== message.fromVersion) {
+      this.renders.delete(message.docId);
+      return;
+    }
+    cache.state.applyChange(
+      before,
+      after,
       message.fromVersion,
       message.toVersion,
       message.changes,
@@ -120,14 +160,10 @@ export class RenderWorkerHandler {
       return;
     }
     try {
-      this.postResponse({
-        id: request.id,
-        docId: request.docId,
-        epoch: request.epoch,
-        version: request.version,
-        ok: true,
-        html: this.renderText(document.toString()),
-      });
+      const cache = this.cachedRender(request, document);
+      this.cancelFill(cache);
+      this.postResponse(this.resultFor(cache.state, request));
+      this.scheduleFill(cache, request);
     } catch (error) {
       this.postResponse({
         id: request.id,
@@ -137,6 +173,119 @@ export class RenderWorkerHandler {
         ok: false,
         message: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  private cachedRender(request: RenderRequest, document: Text): CachedRender {
+    const existing = this.renders.get(request.docId);
+    if (existing && existing.state.epoch === request.epoch &&
+      existing.state.version === request.version) {
+      return existing;
+    }
+    if (existing) {
+      this.cancelFill(existing);
+    }
+    const cache: CachedRender = {
+      state: new IncrementalRenderState(
+        request.docId,
+        request.epoch,
+        request.version,
+        document,
+        this.renderText,
+      ),
+      fillToken: 0,
+      fillTimer: undefined,
+    };
+    this.renders.set(request.docId, cache);
+    return cache;
+  }
+
+  private resultFor(
+    state: IncrementalRenderState,
+    request: RenderRequest,
+  ): RenderResult {
+    if (!state.published) {
+      const batch = state.initial();
+      return {
+        id: request.id,
+        docId: request.docId,
+        epoch: request.epoch,
+        version: request.version,
+        ok: true,
+        mode: "replace",
+        blocks: batch.blocks,
+        complete: batch.complete,
+      };
+    }
+    const batch = state.patch();
+    return {
+      id: request.id,
+      docId: request.docId,
+      epoch: request.epoch,
+      version: request.version,
+      ok: true,
+      mode: "patch",
+      blocks: batch.blocks,
+      removed: batch.removed,
+      complete: batch.complete,
+    };
+  }
+
+  private scheduleFill(cache: CachedRender, request: RenderRequest): void {
+    if (cache.state.complete) {
+      return;
+    }
+    const token = cache.fillToken;
+    const tick = (): void => {
+      const current = this.renders.get(request.docId);
+      if (current !== cache || cache.fillToken !== token) {
+        return;
+      }
+      cache.fillTimer = undefined;
+      try {
+        const batch = cache.state.fill();
+        this.postResponse({
+          id: request.id,
+          docId: request.docId,
+          epoch: request.epoch,
+          version: request.version,
+          ok: true,
+          mode: "append",
+          blocks: batch.blocks,
+          complete: batch.complete,
+        });
+        if (!batch.complete) {
+          cache.fillTimer = setTimeout(tick, 0);
+        }
+      } catch (error) {
+        this.postResponse({
+          id: request.id,
+          docId: request.docId,
+          epoch: request.epoch,
+          version: request.version,
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+    cache.fillTimer = setTimeout(tick, 0);
+  }
+
+  private cancelFill(cache: CachedRender): void {
+    cache.fillToken += 1;
+    if (cache.fillTimer !== undefined) {
+      clearTimeout(cache.fillTimer);
+      cache.fillTimer = undefined;
+    }
+  }
+
+  private detach(docId: string): void {
+    this.mirror.detach(docId);
+    this.buffers.delete(docId);
+    const cache = this.renders.get(docId);
+    if (cache) {
+      this.cancelFill(cache);
+      this.renders.delete(docId);
     }
   }
 

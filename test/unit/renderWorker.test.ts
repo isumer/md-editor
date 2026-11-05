@@ -54,7 +54,14 @@ describe("render worker mirror", () => {
         epoch: 1,
         version: 0,
         ok: true,
-        html: '<h1 data-line="0">Rendered</h1>\n',
+        mode: "replace",
+        blocks: [{
+          id: "block-1",
+          startLine: 0,
+          endLine: 1,
+          html: '<h1 data-line="0">Rendered</h1>\n',
+        }],
+        complete: true,
       },
       { op: "resync", id: 2, docId: "doc", epoch: 1, version: 1 },
       { op: "resync", id: 3, docId: "doc", epoch: 2, version: 0 },
@@ -104,7 +111,14 @@ describe("render worker mirror", () => {
         epoch: 3,
         version: 3,
         ok: true,
-        html: "<p data-line=\"0\">two final</p>\n",
+        mode: "replace",
+        blocks: [{
+          id: "block-1",
+          startLine: 0,
+          endLine: 1,
+          html: "<p data-line=\"0\">two final</p>\n",
+        }],
+        complete: true,
       },
     ]);
   });
@@ -151,7 +165,14 @@ describe("render worker mirror", () => {
         epoch: 3,
         version: 3,
         ok: true,
-        html: "<p data-line=\"0\">one two three</p>\n",
+        mode: "replace",
+        blocks: [{
+          id: "block-1",
+          startLine: 0,
+          endLine: 1,
+          html: "<p data-line=\"0\">one two three</p>\n",
+        }],
+        complete: true,
       },
     ]);
   });
@@ -234,7 +255,14 @@ describe("render worker mirror", () => {
         epoch: 3,
         version: 0,
         ok: true,
-        html: "<p data-line=\"0\">new</p>\n",
+        mode: "replace",
+        blocks: [{
+          id: "block-1",
+          startLine: 0,
+          endLine: 1,
+          html: "<p data-line=\"0\">new</p>\n",
+        }],
+        complete: true,
       },
     ]);
   });
@@ -273,6 +301,30 @@ describe("render worker mirror", () => {
     }]);
   });
 
+  it("AC-R1-07: accepts an insertion that spans several lines", () => {
+    const scope = new FakeWorkerScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+    const document = text("abc");
+    const change = ChangeSet.of({ from: 1, insert: "x\ny" }, document.length);
+
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0,
+      text: document.toString() });
+    handler.handle({
+      op: "change",
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: change.toJSON(),
+    });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 1 });
+
+    expect(scope.responses[0]).toMatchObject({
+      mode: "replace",
+      blocks: [{ html: "ax\nybc" }],
+    });
+  });
+
   it("AC-R1-07: the worker entry validates and dispatches scope messages", async () => {
     const workerScope = {
       onmessage: null as ((event: MessageEvent<unknown>) => void) | null,
@@ -303,7 +355,14 @@ describe("render worker mirror", () => {
       epoch: 1,
       version: 0,
       ok: true,
-      html: "<p data-line=\"0\">entry</p>\n",
+      mode: "replace",
+      blocks: [{
+        id: "block-1",
+        startLine: 0,
+        endLine: 1,
+        html: "<p data-line=\"0\">entry</p>\n",
+      }],
+      complete: true,
     });
   });
 });
@@ -323,7 +382,9 @@ function generator(seed: number): Generator {
 }
 
 function randomInsert(random: Generator): string {
-  const alphabet = ["a", "b", "c", "\n", "xy"] as const;
+  // No newlines: the property checks version bookkeeping, and a single chunk
+  // keeps each render's HTML comparable to its named document version.
+  const alphabet = ["a", "b", "c", "xy"] as const;
   return alphabet[random.next(alphabet.length)] ?? "";
 }
 
@@ -348,7 +409,12 @@ function assertResponses(scope: FakeWorkerScope, state: PropertyState, seed: num
     if (response.ok) {
       const expected = state.versions.get(versionKey(response.epoch, response.version));
       expect(expected, `seed ${seed}`).toBeDefined();
-      expect(response.html, `seed ${seed}`).toBe(expected?.toString());
+      const blocks = response.mode === "patch"
+        ? response.blocks.map((patch) => patch.block)
+        : response.blocks;
+      for (const block of blocks) {
+        expect(block.html, `seed ${seed}`).toBe(expected?.toString());
+      }
     }
   }
 }
