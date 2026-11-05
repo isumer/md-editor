@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-2.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869); fix queued (slice-5-fix-2) |
+| 041 | 5 | listed files only (brief slice-5-fix-2.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869); fix queued (872; job 871 failed on a broken worktree) |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | candidate 632759b (CI pending) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
@@ -23,8 +23,10 @@ Update a row when an item is queued, merged or sent back.
 | git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | merged (82c7b0a) |
 | conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | merged (0724cc9) |
 | gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | candidate de06eb1 |
-| slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | queued (865) |
-| languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | queued (866) |
+| slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | review queued (868) |
+| languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | review queued (867) |
+| slice7-line-endings | 7 | src/shared/text/lineEndings.ts, test/unit/lineEndings.test.ts | main | nim | queued (874) |
+| slice7-find-replace | 7 | src/shared/text/findReplace.ts, test/unit/findReplace.test.ts | main | side | queued (873) |
 | slice6-tree-generator | 6 | test/fixtures/workspace/generate-tree.mjs, test/fixtures/workspace/README.md | main | dev | done (870); verify red on Pi perf only; review pending |
 
 ## Notes
