@@ -11,10 +11,8 @@ import {
   DATA_LINE_PREFIX,
   hasReferenceCandidate,
   nextChunk,
-  rangeIndexAt,
   referenceLabels,
   shiftChunkDataLines,
-  splitChunksFrom,
   type LineRange,
   type LineReader,
 } from "./chunks";
@@ -40,17 +38,19 @@ export interface PatchBatch {
 
 interface RenderChunk {
   id: string;
+  // Line numbers are stored relative to the chunk's line segment. A line-count
+  // change updates one segment base instead of every following chunk.
   startLine: number;
   endLine: number;
   rendered: boolean;
-  localHtml: string | null;
   labels: Set<string>;
   definitionCandidate: boolean;
 }
 
-interface ExpectedBoundary {
-  index: number;
-  endLine: number;
+interface LineSegment {
+  // Chunk index where this base starts; bases are absolute line offsets.
+  start: number;
+  base: number;
 }
 
 interface Replacement extends LineRange {
@@ -62,9 +62,14 @@ interface ChangedRange {
   endOld: number;
 }
 
-export const INITIAL_CHUNK_COUNT = 40;
-const FILL_BATCH_SIZE = 64;
+// Only the first screen is sent in the initial replace. The rest arrives in
+// acknowledged fill batches so no single main-thread task is large.
+export const INITIAL_CHUNK_COUNT = 12;
+const FILL_BATCH_SIZE = 8;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
+// Segment lookups are linear; compacting an edit-heavy session keeps the list
+// short. Compaction is amortised over the edits that created the segments.
+const MAX_LINE_SEGMENTS = 64;
 
 function textReader(document: Text): LineReader {
   return {
@@ -133,12 +138,22 @@ export class IncrementalRenderState {
   published = false;
   private chunks: RenderChunk[];
   private cursor = 0;
+  private splitCursor = 0;
+  private fullySplit = false;
   private unrendered = 0;
   private readonly dirty = new Set<RenderChunk>();
   private readonly removed = new Set<string>();
   private pendingLineShifts: RenderLineShift[] = [];
   private references: Record<string, ReferenceDefinition> = {};
+  private segments: LineSegment[] = [{ start: 0, base: 0 }];
   private nextId = 1;
+  private lineWrites = 0;
+
+  // Counts chunk line-field writes so a test can assert that a keystroke does
+  // not touch every chunk after the change.
+  get chunkLineWrites(): number {
+    return this.lineWrites;
+  }
 
   constructor(
     readonly docId: string,
@@ -150,30 +165,70 @@ export class IncrementalRenderState {
     this.version = version;
     this.document = document;
     this.progressive = document.length > PROGRESSIVE_BYTES;
-    const lines = textReader(document);
-    this.chunks = splitChunksFrom(lines).map((range) => {
-      const chunk = this.newChunk(range.startLine, range.endLine);
-      chunk.definitionCandidate = rangeHasCandidate(lines, range);
-      return chunk;
-    });
+    this.chunks = [];
+    // Split only the first screen. The fill pass extends the chunk list as it
+    // consumes it, which keeps a 20 MB open off the critical path.
+    this.ensureChunks(INITIAL_CHUNK_COUNT);
     this.refreshReferences();
   }
 
   get complete(): boolean {
-    return this.cursor >= this.chunks.length && this.unrendered === 0;
+    return this.fullySplit && this.cursor >= this.chunks.length &&
+      this.unrendered === 0;
+  }
+
+  // Splits chunks from the current document until the list has `count` entries
+  // or the document ends. New reference candidates can change how already
+  // rendered chunks resolve links, so merge them immediately.
+  private ensureChunks(count: number): void {
+    if (this.fullySplit) {
+      return;
+    }
+    const lines = textReader(this.document);
+    let candidate = false;
+    while (this.chunks.length < count) {
+      const range = nextChunk(lines, this.splitCursor);
+      if (!range) {
+        this.fullySplit = true;
+        break;
+      }
+      const base = this.offsetAt(this.chunks.length);
+      const chunk = this.newChunk(
+        range.startLine - base,
+        range.endLine - base,
+      );
+      chunk.definitionCandidate = rangeHasCandidate(lines, range);
+      candidate ||= chunk.definitionCandidate;
+      this.chunks.push(chunk);
+      this.splitCursor = range.endLine;
+    }
+    if (candidate) {
+      this.refreshReferences();
+    }
+  }
+
+  // The change handlers compare against the old chunk list, so the list must
+  // reach every block the change can touch before the document is replaced.
+  private splitThrough(line: number): void {
+    while (!this.fullySplit) {
+      const last = this.chunks.length - 1;
+      if (last >= 0 && this.endOf(last) > line) {
+        return;
+      }
+      this.ensureChunks(this.chunks.length + 1);
+    }
   }
 
   initial(): RenderBatch {
     // Every block is rendered from the current document, so any shift that
     // accumulated before the first publish is already reflected in its lines.
     this.pendingLineShifts = [];
-    const limit = this.progressive
-      ? Math.min(INITIAL_CHUNK_COUNT, this.chunks.length)
-      : this.chunks.length;
+    this.ensureChunks(INITIAL_CHUNK_COUNT);
+    const limit = Math.min(INITIAL_CHUNK_COUNT, this.chunks.length);
     const blocks: RenderBlock[] = [];
     while (this.cursor < limit) {
       const chunk = this.chunks[this.cursor] as RenderChunk;
-      blocks.push(this.send(chunk));
+      blocks.push(this.send(chunk, this.cursor));
       this.cursor += 1;
     }
     this.published = true;
@@ -183,16 +238,15 @@ export class IncrementalRenderState {
   patch(): PatchBatch {
     const pending: { chunk: RenderChunk; index: number }[] = [];
     for (const chunk of this.dirty) {
+      // Removed chunks leave the dirty set in applyChange, so every entry exists.
       const index = this.indexOf(chunk);
-      if (index < 0) {
-        this.dirty.delete(chunk);
-      } else if (index < this.cursor) {
+      if (index < this.cursor) {
         pending.push({ chunk, index });
       }
     }
     pending.sort((left, right) => left.index - right.index);
     const blocks = pending.map(({ chunk, index }) => ({
-      block: this.send(chunk),
+      block: this.send(chunk, index),
       after: index > 0 ? (this.chunks[index - 1] as RenderChunk).id : null,
     }));
     const removed = [...this.removed];
@@ -203,13 +257,14 @@ export class IncrementalRenderState {
   }
 
   fill(): RenderBatch {
+    this.ensureChunks(this.cursor + FILL_BATCH_SIZE);
     const blocks: RenderBlock[] = [];
     const end = Math.min(this.chunks.length, this.cursor + FILL_BATCH_SIZE);
     // Everything before the cursor has been sent; the fill pass starts on the
     // first chunk that has never been rendered.
     while (this.cursor < end) {
       const chunk = this.chunks[this.cursor] as RenderChunk;
-      blocks.push(this.send(chunk));
+      blocks.push(this.send(chunk, this.cursor));
       this.cursor += 1;
     }
     return { blocks, complete: this.complete };
@@ -225,27 +280,30 @@ export class IncrementalRenderState {
     if (this.version !== fromVersion) {
       return;
     }
-    this.version = toVersion;
-    this.document = after;
     const bounds = changeBounds(changes);
     if (bounds.to < 0) {
+      this.version = toVersion;
+      this.document = after;
       return;
     }
 
     const changed = this.changedLines(before, bounds);
     const lineDelta = after.lines - before.lines;
+    // Old chunks after the change are the only reuse candidates, so split
+    // until one exists. The scan stays proportional to the change's position.
+    this.splitThrough(changed.endOld);
     const first = this.firstAffectedChunk(changed.startOld, after);
     const chunkStart = first < this.chunks.length
-      ? (this.chunks[first] as RenderChunk).startLine
+      ? this.startOf(first)
       : changed.startOld;
     // A change before the first chunk starts a new block, so re-parse from the
     // changed line itself rather than from the old first chunk.
     const reparseStart = Math.min(chunkStart, changed.startOld);
-    const expected = this.expectedBoundaries(changed.endOld, lineDelta);
 
     const lines = textReader(after);
     const previousLines = textReader(before);
     const replacements: Replacement[] = [];
+    let candidate = this.firstStartAtOrAfter(changed.endOld);
     let stop = -1;
     let from = reparseStart;
     while (from < after.lines) {
@@ -253,26 +311,60 @@ export class IncrementalRenderState {
       if (!range) {
         break;
       }
-      // Same start and end lines are not enough: deleting line breaks can join
-      // an untouched chunk's first line to the changed line. Compare the source
-      // so only a genuinely unchanged chunk is reused.
-      const match = this.unchangedBoundary(expected, range, lines, previousLines);
-      if (match !== -1) {
-        stop = match;
+      // Walk old chunks that end before this new range: they were consumed by
+      // the change. The first candidate that still covers the range and has the
+      // same source is an unchanged boundary to reuse. Same lines are not
+      // enough: deleting line breaks can join an untouched chunk's first line
+      // to the changed line, so compare the source.
+      while (stop === -1) {
+        if (candidate >= this.chunks.length && !this.fullySplit) {
+          this.ensureChunks(this.chunks.length + 1);
+        }
+        if (candidate >= this.chunks.length) {
+          break;
+        }
+        const oldStart = this.startOf(candidate);
+        const oldEnd = this.endOf(candidate);
+        const newStart = oldStart + lineDelta;
+        const newEnd = oldEnd + lineDelta;
+        if (newEnd <= range.startLine) {
+          candidate += 1;
+          continue;
+        }
+        if (newStart === range.startLine && newEnd === range.endLine &&
+          sourceOf(previousLines, oldStart, oldEnd) ===
+            sourceOf(lines, range.startLine, range.endLine)) {
+          stop = candidate;
+        }
+        break;
+      }
+      if (stop !== -1) {
         break;
       }
       replacements.push({
         ...range,
         definitionCandidate: rangeHasCandidate(lines, range),
       });
-      if (range.endLine <= from) {
-        break;
-      }
       from = range.endLine;
     }
 
-    const last = stop === -1 ? this.chunks.length : stop;
-    const removedChunks = this.chunks.splice(first, Math.max(0, last - first));
+    this.version = toVersion;
+    this.document = after;
+    if (!this.fullySplit) {
+      // The unscanned remainder is still addressed in the old document.
+      this.splitCursor += lineDelta;
+    }
+
+    const oldLength = this.chunks.length;
+    const last = stop === -1 ? oldLength : stop;
+    const removedCount = Math.max(0, last - first);
+    // Bases are read before the splice: later chunks keep their local lines and
+    // take the new base only from the rebuild.
+    const firstBase = this.offsetAt(first);
+    const lastBase = last < oldLength ? this.offsetAt(last) : firstBase;
+    const removedChunks = this.chunks.splice(first, removedCount);
+    this.rebuildSegments(first, last, oldLength, firstBase, lastBase,
+      replacements.length);
     let definitionsChanged = false;
     for (const chunk of removedChunks) {
       this.dirty.delete(chunk);
@@ -286,7 +378,11 @@ export class IncrementalRenderState {
 
     const beforeCursor = first < this.cursor;
     const inserted = replacements.map((range) => {
-      const chunk = this.newChunk(range.startLine, range.endLine);
+      // Inserted chunks share the base that starts at `first`.
+      const chunk = this.newChunk(
+        range.startLine - firstBase,
+        range.endLine - firstBase,
+      );
       chunk.definitionCandidate = range.definitionCandidate;
       definitionsChanged ||= range.definitionCandidate;
       return chunk;
@@ -297,13 +393,8 @@ export class IncrementalRenderState {
         this.dirty.add(chunk);
       }
     }
-    if (lineDelta !== 0) {
-      for (let index = first + inserted.length; index < this.chunks.length; index += 1) {
-        const chunk = this.chunks[index] as RenderChunk;
-        chunk.startLine += lineDelta;
-        chunk.endLine += lineDelta;
-      }
-    }
+    this.shiftLines(first + inserted.length, lineDelta);
+    this.compactSegments();
     if (beforeCursor) {
       const tailCovered = stop === -1 ? 0 : Math.max(0, this.cursor - stop);
       this.cursor = first + inserted.length + tailCovered;
@@ -331,74 +422,157 @@ export class IncrementalRenderState {
   }
 
   private firstAffectedChunk(startLine: number, after: Text): number {
-    let first = rangeIndexAt(this.chunks, startLine);
+    let first = this.chunkIndexAt(startLine);
     if (first >= this.chunks.length) {
       // Past the last block: only a line that can continue it (an indented
       // line or a list item) needs the last chunk re-parsed; a new standalone
       // trailing block can start after the published prefix.
-      const line = startLine < after.lines ? after.line(startLine + 1).text : "";
+      const line = after.line(Math.min(startLine + 1, after.lines)).text;
       return this.chunks.length > 0 && continuesPreviousBlock(line)
         ? this.chunks.length - 1
         : this.chunks.length;
     }
     if (first > 0) {
-      const chunk = this.chunks[first];
-      const line = startLine < after.lines ? after.line(startLine + 1).text : "";
+      const line = after.line(Math.min(startLine + 1, after.lines)).text;
       // A change in a blank separator belongs to the block above it, and a line
       // that becomes indented or a list item can join a list across the blank.
-      if ((chunk && chunk.startLine > startLine) || continuesPreviousBlock(line)) {
+      if (this.startOf(first) > startLine || continuesPreviousBlock(line)) {
         first -= 1;
       }
     }
     return first;
   }
 
-  // Chunks whose start line is at or after the end of the change keep their
-  // contents, so a re-parse that lands on one of their boundaries can reuse
-  // them. Their lines have all moved by the change's line delta.
-  private expectedBoundaries(
-    endOld: number,
-    lineDelta: number,
-  ): Map<number, ExpectedBoundary[]> {
-    const expected = new Map<number, ExpectedBoundary[]>();
-    for (let index = 0; index < this.chunks.length; index += 1) {
-      const chunk = this.chunks[index] as RenderChunk;
-      if (chunk.startLine < endOld) {
-        continue;
-      }
-      const start = chunk.startLine + lineDelta;
-      const boundary = { index, endLine: chunk.endLine + lineDelta };
-      const list = expected.get(start);
-      if (list) {
-        list.push(boundary);
+  private firstStartAtOrAfter(line: number): number {
+    let low = 0;
+    let high = this.chunks.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (this.startOf(middle) < line) {
+        low = middle + 1;
       } else {
-        expected.set(start, [boundary]);
+        high = middle;
       }
     }
-    return expected;
+    return low;
   }
 
-  private unchangedBoundary(
-    expected: Map<number, ExpectedBoundary[]>,
-    range: LineRange,
-    lines: LineReader,
-    previousLines: LineReader,
-  ): number {
-    const candidates = expected.get(range.startLine);
-    if (!candidates) {
-      return -1;
+  // First chunk whose end is after the line; chunk arrays stay ordered by line
+  // while the segment bases carry the pending shifts.
+  private chunkIndexAt(line: number): number {
+    let low = 0;
+    let high = this.chunks.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (this.endOf(middle) <= line) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
     }
-    const source = sourceOf(lines, range.startLine, range.endLine);
-    for (const boundary of candidates) {
-      if (boundary.endLine !== range.endLine) {
+    return low;
+  }
+
+  private offsetAt(index: number): number {
+    let low = 0;
+    let high = this.segments.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      const segment = this.segments[middle];
+      if (segment && segment.start <= index) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return (this.segments[low - 1] as LineSegment).base;
+  }
+
+  private startOf(index: number): number {
+    return (this.chunks[index] as RenderChunk).startLine + this.offsetAt(index);
+  }
+
+  private endOf(index: number): number {
+    return (this.chunks[index] as RenderChunk).endLine + this.offsetAt(index);
+  }
+
+  // A line-count change moves one segment base; chunks after it keep their
+  // local lines and resolve the new absolute line through the base.
+  private shiftLines(index: number, delta: number): void {
+    if (delta === 0 || index >= this.chunks.length) {
+      return;
+    }
+    const base = this.offsetAt(index);
+    const at = this.segments.findIndex((segment) => segment.start >= index);
+    if (at === -1) {
+      this.segments.push({ start: index, base });
+    } else if ((this.segments[at] as LineSegment).start > index) {
+      this.segments.splice(at, 0, { start: index, base });
+    }
+    for (const segment of this.segments) {
+      if (segment.start >= index) {
+        segment.base += delta;
+      }
+    }
+  }
+
+  // Rebuilds the segment list around a spliced chunk range. Chunks after the
+  // splice keep their local lines; only the bases around the edit change.
+  private rebuildSegments(
+    first: number,
+    last: number,
+    oldLength: number,
+    firstBase: number,
+    lastBase: number,
+    inserted: number,
+  ): void {
+    const net = inserted - (last - first);
+    const parts: LineSegment[] = this.segments
+      .filter((segment) => segment.start < first);
+    parts.push({ start: first, base: firstBase });
+    if (last < oldLength) {
+      const survivorStart = first + inserted;
+      if (survivorStart === first) {
+        // Nothing was inserted: survivors start at the boundary itself.
+        (parts[parts.length - 1] as LineSegment).base = lastBase;
+      } else if (lastBase !== firstBase) {
+        parts.push({ start: survivorStart, base: lastBase });
+      }
+      for (const segment of this.segments) {
+        if (segment.start > last) {
+          const next = { start: segment.start + net, base: segment.base };
+          const tail = parts[parts.length - 1] as LineSegment;
+          if (next.start > tail.start && next.base !== tail.base) {
+            parts.push(next);
+          }
+        }
+      }
+    }
+    this.segments = parts;
+  }
+
+  // Applies the pending bases to the chunk lines and resets the list. This is
+  // the only path that rewrites chunk line fields in bulk.
+  private compactSegments(): void {
+    if (this.segments.length <= MAX_LINE_SEGMENTS) {
+      return;
+    }
+    let current = 0;
+    for (let index = 0; index < this.chunks.length; index += 1) {
+      while (current + 1 < this.segments.length &&
+        (this.segments[current + 1] as LineSegment).start <= index) {
+        current += 1;
+      }
+      const base = (this.segments[current] as LineSegment).base;
+      if (base === 0) {
         continue;
       }
-      const chunk = this.chunks[boundary.index] as RenderChunk;
-      if (sourceOf(previousLines, chunk.startLine, chunk.endLine) === source) {
-        return boundary.index;
-      }
+      const chunk = this.chunks[index] as RenderChunk;
+      chunk.startLine += base;
+      chunk.endLine += base;
+      this.lineWrites += 1;
     }
-    return -1;
+    this.segments = [{ start: 0, base: 0 }];
   }
 
   private lineShiftAnchor(first: number, inserted: readonly RenderChunk[]): string | null {
@@ -409,9 +583,10 @@ export class IncrementalRenderState {
     return tail > 0 ? (this.chunks[tail - 1] as RenderChunk).id : null;
   }
 
+  // The dirty set holds a few chunks per keystroke, so an identity scan keeps
+  // the lookup simple without touching chunk line fields.
   private indexOf(chunk: RenderChunk): number {
-    const index = rangeIndexAt(this.chunks, chunk.startLine);
-    return this.chunks[index] === chunk ? index : -1;
+    return this.chunks.indexOf(chunk);
   }
 
   private newChunk(startLine: number, endLine: number): RenderChunk {
@@ -420,21 +595,21 @@ export class IncrementalRenderState {
       startLine,
       endLine,
       rendered: false,
-      localHtml: null,
       labels: new Set(),
       definitionCandidate: false,
     };
     this.nextId += 1;
     this.unrendered += 1;
+    this.lineWrites += 1;
     return chunk;
   }
 
-  private send(chunk: RenderChunk): RenderBlock {
-    if (chunk.localHtml === null) {
-      const source = sourceOf(textReader(this.document), chunk.startLine, chunk.endLine);
-      chunk.labels = referenceLabels(source);
-      chunk.localHtml = this.renderText(source, this.environment());
-    }
+  private send(chunk: RenderChunk, index: number): RenderBlock {
+    const startLine = this.startOf(index);
+    const endLine = this.endOf(index);
+    const source = sourceOf(textReader(this.document), startLine, endLine);
+    chunk.labels = referenceLabels(source);
+    const html = this.renderText(source, this.environment());
     if (!chunk.rendered) {
       chunk.rendered = true;
       this.unrendered -= 1;
@@ -442,9 +617,9 @@ export class IncrementalRenderState {
     this.dirty.delete(chunk);
     return {
       id: chunk.id,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      html: shiftChunkDataLines(chunk.localHtml, chunk.startLine),
+      startLine,
+      endLine,
+      html: shiftChunkDataLines(html, startLine),
     };
   }
 
@@ -461,12 +636,13 @@ export class IncrementalRenderState {
   // chunks that used an affected label need to be rendered again.
   private refreshReferences(): void {
     const next: Record<string, ReferenceDefinition> = {};
-    for (const chunk of this.chunks) {
+    for (let index = 0; index < this.chunks.length; index += 1) {
+      const chunk = this.chunks[index] as RenderChunk;
       if (!chunk.definitionCandidate) {
         continue;
       }
       const definitions = collectReferences(
-        sourceOf(textReader(this.document), chunk.startLine, chunk.endLine),
+        sourceOf(textReader(this.document), this.startOf(index), this.endOf(index)),
       );
       for (const [label, definition] of Object.entries(definitions)) {
         if (!(label in next)) {
@@ -493,7 +669,6 @@ export class IncrementalRenderState {
       }
       if (affected) {
         chunk.rendered = false;
-        chunk.localHtml = null;
         chunk.labels = new Set();
         this.unrendered += 1;
         this.dirty.add(chunk);

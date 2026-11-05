@@ -7,6 +7,7 @@ import { wireRenderWorker } from "../../src/renderer/features/preview/preview";
 import { RenderScheduler } from "../../src/renderer/features/preview/renderScheduler";
 
 interface FakeWorker {
+  postMessage: (message: unknown) => void;
   onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
 }
@@ -18,7 +19,11 @@ interface WiringOptions {
 }
 
 function wiring(options: WiringOptions = {}) {
-  const worker: FakeWorker = { onmessage: null, onerror: null };
+  const worker: FakeWorker = {
+    postMessage: vi.fn(),
+    onmessage: null,
+    onerror: null,
+  };
   const scheduler = new RenderScheduler(() => undefined);
   const preview = options.preview ?? document.createElement("div");
   const showStatus = vi.fn();

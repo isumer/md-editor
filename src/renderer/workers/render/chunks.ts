@@ -41,7 +41,7 @@ function openingFence(line: string): Fence | null {
   }
   // markdown-it rejects a backtick fence whose info string contains a backtick,
   // so a broken line like "```pytho`n" starts a paragraph, not code.
-  if (marker.charAt(0) === "`" && line.slice((match[0] ?? "").length).includes("`")) {
+  if (marker.charAt(0) === "`" && line.slice(match[0].length).includes("`")) {
     return null;
   }
   return { character: marker.charAt(0), length: marker.length };
@@ -171,7 +171,8 @@ export function nextChunk(lines: LineReader, from: number): LineRange | null {
 function arrayReader(lines: readonly string[]): LineReader {
   return {
     length: lines.length,
-    line: (index) => lines[index] ?? "",
+    // nextChunk reads only indexes below the length it was given.
+    line: (index) => lines[index] as string,
   };
 }
 
@@ -214,14 +215,6 @@ export const DATA_LINE_PREFIX = "";
 
 // Markdown-it numbers data-line from the start of the source it is given, so a
 // chunk rendered alone must shift its block lines back into document space.
-export function shiftDataLineAttributes(html: string, offset: number): string {
-  if (offset === 0) {
-    return html;
-  }
-  return html.replace(/data-line="(\d+)"/g, (_match, line: string) =>
-    `data-line="${String(Number(line) + offset)}"`);
-}
-
 export function shiftChunkDataLines(html: string, offset: number): string {
   return html.replace(/(\d+)/g, (_match, line: string) =>
     String(Number(line) + offset));
@@ -232,7 +225,8 @@ export function shiftChunkDataLines(html: string, offset: number): string {
 export function referenceLabels(source: string): Set<string> {
   const labels = new Set<string>();
   for (const match of source.matchAll(/\[([^\[\]\n]{1,999})\]/g)) {
-    const label = normalizeLabel(match[1] ?? "");
+    // The pattern has exactly one capture group, so the label is always set.
+    const label = normalizeLabel(match[1] as string);
     if (label !== "") {
       labels.add(label);
     }

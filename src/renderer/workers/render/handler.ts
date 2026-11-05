@@ -4,6 +4,7 @@ import type {
   RenderAttachMessage,
   RenderChangeMessage,
   RenderChangeSetJson,
+  RenderFillReadyMessage,
   RenderRequest,
   RenderResponse,
   RenderResult,
@@ -21,6 +22,7 @@ interface BufferedResync {
 
 interface CachedRender {
   state: IncrementalRenderState;
+  request: RenderRequest | null;
   fillToken: number;
   fillTimer: ReturnType<typeof setTimeout> | undefined;
 }
@@ -29,7 +31,8 @@ type PostResponse = (response: RenderResponse) => void;
 type RenderText = (source: string, env?: RenderEnvironment) => string;
 
 // The fill pass exists to keep input responsive: it must yield to the event
-// loop between batches instead of flooding the main thread with appends.
+// loop between batches instead of flooding the main thread with appends. The
+// preview acknowledges each applied batch, so at most one batch is in flight.
 const FILL_DELAY_MS = 1;
 
 function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
@@ -66,6 +69,9 @@ export class RenderWorkerHandler {
         return;
       case "detach":
         this.detach(value.docId);
+        return;
+      case "fill-ready":
+        this.fillReady(value);
         return;
     }
   }
@@ -164,10 +170,11 @@ export class RenderWorkerHandler {
       return;
     }
     const cache = this.cachedRender(request, document);
+    cache.request = request;
     try {
       this.cancelFill(cache);
       this.postResponse(this.resultFor(cache.state, request));
-      this.scheduleFill(cache, request);
+      this.scheduleFill(cache);
     } catch (error) {
       // A failed patch or fill may already have advanced the cache (rendered
       // chunks, moved cursor) without delivering their blocks. Rebuild the
@@ -202,6 +209,7 @@ export class RenderWorkerHandler {
         document,
         this.renderText,
       ),
+      request: null,
       fillToken: 0,
       fillTimer: undefined,
     };
@@ -241,48 +249,63 @@ export class RenderWorkerHandler {
     };
   }
 
-  private scheduleFill(cache: CachedRender, request: RenderRequest): void {
-    if (cache.state.complete) {
+  private scheduleFill(cache: CachedRender): void {
+    if (cache.state.complete || cache.request === null) {
+      return;
+    }
+    if (cache.fillTimer !== undefined) {
       return;
     }
     const token = cache.fillToken;
-    const tick = (): void => {
-      const current = this.renders.get(request.docId);
-      if (current !== cache || cache.fillToken !== token) {
-        return;
-      }
-      cache.fillTimer = undefined;
-      try {
-        const batch = cache.state.fill();
-        this.postResponse({
-          id: request.id,
-          docId: request.docId,
-          epoch: request.epoch,
-          version: request.version,
-          ok: true,
-          mode: "append",
-          blocks: batch.blocks,
-          complete: batch.complete,
-        });
-        if (!batch.complete) {
-          cache.fillTimer = setTimeout(tick, FILL_DELAY_MS);
-        }
-      } catch (error) {
-        // The batch advanced the cursor before failing, and its blocks cannot
-        // be sent; discard the cache so the next render starts from a replace.
-        this.cancelFill(cache);
-        this.renders.delete(request.docId);
-        this.postResponse({
-          id: request.id,
-          docId: request.docId,
-          epoch: request.epoch,
-          version: request.version,
-          ok: false,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    };
-    cache.fillTimer = setTimeout(tick, FILL_DELAY_MS);
+    cache.fillTimer = setTimeout(() => this.fillBatch(cache, token), FILL_DELAY_MS);
+  }
+
+  private fillBatch(cache: CachedRender, token: number): void {
+    const request = cache.request;
+    if (request === null || cache.fillToken !== token) {
+      return;
+    }
+    cache.fillTimer = undefined;
+    try {
+      const batch = cache.state.fill();
+      this.postResponse({
+        id: request.id,
+        docId: request.docId,
+        epoch: request.epoch,
+        version: request.version,
+        ok: true,
+        mode: "append",
+        blocks: batch.blocks,
+        fillToken: token,
+        complete: batch.complete,
+      });
+    } catch (error) {
+      // The batch advanced the cursor before failing, and its blocks cannot
+      // be sent; discard the cache so the next render starts from a replace.
+      this.cancelFill(cache);
+      this.renders.delete(request.docId);
+      this.postResponse({
+        id: request.id,
+        docId: request.docId,
+        epoch: request.epoch,
+        version: request.version,
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    // The next batch waits for the preview's acknowledgement, which bounds the
+    // work queued on the main thread.
+  }
+
+  private fillReady(message: RenderFillReadyMessage): void {
+    const cache = this.renders.get(message.docId);
+    if (!cache || cache.state.epoch !== message.epoch ||
+      cache.state.version !== message.version ||
+      cache.fillToken !== message.token) {
+      return;
+    }
+    this.scheduleFill(cache);
   }
 
   private cancelFill(cache: CachedRender): void {

@@ -92,6 +92,15 @@ describe("chunked render equivalence", () => {
     expect(html).toContain('href="https://example.com/footnote"');
   });
 
+  it("AC-R1-10: keeps the first of two definitions for the same label", () => {
+    const source = "See [d].\n\n[d]: https://example.com/one\n\n[d]: https://example.com/two";
+    const html = chunkedRender(source);
+
+    expect(html).toBe(renderMarkdown(source));
+    expect(html).toContain('href="https://example.com/one"');
+    expect(html).not.toContain("https://example.com/two");
+  });
+
   it("AC-R1-10: keeps a loose list crossing a blank line as one list", () => {
     const source = "1. one\n\n2. two";
     const html = chunkedRender(source);
@@ -242,5 +251,61 @@ describe("incremental re-parse cost", () => {
     drain(state, []);
 
     expect(renderCount).toBeLessThanOrEqual(3);
+  });
+
+  it("AC-R1-10: stays equivalent after line-count changes compact the offsets", () => {
+    const initial = textFrom(Array.from(
+      { length: 120 },
+      (_, index) => `block ${String(index)}`,
+    ).join("\n\n"));
+    const state = new IncrementalRenderState("doc", 1, 0, initial, renderMarkdown);
+    const display: DisplayBlock[] = [];
+    drain(state, display);
+    let document = initial;
+    let version = 0;
+    for (let step = 0; step < 80; step += 1) {
+      // Each edit moves down the document, so the pending line offsets grow.
+      let number = 1;
+      while (number <= document.lines &&
+        document.line(number).text !== `block ${String(step)}`) {
+        number += 1;
+      }
+      const change = ChangeSet.of(
+        { from: document.line(number).from + 6, insert: "\n" },
+        document.length,
+      );
+      const after = change.apply(document);
+      state.applyChange(document, after, version, version + 1, change.toJSON());
+      version += 1;
+      document = after;
+      takePatch(state.patch(), display);
+    }
+
+    expect(withoutDataLines(display.map((block) => block.html).join("")))
+      .toBe(withoutDataLines(renderMarkdown(document.toString())));
+  });
+
+  it("AC-R1-10: a keystroke on a 10,000-block document touches few chunk records", () => {
+    const blocks = 10_000;
+    const source = Array.from(
+      { length: blocks },
+      (_, index) => `block ${String(index)} has some words in it`,
+    ).join("\n\n");
+    const document = textFrom(source);
+    const state = new IncrementalRenderState("doc", 1, 0, document, () => "");
+    drain(state, []);
+
+    const line = 2 * 5_000;
+    const change = ChangeSet.of(
+      { from: document.line(line).from + 4, insert: "\n" },
+      document.length,
+    );
+    const after = change.apply(document);
+    const before = state.chunkLineWrites;
+    state.applyChange(document, after, 0, 1, change.toJSON());
+    expect(after.lines).toBe(document.lines + 1);
+    // One replacement split into two chunks: no chunk after the change may be
+    // rewritten by the line-count shift.
+    expect(state.chunkLineWrites - before).toBeLessThanOrEqual(4);
   });
 });
