@@ -428,6 +428,7 @@ describe("main process", () => {
       "file:release-document",
       "link:open-external",
       "file:open-requests-ready",
+      "menu:contribute",
     ]);
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
@@ -634,20 +635,9 @@ describe("main process", () => {
     }
     expect(firstWindow?.show).toHaveBeenCalledTimes(1);
 
-    const submenu = (electron.menuTemplate[0] as any).submenu;
-    submenu[0].click();
-    submenu[1].click();
-    submenu[2].click();
-    expect(firstWindow?.webContents.send.mock.calls.map((call) => call[1])).toEqual([
-      "open",
-      "save",
-      "saveAs",
-    ]);
-    if (firstWindow) {
-      firstWindow.destroyed = true;
-    }
-    submenu[0].click();
-    expect(firstWindow?.webContents.send).toHaveBeenCalledTimes(3);
+    const fileMenu = electron.menuTemplate[0] as any;
+    expect(fileMenu.label).toBe("File");
+    expect(fileMenu.submenu).toEqual([{ role: "quit" }]);
 
     const navigationEvent = { preventDefault: vi.fn() };
     firstWindow?.webHandlers.get("render-process-gone")?.({}, { reason: "crashed" });
