@@ -114,7 +114,7 @@ test("the content security policy reports and blocks file images", {
     const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]')
       .getAttribute("content");
     expect(policy).toBe(
-      "default-src 'self'; img-src 'self' data: https:; " +
+      "default-src 'self'; img-src 'self' data: https: doc-asset:; " +
       "style-src 'self' 'unsafe-inline'; worker-src 'self'; script-src 'self'",
     );
 
