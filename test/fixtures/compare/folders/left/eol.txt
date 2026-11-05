@@ -1,0 +1,3 @@
+Line endings are the only difference.
+The text of both files is identical.
+Compare them after normalising line endings.
