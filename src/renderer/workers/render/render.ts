@@ -27,9 +27,12 @@ function createMarkdownRenderer() {
   });
 
   markdown.core.ruler.after("block", "source-lines", (state) => {
+    const prefix = typeof state.env["dataLinePrefix"] === "string"
+      ? state.env["dataLinePrefix"]
+      : "";
     for (const token of state.tokens) {
       if (token.block && token.nesting === 1 && token.map) {
-        token.attrSet("data-line", String(token.map[0]));
+        token.attrSet("data-line", `${prefix}${String(token.map[0])}`);
       }
     }
   });
@@ -70,6 +73,28 @@ function createMarkdownRenderer() {
 
 const markdown = createMarkdownRenderer();
 
-export function renderMarkdown(source: string): string {
-  return markdown.render(source);
+export interface ReferenceDefinition {
+  title: string;
+  href: string;
+}
+
+// Reference definitions are document-wide in Markdown, but chunks render in
+// isolation. Collect them from every chunk and pass the merged map through
+// markdown-it's environment so a chunk can resolve links defined elsewhere.
+export interface RenderEnvironment {
+  [key: string | symbol]: unknown;
+  references?: Record<string, ReferenceDefinition>;
+}
+
+export function renderMarkdown(source: string, env: RenderEnvironment = {}): string {
+  return markdown.render(source, env);
+}
+
+export function collectReferences(source: string): Record<string, ReferenceDefinition> {
+  // markdown-it's normalize rule rewrites CRLF and lone CR before block
+  // parsing; calling the block rule directly skips it, so do the same here.
+  const normalized = source.replace(/\r\n?|\n/g, "\n");
+  const env: RenderEnvironment = {};
+  markdown.block.parse(normalized, markdown, env, []);
+  return env.references ?? {};
 }

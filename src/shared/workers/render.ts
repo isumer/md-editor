@@ -33,11 +33,22 @@ export interface RenderDetachMessage {
   docId: string;
 }
 
+// The preview has applied one fill batch and is ready for the next. The worker
+// keeps at most one batch in flight so the main thread can stay responsive.
+export interface RenderFillReadyMessage {
+  op: "fill-ready";
+  docId: string;
+  epoch: number;
+  version: number;
+  token: number;
+}
+
 export type RenderWorkerRequest =
   | RenderAttachMessage
   | RenderChangeMessage
   | RenderRequest
-  | RenderDetachMessage;
+  | RenderDetachMessage
+  | RenderFillReadyMessage;
 
 interface RenderResultVersion {
   id: number;
@@ -46,8 +57,48 @@ interface RenderResultVersion {
   version: number;
 }
 
+export interface RenderBlock {
+  id: string;
+  startLine: number;
+  endLine: number;
+  html: string;
+}
+
+export interface RenderBlockPatch {
+  block: RenderBlock;
+  after: string | null;
+}
+
+// Blocks after `after` (or all blocks when null) moved by `delta` lines. Kept
+// out of band so a line-count change does not require re-sending unchanged
+// blocks or rewriting every block's DOM.
+export interface RenderLineShift {
+  after: string | null;
+  delta: number;
+}
+
 export type RenderResult =
-  | (RenderResultVersion & { ok: true; html: string })
+  | (RenderResultVersion & {
+    ok: true;
+    mode: "replace";
+    blocks: readonly RenderBlock[];
+    complete: boolean;
+  })
+  | (RenderResultVersion & {
+    ok: true;
+    mode: "append";
+    blocks: readonly RenderBlock[];
+    fillToken: number;
+    complete: boolean;
+  })
+  | (RenderResultVersion & {
+    ok: true;
+    mode: "patch";
+    blocks: readonly RenderBlockPatch[];
+    removed: readonly string[];
+    lineShifts?: readonly RenderLineShift[];
+    complete: boolean;
+  })
   | (RenderResultVersion & { ok: false; message: string });
 
 export interface RenderResync extends RenderResultVersion {
@@ -189,7 +240,17 @@ function validDetach(value: unknown): value is RenderDetachMessage {
   return data !== null && data["op"] === "detach" && validDocId(data["docId"]);
 }
 
+function validFillReady(value: unknown): value is RenderFillReadyMessage {
+  const data = exactData(
+    value,
+    ["op", "docId", "epoch", "version", "token"],
+  );
+  return data !== null && data["op"] === "fill-ready" &&
+    validDocId(data["docId"]) && validVersion(data["epoch"]) &&
+    validVersion(data["version"]) && validVersion(data["token"]);
+}
+
 export function isRenderWorkerRequest(value: unknown): value is RenderWorkerRequest {
   return validAttach(value) || validChange(value) || validRender(value) ||
-    validDetach(value);
+    validDetach(value) || validFillReady(value);
 }

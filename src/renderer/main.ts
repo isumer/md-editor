@@ -11,6 +11,7 @@ import { formatMessage } from "../shared/messages/en";
 import type {
   RenderAttachMessage,
   RenderRequest,
+  RenderResponse,
   RenderResync,
 } from "../shared/workers/render";
 import { createCommandRegistry } from "./core/commands";
@@ -34,6 +35,7 @@ import {
 } from "./features/preview/preview";
 import { RenderScheduler } from "./features/preview/renderScheduler";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
+import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
   chooseSaveTarget,
@@ -58,12 +60,21 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
   return element;
 }
 
+interface RenderWorkerPort {
+  postMessage(message: unknown): void;
+  onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
+}
+
+function defaultRenderWorkerFactory(url: URL): RenderWorkerPort {
+  return new Worker(url, { type: "module" });
+}
+
 const editorHost = requiredElement<HTMLElement>("#editor");
 const preview = requiredElement<HTMLElement>("#preview");
 const status = requiredElement<HTMLElement>("#status");
-const renderWorker = new Worker(
-  new URL("./workers/render/render.worker.ts", import.meta.url),
-  { type: "module" },
+const renderWorker = defaultRenderWorkerFactory(
+  new URL(renderWorkerUrl, window.location.href),
 );
 const documentState = createDocumentState();
 const replication = new DocumentReplication();
@@ -94,6 +105,11 @@ const scheduler = new RenderScheduler((request) => {
     id: request.id,
     ...replication.current(),
   } satisfies RenderRequest);
+}, {
+  onApplied: (latency) => {
+    const end = performance.now();
+    performance.measure("preview-latency", { start: end - latency, end });
+  },
 });
 
 const editor = createEditor(
@@ -233,11 +249,11 @@ wireRenderWorker(renderWorker, {
 wirePreviewLinks(preview, showStatus);
 
 async function attachText(
-  document: Text,
+  text: string,
   version: ReplicatedVersion,
   fileName: string | null,
 ): Promise<void> {
-  const message = { ...version, text: document.toString() };
+  const message = { ...version, text };
   renderWorker.postMessage({ op: "attach", ...message } satisfies RenderAttachMessage);
   const result = await attachDocument(message);
   if (!result.ok) {
@@ -254,6 +270,10 @@ async function displayDocument(
   documentState.applyingDocument = true;
   documentState.currentGrant = documentFile.grant;
   documentState.currentName = documentFile.name;
+  // Attach before the editor rebuild and the first render request: the worker
+  // starts chunking the document while CodeMirror parses it, and a render can
+  // never reach the worker before the text it refers to.
+  const attached = attachText(documentFile.text, replaced.current, documentFile.name);
   editor.dispatch({
     changes: { from: 0, to: editor.state.doc.length, insert: documentFile.text },
     selection: { anchor: 0 },
@@ -265,7 +285,7 @@ async function displayDocument(
   scheduler.schedule();
   showStatus();
   editor.focus();
-  await attachText(editor.state.doc, replaced.current, documentFile.name);
+  await attached;
 }
 
 function valueOrStatus<T>(result: Result<T>, fileName: string | null = null): T | undefined {
@@ -412,7 +432,7 @@ async function initializeOpenRequests(): Promise<void> {
   scheduler.schedule();
   updateTitle();
   try {
-    await attachText(editor.state.doc, replication.current(), null);
+    await attachText(editor.state.doc.toString(), replication.current(), null);
     const ready = valueOrStatus(await readyForOpenRequests());
     if (ready) {
       windowId = ready.windowId;
