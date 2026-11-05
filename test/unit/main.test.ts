@@ -635,9 +635,15 @@ describe("main process", () => {
     }
     expect(firstWindow?.show).toHaveBeenCalledTimes(1);
 
-    const fileMenu = electron.menuTemplate[0] as any;
-    expect(fileMenu.label).toBe("File");
-    expect(fileMenu.submenu).toEqual([{ role: "quit" }]);
+    // macOS leads with the application menu (it owns Quit there); elsewhere File comes first.
+    const firstMenu = electron.menuTemplate[0] as any;
+    if (process.platform === "darwin") {
+      expect(firstMenu.label).toBe("MD Editor");
+      expect(firstMenu.submenu).toContainEqual({ role: "quit" });
+    } else {
+      expect(firstMenu.label).toBe("File");
+      expect(firstMenu.submenu).toEqual([{ role: "quit" }]);
+    }
 
     const navigationEvent = { preventDefault: vi.fn() };
     firstWindow?.webHandlers.get("render-process-gone")?.({}, { reason: "crashed" });
@@ -673,7 +679,8 @@ describe("main process", () => {
     expect(electron.BrowserWindowMock.instances).toHaveLength(2);
 
     electron.appHandlers.get("window-all-closed")?.();
-    expect(electron.app.quit).toHaveBeenCalledTimes(1);
+    // On macOS the app stays running with no windows, as the platform expects.
+    expect(electron.app.quit).toHaveBeenCalledTimes(process.platform === "darwin" ? 0 : 1);
   });
 
   it("AC-R5-17 AC-SEC-10: sends io-worker ports only to the app frame and logs worker exits", async () => {
