@@ -8,7 +8,7 @@ Update a row when an item is queued, merged or sent back.
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (codex) | review in progress (0861) |
 | 041 | 5 | src/renderer/**, src/main/**, src/shared/**, src/preload/**, test/unit/**, test/e2e/** (brief slice-5.md) | slice 4 (stacked) | dev | sent back (087); fix queued (slice-5-fix) |
-| slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | queued |
+| slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | candidate 632759b (CI pending) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
 | 042 | 13 | export fixtures under test/fixtures/export/** | main | nim | merged (70d4ea9) |
