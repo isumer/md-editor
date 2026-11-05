@@ -20,7 +20,8 @@ Update a row when an item is queued, merged or sent back.
 | compare-gen | 10 | test/fixtures/compare/generate-folders.mjs, test/fixtures/compare/README.md | main | side | merged (ce1e212) |
 | replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | queued (076) |
 | git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | merged (82c7b0a) |
-| conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | queued |
+| conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | merged (0724cc9) |
+| gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
