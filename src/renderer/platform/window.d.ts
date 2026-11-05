@@ -12,7 +12,10 @@ import type {
   SaveDocumentInput,
   SaveDocumentResponse,
 } from "../../shared/ipc/io";
-import type { MenuCommand } from "../../shared/ipc/menu";
+import type {
+  MenuCommandMessage,
+  MenuContribution,
+} from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
 
 interface Api {
@@ -26,7 +29,8 @@ interface Api {
   releaseDocument(request: ReleaseDocumentRequest): Promise<Result<void>>;
   openExternal(url: string): Promise<Result<void>>;
   readyForOpenRequests(): Promise<Result<OpenRequestReady>>;
-  onMenuCommand(listener: (command: MenuCommand) => void): () => void;
+  onMenuCommand(listener: (command: MenuCommandMessage) => void): () => void;
+  contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
 }
 

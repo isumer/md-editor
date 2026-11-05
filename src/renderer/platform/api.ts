@@ -12,7 +12,10 @@ import type {
   SaveDocumentInput,
   SaveDocumentResponse,
 } from "../../shared/ipc/io";
-import type { MenuCommand } from "../../shared/ipc/menu";
+import type {
+  MenuCommandMessage,
+  MenuContribution,
+} from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
 
 const api = window.api;
@@ -62,9 +65,15 @@ export function readyForOpenRequests(): Promise<Result<OpenRequestReady>> {
 }
 
 export function onMenuCommand(
-  listener: (command: MenuCommand) => void,
+  listener: (command: MenuCommandMessage) => void,
 ): () => void {
   return api.onMenuCommand(listener);
+}
+
+export function contributeMenu(
+  request: MenuContribution,
+): Promise<Result<void>> {
+  return api.contributeMenu(request);
 }
 
 export function onOpenRequest(

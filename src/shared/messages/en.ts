@@ -12,7 +12,13 @@ export type MessageKey =
   | "file.diskFull"
   | "file.conflict"
   | "file.tooLarge"
-  | "file.unknown";
+  | "file.unknown"
+  | "menu.file"
+  | "menu.open"
+  | "menu.save"
+  | "menu.saveAs"
+  | "menu.undo"
+  | "menu.redo";
 
 export const messages: Readonly<Record<MessageKey, string>> = {
   "request.invalid": "The request was not valid.",
@@ -29,6 +35,12 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "file.conflict": "Could not save “{file}”: it changed on disk.",
   "file.tooLarge": "Could not access “{file}”: it is too large.",
   "file.unknown": "Could not access “{file}”: {reason}.",
+  "menu.file": "File",
+  "menu.open": "Open",
+  "menu.save": "Save",
+  "menu.saveAs": "Save As",
+  "menu.undo": "Undo",
+  "menu.redo": "Redo",
 };
 
 export function formatMessage(
