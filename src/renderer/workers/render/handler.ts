@@ -10,7 +10,7 @@ import type {
 } from "../../../shared/workers/render";
 import { isRenderWorkerRequest } from "../../../shared/workers/render";
 import { DocumentMirror } from "../../../shared/replication/mirror";
-import { renderMarkdown } from "./render";
+import { renderMarkdown, type RenderEnvironment } from "./render";
 import { IncrementalRenderState } from "./incremental";
 
 interface BufferedResync {
@@ -26,7 +26,11 @@ interface CachedRender {
 }
 
 type PostResponse = (response: RenderResponse) => void;
-type RenderText = (source: string) => string;
+type RenderText = (source: string, env?: RenderEnvironment) => string;
+
+// The fill pass exists to keep input responsive: it must yield to the event
+// loop between batches instead of flooding the main thread with appends.
+const FILL_DELAY_MS = 1;
 
 function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
   return ChangeSet.fromJSON(changes).apply(document);
@@ -159,12 +163,17 @@ export class RenderWorkerHandler {
       this.requestResync(request);
       return;
     }
+    const cache = this.cachedRender(request, document);
     try {
-      const cache = this.cachedRender(request, document);
       this.cancelFill(cache);
       this.postResponse(this.resultFor(cache.state, request));
       this.scheduleFill(cache, request);
     } catch (error) {
+      // A failed patch or fill may already have advanced the cache (rendered
+      // chunks, moved cursor) without delivering their blocks. Rebuild the
+      // state from the mirror on the next request so no delta is lost.
+      this.cancelFill(cache);
+      this.renders.delete(request.docId);
       this.postResponse({
         id: request.id,
         docId: request.docId,
@@ -227,6 +236,7 @@ export class RenderWorkerHandler {
       mode: "patch",
       blocks: batch.blocks,
       removed: batch.removed,
+      lineShifts: batch.lineShifts,
       complete: batch.complete,
     };
   }
@@ -255,9 +265,13 @@ export class RenderWorkerHandler {
           complete: batch.complete,
         });
         if (!batch.complete) {
-          cache.fillTimer = setTimeout(tick, 0);
+          cache.fillTimer = setTimeout(tick, FILL_DELAY_MS);
         }
       } catch (error) {
+        // The batch advanced the cursor before failing, and its blocks cannot
+        // be sent; discard the cache so the next render starts from a replace.
+        this.cancelFill(cache);
+        this.renders.delete(request.docId);
         this.postResponse({
           id: request.id,
           docId: request.docId,
@@ -268,7 +282,7 @@ export class RenderWorkerHandler {
         });
       }
     };
-    cache.fillTimer = setTimeout(tick, 0);
+    cache.fillTimer = setTimeout(tick, FILL_DELAY_MS);
   }
 
   private cancelFill(cache: CachedRender): void {
