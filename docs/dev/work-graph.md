@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | src/renderer/**, src/main/**, src/shared/**, src/preload/**, test/unit/**, test/e2e/** (brief slice-5.md) | slice 4 (stacked) | dev | sent back (087); fix queued (slice-5-fix) |
+| 041 | 5 | listed files only (brief slice-5-fix-2.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869); fix queued (slice-5-fix-2) |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | candidate 632759b (CI pending) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
@@ -25,7 +25,7 @@ Update a row when an item is queued, merged or sent back.
 | gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | candidate de06eb1 |
 | slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | queued (865) |
 | languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | queued (866) |
-| slice6-tree-generator | 6 | test/fixtures/workspace/generate-tree.mjs, test/fixtures/workspace/README.md | main | dev | queued (870) |
+| slice6-tree-generator | 6 | test/fixtures/workspace/generate-tree.mjs, test/fixtures/workspace/README.md | main | dev | done (870); verify red on Pi perf only; review pending |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
