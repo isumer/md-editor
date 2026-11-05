@@ -1,6 +1,7 @@
 import type {
   RenderBlock,
   RenderBlockPatch,
+  RenderLineShift,
   RenderResponse,
   RenderResync,
   RenderResult,
@@ -27,6 +28,14 @@ interface RenderWorkerWiring {
 
 type BlockElements = Map<string, HTMLDivElement>;
 
+interface LineShiftRecord extends RenderLineShift {
+  version: number;
+}
+
+// Each block points at the live shift ledger of its preview, so resolving a
+// line costs only the number of line-count changes since it was rendered.
+const shiftTables = new WeakMap<HTMLElement, readonly LineShiftRecord[]>();
+
 const BLOCK_CLASS = "preview-block";
 // Blocks are packed into pages and pages into sections so content-visibility
 // skips whole regions without one containment decision per block: the cost of
@@ -34,6 +43,8 @@ const BLOCK_CLASS = "preview-block";
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 50;
+// Patches insert into and remove from existing pages, so later pages can be
+// uneven: content-visibility needs a bounded page size, not an even one.
 
 interface BlockLayout {
   section: HTMLDivElement | null;
@@ -73,40 +84,53 @@ function placeBlock(
   layout.blocksInPage += 1;
 }
 
-function createBlock(block: RenderBlock, wiring: RenderWorkerWiring): HTMLDivElement {
+function createBlock(
+  block: RenderBlock,
+  version: number,
+  shifts: readonly LineShiftRecord[],
+  wiring: RenderWorkerWiring,
+): HTMLDivElement {
   const element = document.createElement("div");
   element.className = BLOCK_CLASS;
   element.dataset["blockId"] = block.id;
-  updateBlock(element, block, wiring);
+  updateBlock(element, block, version, shifts, wiring);
   return element;
 }
 
 function updateBlock(
   element: HTMLDivElement,
   block: RenderBlock,
+  version: number,
+  shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
 ): void {
   element.dataset["line"] = String(block.startLine);
+  element.dataset["version"] = String(version);
+  shiftTables.set(element, shifts);
   element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
 }
 
 function appendBlocks(
   blocks: readonly RenderBlock[],
+  version: number,
+  shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
 ): void {
   const start = performance.now();
   for (const block of blocks) {
-    const element = createBlock(block, wiring);
+    const element = createBlock(block, version, shifts, wiring);
     elements.set(block.id, element);
     placeBlock(element, wiring, layout);
   }
-  performance.measure("preview-patch", { start, end: performance.now() });
+  performance.measure("preview-append", { start, end: performance.now() });
 }
 
 function replaceBlocks(
   blocks: readonly RenderBlock[],
+  version: number,
+  shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
@@ -114,7 +138,7 @@ function replaceBlocks(
   elements.clear();
   wiring.preview.replaceChildren();
   resetLayout(layout);
-  appendBlocks(blocks, wiring, elements, layout);
+  appendBlocks(blocks, version, shifts, wiring, elements, layout);
 }
 
 function removeElement(element: HTMLDivElement, layout: BlockLayout): void {
@@ -156,16 +180,18 @@ function removeBlocks(
 
 function insertPatch(
   patch: RenderBlockPatch,
+  version: number,
+  shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
 ): void {
   const existing = elements.get(patch.block.id);
   if (existing) {
-    updateBlock(existing, patch.block, wiring);
+    updateBlock(existing, patch.block, version, shifts, wiring);
     return;
   }
-  const element = createBlock(patch.block, wiring);
+  const element = createBlock(patch.block, version, shifts, wiring);
   const anchor = patch.after === null ? null : elements.get(patch.after) ?? null;
   if (anchor) {
     anchor.after(element);
@@ -186,6 +212,8 @@ function insertPatch(
 function patchBlocks(
   blocks: readonly RenderBlockPatch[],
   removed: readonly string[],
+  version: number,
+  shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
@@ -193,36 +221,52 @@ function patchBlocks(
   const start = performance.now();
   removeBlocks(removed, elements, layout);
   for (const patch of blocks) {
-    insertPatch(patch, wiring, elements, layout);
+    insertPatch(patch, version, shifts, wiring, elements, layout);
   }
   performance.measure("preview-patch", { start, end: performance.now() });
 }
 
 function applyBlocks(
   result: RenderResult & { ok: true },
+  shifts: LineShiftRecord[],
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
 ): void {
   if (result.mode === "replace") {
-    replaceBlocks(result.blocks, wiring, elements, layout);
+    // Replaced blocks are rendered from the current document, so no old shift
+    // can apply to them.
+    shifts.length = 0;
+    replaceBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else if (result.mode === "append") {
-    appendBlocks(result.blocks, wiring, elements, layout);
+    appendBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else {
-    patchBlocks(result.blocks, result.removed, wiring, elements, layout);
+    for (const shift of result.lineShifts ?? []) {
+      shifts.push({ ...shift, version: result.version });
+    }
+    patchBlocks(
+      result.blocks,
+      result.removed,
+      result.version,
+      shifts,
+      wiring,
+      elements,
+      layout,
+    );
   }
   wiring.preview.dataset["renderComplete"] = String(result.complete);
 }
 
 function applyRenderResult(
   result: RenderResult,
+  shifts: LineShiftRecord[],
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
 ): void {
   wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
-      applyBlocks(appliedResponse, wiring, elements, layout);
+      applyBlocks(appliedResponse, shifts, wiring, elements, layout);
       wiring.showStatus();
     } else {
       wiring.showStatus(appliedResponse.message);
@@ -230,11 +274,45 @@ function applyRenderResult(
   });
 }
 
+function anchorElement(
+  element: HTMLElement,
+  blockId: string,
+): HTMLElement | null {
+  const escaped = blockId.replaceAll('"', '\\"');
+  return element.ownerDocument.querySelector<HTMLElement>(
+    `[data-block-id="${escaped}"]`,
+  );
+}
+
+// The line a block currently starts on. The worker's last sent line is the
+// baseline; line-count changes after that block was rendered are applied from
+// the preview's ledger without rewriting every block's attributes.
+export function blockLine(element: HTMLElement): number {
+  let line = Number(element.dataset["line"] ?? "0");
+  const version = Number(element.dataset["version"] ?? "0");
+  for (const shift of shiftTables.get(element) ?? []) {
+    if (shift.version <= version) {
+      continue;
+    }
+    if (shift.after === null) {
+      line += shift.delta;
+      continue;
+    }
+    const anchor = anchorElement(element, shift.after);
+    if (anchor && anchor !== element &&
+      (anchor.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
+      line += shift.delta;
+    }
+  }
+  return line;
+}
+
 export function wireRenderWorker(
   renderWorker: RenderWorkerEvents,
   wiring: RenderWorkerWiring,
 ): void {
   const elements: BlockElements = new Map();
+  const shifts: LineShiftRecord[] = [];
   const layout: BlockLayout = {
     section: null,
     page: null,
@@ -263,7 +341,7 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    applyRenderResult(response, wiring, elements, layout);
+    applyRenderResult(response, shifts, wiring, elements, layout);
     if (response.ok) {
       shown = {
         docId: response.docId,

@@ -114,7 +114,9 @@ describe("incremental render state", () => {
 
     expect(batch.complete).toBe(true);
     expect(batch.blocks.map((block) => block.startLine)).toEqual([0, 2]);
-    expect(batch.blocks[0]?.html).toBe("# Heading");
+    // A chunk keeps the line break that ends it so raw HTML blocks render the
+    // same as in a full document; the final chunk has no line break after it.
+    expect(batch.blocks[0]?.html).toBe("# Heading\n");
     expect(batch.blocks[1]?.html).toBe("paragraph");
     expect(state.published).toBe(true);
   });
@@ -129,7 +131,7 @@ describe("incremental render state", () => {
     const patch = state.patch();
 
     expect(patch.blocks).toHaveLength(1);
-    expect(patch.blocks[0]?.block.html).toBe("tXwo");
+    expect(patch.blocks[0]?.block.html).toBe("tXwo\n");
     expect(patch.blocks[0]?.block.id).not.toBe(first.blocks[1]?.id);
     expect(patch.removed).toEqual([first.blocks[1]?.id]);
     expect(patch.complete).toBe(true);
@@ -144,7 +146,7 @@ describe("incremental render state", () => {
     state.applyChange(document, after, 0, 1, changes);
     const patch = state.patch();
 
-    expect(patch.blocks.map((entry) => entry.block.html)).toEqual(["three", "four"]);
+    expect(patch.blocks.map((entry) => entry.block.html)).toEqual(["three\n", "four"]);
     expect(patch.blocks.map((entry) => entry.block.startLine)).toEqual([4, 6]);
     expect(patch.blocks.map((entry) => entry.after)).toEqual(["block-2", "block-4"]);
   });
@@ -171,7 +173,7 @@ describe("incremental render state", () => {
     state.applyChange(document, after, 0, 1, changes);
     const patch = state.patch();
 
-    expect(patch.blocks.map((entry) => entry.block.html)).toEqual(["alpha\nbXeta"]);
+    expect(patch.blocks.map((entry) => entry.block.html)).toEqual(["alpha\nbXeta\n"]);
     expect(patch.blocks[0]?.after).toBeNull();
   });
 
@@ -184,7 +186,9 @@ describe("incremental render state", () => {
     state.applyChange(document, after, 0, 1, changes);
     const patch = state.patch();
 
-    expect(patch.blocks.map((entry) => entry.block.startLine)).toEqual([3]);
+    // The separator belongs to the block above, so that block is re-parsed
+    // even though its text did not change.
+    expect(patch.blocks.map((entry) => entry.block.startLine)).toEqual([0]);
   });
 
   it("AC-R1-09: an edit after the final blank line re-chunks the trailing block", () => {
@@ -196,8 +200,14 @@ describe("incremental render state", () => {
     state.applyChange(document, after, 0, 1, changes);
     const patch = state.patch();
 
-    expect(patch.blocks.map((entry) => entry.block.html)).toEqual(["x"]);
-    expect(patch.removed).toEqual([first.blocks[0]?.id]);
+    // The new trailing block is after the published prefix, so the fill pass
+    // appends it instead of patching it into the preview.
+    expect(patch.blocks).toEqual([]);
+    expect(patch.removed).toEqual([]);
+    const filled = state.fill();
+    expect(filled.blocks.map((entry) => entry.html)).toEqual(["x"]);
+    expect(filled.complete).toBe(true);
+    expect(first.blocks).toHaveLength(1);
   });
 
   it("AC-R1-07: an empty change set still advances the document version", () => {
