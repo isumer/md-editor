@@ -335,6 +335,31 @@ describe("io-worker file service", () => {
       .rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("AC-SEC-16 AC-SEC-17: resolves a document asset from its own folder only", async () => {
+    const grants = new IoGrantTable();
+    const service = new IoFileService(grants);
+    const folder = path.join(temporaryDirectory, "documents");
+    const imagePath = path.join(folder, "pic.png");
+    const outsidePath = path.join(temporaryDirectory, "outside.png");
+    await fs.mkdir(folder);
+    await fs.writeFile(imagePath, "png", "utf8");
+    await fs.writeFile(outsidePath, "outside", "utf8");
+    await service.registerGrant(1, "grant", targetPath, true);
+    grants.register(2, "other-window", targetPath);
+    grants.register(1, "document", path.join(folder, "note.md"));
+
+    await expect(service.resolveAsset(1, "document", "pic.png"))
+      .resolves.toEqual({ path: imagePath });
+    await expect(service.resolveAsset(1, "document", "../outside.png"))
+      .rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(service.resolveAsset(1, "document", "missing.png"))
+      .rejects.toMatchObject({ code: "NOT_FOUND", params: { file: "missing.png" } });
+    await expect(service.resolveAsset(2, "document", "pic.png"))
+      .rejects.toMatchObject({ code: "GRANT_INVALID" });
+    await expect(service.resolveAsset(1, "unknown", "pic.png"))
+      .rejects.toMatchObject({ code: "GRANT_INVALID" });
+  });
+
   it("AC-R5-02: reads and saves a mirrored version through a window grant", async () => {
     const grants = new IoGrantTable();
     const service = new IoFileService(grants);

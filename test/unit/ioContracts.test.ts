@@ -10,7 +10,9 @@ import {
 import {
   isIoControlRequest,
   isRegisterGrantReply,
+  isResolveAssetReply,
   controlRequestId,
+  MAX_ASSET_RELATIVE_PATH_LENGTH,
 } from "../../src/shared/ipc/ioControl";
 
 function withOwnProto<T extends object>(value: T): T {
@@ -204,6 +206,75 @@ describe("io-worker control contracts", () => {
     expect(isIoControlRequest(new Proxy({}, {
       ownKeys: () => { throw new Error("hostile proxy"); },
     }))).toBe(false);
+  });
+
+  it("AC-SEC-17: accepts exactly the valid resolveAsset shapes", () => {
+    const request = {
+      type: "resolveAsset",
+      id: "resolve-1",
+      windowId: 7,
+      grant: "grant",
+      relativePath: "images/pic.png",
+    };
+
+    expect(isIoControlRequest(request)).toBe(true);
+    expect(isIoControlRequest({ ...request, relativePath: "a".repeat(
+      MAX_ASSET_RELATIVE_PATH_LENGTH,
+    ) })).toBe(true);
+  });
+
+  it("AC-SEC-17: rejects hostile resolveAsset shapes", () => {
+    const request = {
+      type: "resolveAsset",
+      id: "resolve-1",
+      windowId: 7,
+      grant: "grant",
+      relativePath: "images/pic.png",
+    };
+    const oversized = "a".repeat(MAX_ASSET_RELATIVE_PATH_LENGTH + 1);
+    const hostile = [
+      { ...request, extra: true },
+      { ...request, id: "" },
+      { ...request, id: 1 },
+      { ...request, windowId: 0 },
+      { ...request, windowId: 7.5 },
+      { ...request, windowId: "7" },
+      { ...request, grant: "" },
+      { ...request, grant: 7 },
+      { ...request, relativePath: "" },
+      { ...request, relativePath: oversized },
+      { ...request, relativePath: 7 },
+      withOwnProto({ ...request }),
+      new Proxy({}, { ownKeys: () => { throw new Error("hostile proxy"); } }),
+    ];
+
+    for (const value of hostile) {
+      expect(isIoControlRequest(value)).toBe(false);
+    }
+  });
+
+  it("AC-SEC-17: validates resolveAsset replies before main accepts them", () => {
+    const reply = {
+      id: "resolve-1",
+      result: { ok: true, value: { path: "/documents/pic.png" } },
+    };
+    const failureReply = failure({ file: "pic.png" });
+
+    expect(isResolveAssetReply(reply)).toBe(true);
+    expect(isResolveAssetReply(failureReply)).toBe(true);
+    expect(isResolveAssetReply({
+      id: "resolve-1",
+      result: { ok: true, value: { path: "" } },
+    })).toBe(false);
+    expect(isResolveAssetReply({
+      id: "resolve-1",
+      result: { ok: true, value: { path: "/documents/pic.png", extra: true } },
+    })).toBe(false);
+    expect(isResolveAssetReply({
+      id: "resolve-1",
+      result: { ok: true, value: { canonicalPath: "/documents/pic.png", name: "pic.png" } },
+    })).toBe(false);
+    expect(isResolveAssetReply(withOwnProto(reply))).toBe(false);
   });
 
   it("AC-SEC-07: validates register replies before main accepts them", () => {

@@ -1,15 +1,24 @@
 import path from "node:path";
 
-import { app, type BrowserWindow, type MessagePortMain } from "electron";
+import {
+  app,
+  protocol,
+  type BrowserWindow,
+  type MessagePortMain,
+} from "electron";
 
 import { IO_PORT_CHANNEL } from "../shared/ipc/io";
 import { errorMessage } from "../shared/ipc/result";
 
 import {
   APP_ENTRY_URL,
+  APP_SCHEME_PRIVILEGES,
   registerAppProtocol,
-  registerAppScheme,
 } from "./app/appProtocol";
+import {
+  DOC_ASSET_SCHEME_PRIVILEGES,
+  registerDocAssetProtocol,
+} from "./app/docAssetProtocol";
 import {
   createOpenRequests,
   initializeApplication,
@@ -25,7 +34,11 @@ import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
-registerAppScheme();
+// Electron accepts this registration only once, so both schemes go in one call.
+protocol.registerSchemesAsPrivileged([
+  APP_SCHEME_PRIVILEGES,
+  DOC_ASSET_SCHEME_PRIVILEGES,
+]);
 
 function logProcessEvent(event: string, value: unknown): void {
   console.error(JSON.stringify({ event, message: errorMessage(value) }));
@@ -84,7 +97,10 @@ void initializeApplication(
   createApplicationWindow,
   () => ioWorker.start(),
   openRequests,
-  () => registerAppProtocol(rendererDirectory),
+  () => {
+    registerAppProtocol(rendererDirectory);
+    registerDocAssetProtocol(ioWorker);
+  },
 ).catch((error: unknown) => {
   logProcessEvent("startup", error);
   app.quit();
