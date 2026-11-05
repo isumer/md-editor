@@ -38,7 +38,7 @@ function senderContext(event: IpcMainInvokeEvent): HandlerContext | null {
   const trusted = trustedWindows.get(window.id);
   const topFrame = window.webContents.mainFrame;
   if (!trusted || trusted.window !== window || event.senderFrame !== topFrame ||
-    !event.senderFrame.url.startsWith(trusted.appUrl)) {
+    event.senderFrame.url !== trusted.appUrl) {
     return null;
   }
   return { windowId: window.id };

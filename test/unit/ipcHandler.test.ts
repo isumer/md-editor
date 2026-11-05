@@ -30,11 +30,11 @@ const contract = {
 };
 
 function createBoundary() {
-  const mainFrame = { url: "file:///app/index.html" };
+  const mainFrame = { url: "app://bundle/index.html" };
   const webContents = { mainFrame };
   const window = { id: 17, webContents };
   electron.fromWebContents.mockReturnValue(window);
-  registerTrustedWindow(window as never, "file:///app/index.html");
+  registerTrustedWindow(window as never, "app://bundle/index.html");
   return { mainFrame, webContents, window };
 }
 
@@ -70,7 +70,7 @@ describe("IPC handler boundary", () => {
   });
 
   it.each([
-    ["a subframe", { url: "file:///app/index.html" }],
+    ["a subframe", { url: "app://bundle/index.html" }],
     ["a foreign URL", { url: "https://attacker.example/" }],
   ])("AC-SEC-10: refuses %s before the service runs", async (_name, senderFrame) => {
     const boundary = createBoundary();
@@ -80,6 +80,23 @@ describe("IPC handler boundary", () => {
     await expect(invoke({ sender: boundary.webContents, senderFrame }, {
       value: "blocked",
     })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN_SENDER" },
+    });
+    expect(service).not.toHaveBeenCalled();
+    unregisterTrustedWindow(boundary.window as never);
+  });
+
+  it("AC-SEC-10: refuses a top frame on the app origin but another page", async () => {
+    const boundary = createBoundary();
+    boundary.mainFrame.url = "app://bundle/index.html/../other.html";
+    const service = vi.fn(async () => "must not run");
+    handle(contract, service);
+
+    await expect(invoke({
+      sender: boundary.webContents,
+      senderFrame: boundary.mainFrame,
+    }, { value: "blocked" })).resolves.toMatchObject({
       ok: false,
       error: { code: "FORBIDDEN_SENDER" },
     });
@@ -111,7 +128,7 @@ describe("IPC handler boundary", () => {
 
     await expect(invoke({
       sender: {},
-      senderFrame: { url: "file:///app/index.html" },
+      senderFrame: { url: "app://bundle/index.html" },
     }, { value: "blocked" })).resolves.toMatchObject({
       ok: false,
       error: { code: "FORBIDDEN_SENDER" },

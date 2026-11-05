@@ -1,11 +1,15 @@
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { app, type BrowserWindow, type MessagePortMain } from "electron";
 
 import { IO_PORT_CHANNEL } from "../shared/ipc/io";
 import { errorMessage } from "../shared/ipc/result";
 
+import {
+  APP_ENTRY_URL,
+  registerAppProtocol,
+  registerAppScheme,
+} from "./app/appProtocol";
 import {
   createOpenRequests,
   initializeApplication,
@@ -19,6 +23,9 @@ import { registerFileIpcHandlers } from "./ipc/file";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
+
+const rendererDirectory = path.join(__dirname, "../renderer");
+registerAppScheme();
 
 function logProcessEvent(event: string, value: unknown): void {
   console.error(JSON.stringify({ event, message: errorMessage(value) }));
@@ -46,24 +53,21 @@ process.on("unhandledRejection", (reason) => {
 });
 
 function createApplicationWindow(): void {
-  const rendererPath = path.join(__dirname, "../renderer/index.html");
   const window = createWindow(
     path.join(__dirname, "../preload/preload.js"),
-    rendererPath,
     {
       logProcessEvent,
       openExternalBackstop: (url) => openExternalBackstop(url, logProcessEvent),
-      attachIoPort: async (target) => attachIoPort(target, rendererPath),
+      attachIoPort,
       closeWindow: async (windowId) => fileService.closeWindow(windowId),
     },
   );
   setMainWindow(window);
 }
 
-async function attachIoPort(window: BrowserWindow, rendererPath: string): Promise<void> {
+async function attachIoPort(window: BrowserWindow): Promise<void> {
   await ioWorker.attachWindow(window.id, (port: MessagePortMain) => {
-    const trustedUrl = pathToFileURL(rendererPath).href;
-    if (window.isDestroyed() || !window.webContents.mainFrame.url.startsWith(trustedUrl)) {
+    if (window.isDestroyed() || window.webContents.mainFrame.url !== APP_ENTRY_URL) {
       port.close();
       return;
     }
@@ -80,6 +84,7 @@ void initializeApplication(
   createApplicationWindow,
   () => ioWorker.start(),
   openRequests,
+  () => registerAppProtocol(rendererDirectory),
 ).catch((error: unknown) => {
   logProcessEvent("startup", error);
   app.quit();
