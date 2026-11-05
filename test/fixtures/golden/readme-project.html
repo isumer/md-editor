@@ -1,0 +1,63 @@
+<h1 data-line="0">Orbit CLI</h1>
+<p data-line="2"><a href="https://example.com/ci"><img src="https://img.shields.io/badge/ci-passing-brightgreen" alt="CI"></a>
+<a href="https://example.com/coverage"><img src="https://img.shields.io/badge/coverage-94%25-blue" alt="coverage"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"></a></p>
+<p data-line="6">Orbit is a small command-line tool that prints the next visible satellite
+pass for a location.</p>
+<h2 data-line="9">Install</h2>
+<table data-line="11">
+<thead data-line="11">
+<tr data-line="11">
+<th>Platform</th>
+<th>Command</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody data-line="13">
+<tr data-line="13">
+<td>Linux</td>
+<td><code>./install.sh</code></td>
+<td>Needs glibc 2.31+</td>
+</tr>
+<tr data-line="14">
+<td>macOS</td>
+<td><code>brew install orbit</code></td>
+<td>Apple silicon supported</td>
+</tr>
+<tr data-line="15">
+<td>Windows</td>
+<td><code>winget install orbit</code></td>
+<td>Preview channel</td>
+</tr>
+</tbody>
+</table>
+<h2 data-line="17">Usage</h2>
+<pre><code class="hljs language-js"><span class="hljs-keyword">import</span> { nextPass } <span class="hljs-keyword">from</span> <span class="hljs-string">"orbit-cli"</span>;
+
+<span class="hljs-keyword">const</span> pass = <span class="hljs-keyword">await</span> <span class="hljs-title function_">nextPass</span>({ <span class="hljs-attr">lat</span>: <span class="hljs-number">52.52</span>, <span class="hljs-attr">lon</span>: <span class="hljs-number">13.405</span> });
+<span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(pass.<span class="hljs-property">startsAt</span>);
+</code></pre>
+<pre><code class="hljs language-python"><span class="hljs-keyword">from</span> orbit <span class="hljs-keyword">import</span> next_pass
+
+result = next_pass(lat=<span class="hljs-number">52.52</span>, lon=<span class="hljs-number">13.405</span>)
+<span class="hljs-built_in">print</span>(result[<span class="hljs-string">"starts_at"</span>])
+</code></pre>
+<pre><code class="hljs language-rust"><span class="hljs-keyword">use</span> orbit::next_pass;
+
+<span class="hljs-keyword">fn</span> <span class="hljs-title function_">main</span>() {
+    <span class="hljs-keyword">let</span> <span class="hljs-variable">pass</span> = <span class="hljs-title function_ invoke__">next_pass</span>(<span class="hljs-number">52.52</span>, <span class="hljs-number">13.405</span>).<span class="hljs-title function_ invoke__">unwrap</span>();
+    <span class="hljs-built_in">println!</span>(<span class="hljs-string">"{}"</span>, pass.starts_at);
+}
+</code></pre>
+<pre><code class="hljs language-bash">orbit --lat 52.52 --lon 13.405 --days 7 --format json
+</code></pre>
+<blockquote data-line="46">
+<p data-line="46">Orbit caches predictions for 15 minutes. Use <code>--no-cache</code> when scripting.</p>
+</blockquote>
+<p data-line="48">See <a href="https://example.com/docs">the manual</a> or run <code>orbit --help</code>.</p>
+<ul data-line="50">
+<li data-line="50">Fast: no network call for cached locations</li>
+<li data-line="51">Offline: bundled TLE snapshot</li>
+<li data-line="52">Scriptable: JSON and CSV output</li>
+</ul>
+<p data-line="54">MIT licensed.</p>
