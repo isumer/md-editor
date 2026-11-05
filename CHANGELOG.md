@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Typing no longer builds a copy of the whole document for the preview: the preview worker keeps its own copy fed by the same small changes, and always renders exactly the version it names, asking for the document again if it fell behind.
 - Saving no longer sends the whole document to the file process: it keeps its own copy, fed only the changes you type, and Save writes exactly the version you saved. If that copy is ever lost or behind, the editor resends the document once and the save still succeeds.
 
 - Open and save failures now name the file and explain the reason in plain words, for example "Could not open “notes”: it is a folder."

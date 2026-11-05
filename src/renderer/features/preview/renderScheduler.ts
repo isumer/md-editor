@@ -1,6 +1,5 @@
 export interface ScheduledRender {
   id: number;
-  text: string;
 }
 
 export type TimeSource = () => number;
@@ -8,7 +7,6 @@ export type TimeSource = () => number;
 export class RenderScheduler {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private firstChangeAt: number | undefined;
-  private pendingText = "";
   private nextRequestId = 1;
   private newestAppliedId = 0;
 
@@ -19,10 +17,9 @@ export class RenderScheduler {
     private readonly maximumWaitMilliseconds = 500,
   ) {}
 
-  schedule(text: string): void {
+  schedule(): void {
     const currentTime = this.now();
     this.firstChangeAt ??= currentTime;
-    this.pendingText = text;
 
     if (this.timer !== undefined) {
       clearTimeout(this.timer);
@@ -55,7 +52,7 @@ export class RenderScheduler {
   private dispatch(): void {
     this.timer = undefined;
     this.firstChangeAt = undefined;
-    this.requestRender({ id: this.nextRequestId, text: this.pendingText });
+    this.requestRender({ id: this.nextRequestId });
     this.nextRequestId += 1;
   }
 }
