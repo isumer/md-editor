@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const electron = vi.hoisted(() => {
   const ipcHandlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
   const appHandlers = new Map<string, (...args: unknown[]) => unknown>();
+  const protocolHandlers = new Map<string, (request: { url: string }) => Promise<Response>>();
   let resolveReady: (() => void) | undefined;
   let menuTemplate: unknown[] = [];
 
@@ -101,8 +102,8 @@ const electron = vi.hoisted(() => {
     restore = vi.fn();
     isMinimized = vi.fn(() => false);
     readonly mainFrame = { url: "" };
-    loadFile = vi.fn(async (filePath: string) => {
-      this.mainFrame.url = new URL(`file://${filePath}`).href;
+    loadURL = vi.fn(async (url: string) => {
+      this.mainFrame.url = url;
     });
     webContents = {
       mainFrame: this.mainFrame,
@@ -152,6 +153,13 @@ const electron = vi.hoisted(() => {
       ipcHandlers.set(channel, handler);
     }),
   };
+  const net = { fetch: vi.fn(async () => new Response(null, { status: 404 })) };
+  const protocol = {
+    handle: vi.fn((scheme: string, handler: (request: { url: string }) => Promise<Response>) => {
+      protocolHandlers.set(scheme, handler);
+    }),
+    registerSchemesAsPrivileged: vi.fn(),
+  };
   const Menu = {
     buildFromTemplate: vi.fn((template: unknown[]) => {
       menuTemplate = template;
@@ -174,6 +182,9 @@ const electron = vi.hoisted(() => {
     ipcHandlers,
     ipcMain,
     Menu,
+    net,
+    protocol,
+    protocolHandlers,
     shell,
     UtilityProcessMock,
     get menuTemplate() {
@@ -185,6 +196,7 @@ const electron = vi.hoisted(() => {
     reset() {
       ipcHandlers.clear();
       appHandlers.clear();
+      protocolHandlers.clear();
       app.isPackaged = false;
       resolveReady = undefined;
       menuTemplate = [];
@@ -225,6 +237,8 @@ vi.mock("electron", () => ({
   ipcMain: electron.ipcMain,
   MessageChannelMain: electron.MessageChannelMainMock,
   Menu: electron.Menu,
+  net: electron.net,
+  protocol: electron.protocol,
   shell: electron.shell,
   utilityProcess: {
     fork: vi.fn(() => new electron.UtilityProcessMock()),
@@ -465,11 +479,23 @@ describe("main process", () => {
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
+        webSecurity: true,
       },
     });
-    expect(firstWindow?.loadFile).toHaveBeenCalledWith(
-      expect.stringContaining(path.join("renderer", "index.html")),
-    );
+    expect(firstWindow?.loadURL).toHaveBeenCalledWith("app://bundle/index.html");
+    expect(electron.protocol.registerSchemesAsPrivileged).toHaveBeenCalledWith([{
+      scheme: "app",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        allowServiceWorkers: false,
+      },
+    }]);
+    expect(electron.protocol.handle).toHaveBeenCalledWith("app", expect.any(Function));
+    const schemeOrder = electron.protocol.registerSchemesAsPrivileged.mock.invocationCallOrder[0];
+    const readyOrder = electron.app.whenReady.mock.invocationCallOrder[0];
+    expect(schemeOrder).toBeLessThan(readyOrder ?? Number.NEGATIVE_INFINITY);
     expect(electron.Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
     expect(electron.app.setPath).toHaveBeenCalledWith(
       "userData",
@@ -583,6 +609,12 @@ describe("main process", () => {
     firstWindow?.webHandlers.get("render-process-gone")?.({}, { reason: "crashed" });
     firstWindow?.webHandlers.get("will-navigate")?.(navigationEvent, "file:///tmp/nope");
     expect(navigationEvent.preventDefault).toHaveBeenCalled();
+    const appNavigationEvent = { preventDefault: vi.fn() };
+    firstWindow?.webHandlers.get("will-navigate")?.(
+      appNavigationEvent,
+      "app://bundle/index.html",
+    );
+    expect(appNavigationEvent.preventDefault).not.toHaveBeenCalled();
     electron.shell.openExternal.mockRejectedValueOnce(new Error("shell failed"));
     firstWindow?.webHandlers.get("will-navigate")?.(
       { preventDefault: vi.fn() },

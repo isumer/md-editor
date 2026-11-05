@@ -1,11 +1,10 @@
-import { pathToFileURL } from "node:url";
-
 import { app, BrowserWindow } from "electron";
 
 import {
   registerTrustedWindow,
   unregisterTrustedWindow,
 } from "../ipc/handle";
+import { APP_ENTRY_URL } from "./appProtocol";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -33,6 +32,9 @@ function wireWindowSecurity(
     logProcessEvent("render-process-gone", details.reason);
   });
   window.webContents.on("will-navigate", (event, url) => {
+    if (url === APP_ENTRY_URL) {
+      return;
+    }
     event.preventDefault();
     openExternalBackstop(url);
   });
@@ -47,7 +49,6 @@ function wireWindowSecurity(
 
 export function createWindow(
   preloadPath: string,
-  rendererPath: string,
   dependencies: WindowDependencies,
 ): BrowserWindow {
   const window = new BrowserWindow({
@@ -61,9 +62,10 @@ export function createWindow(
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      webSecurity: true,
     },
   });
-  registerTrustedWindow(window, pathToFileURL(rendererPath).href);
+  registerTrustedWindow(window, APP_ENTRY_URL);
   wireWindowSecurity(
     window,
     dependencies.logProcessEvent,
@@ -88,6 +90,6 @@ export function createWindow(
       mainWindow = null;
     }
   });
-  void window.loadFile(rendererPath);
+  void window.loadURL(APP_ENTRY_URL);
   return window;
 }
