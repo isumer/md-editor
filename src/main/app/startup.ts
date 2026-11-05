@@ -245,6 +245,7 @@ export async function initializeApplication(
   createApplicationWindow: () => void,
   startIoWorker: () => void,
   openRequests: OpenRequests,
+  applicationReady: () => void,
 ): Promise<void> {
   const dataDirectory = await detectDataDirectory({
     executablePath: process.execPath,
@@ -264,6 +265,7 @@ export async function initializeApplication(
     process.cwd(),
   );
   await app.whenReady();
+  applicationReady();
   await startupRequests;
   createMenu();
   startIoWorker();
