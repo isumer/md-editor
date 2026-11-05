@@ -17,9 +17,10 @@ Update a row when an item is queued, merged or sent back.
 | log-fixture | 7 | test/fixtures/log/** | main | side | merged (47a2609) |
 | md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | candidate 092003d (review not queued) |
 | find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | candidate auto/nim/069 (in review, 073) |
-| compare-gen | 10 | test/fixtures/compare/generate-folders.mjs, test/fixtures/compare/README.md | main | side | queued |
-| replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | queued |
-| git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | queued |
+| compare-gen | 10 | test/fixtures/compare/generate-folders.mjs, test/fixtures/compare/README.md | main | side | merged (ce1e212) |
+| replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | queued (076) |
+| git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | in review (079) |
+| conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
