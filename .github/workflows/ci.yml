@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [macos-latest]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,7 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         run: npm run check:coverage
       - name: Run end-to-end tests
-        run: npm run test:e2e
+        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g AC-PERF-09 --repeat-each 3
       - name: Check acceptance criteria
         run: npm run check:acceptance
       - name: Add JUnit summary

@@ -273,6 +273,7 @@ interface ScrollProbe {
   done: boolean;
   frames: number[];
   longtasks: number[];
+  loaf?: string[];
 }
 
 async function startScrollProbe(page: Page): Promise<void> {
@@ -289,6 +290,21 @@ async function startScrollProbe(page: Page): Promise<void> {
         probe.longtasks.push(entry.duration);
       }
     }).observe({ type: "longtask" });
+    const loaf: string[] = [];
+    (probe as unknown as { loaf: string[] }).loaf = loaf;
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const e = raw as unknown as { startTime: number; duration: number; blockingDuration: number;
+          renderStart: number; styleAndLayoutStart: number;
+          scripts: { invoker: string; duration: number; forcedStyleAndLayoutDuration: number }[] };
+        const script = e.renderStart > 0 ? e.renderStart - e.startTime : e.duration;
+        const preLayout = e.renderStart > 0 ? e.styleAndLayoutStart - e.renderStart : 0;
+        const styleLayoutPaint = e.renderStart > 0 ? e.startTime + e.duration - e.styleAndLayoutStart : 0;
+        loaf.push(`dur=${e.duration.toFixed(0)} block=${e.blockingDuration.toFixed(0)} ` +
+          `script=${script.toFixed(0)} rafEtc=${preLayout.toFixed(0)} styleLayout+=${styleLayoutPaint.toFixed(0)} ` +
+          `scripts=${e.scripts.map((x) => `${x.invoker}:${x.duration.toFixed(0)}/fsl${x.forcedStyleAndLayoutDuration.toFixed(0)}`).join(",")}`);
+      }
+    }).observe({ type: "long-animation-frame" });
     let previous = 0;
     const tick = (time: number): void => {
       if (previous > 0) {
@@ -352,6 +368,9 @@ async function expectSmoothScroll(page: Page, label: string): Promise<void> {
     `longtasks=${String(probe.longtasks.length)} ` +
     `longtaskDurations=[${distribution(probe.longtasks)}]`,
   );
+  const loaf = await page.evaluate(() =>
+    (window as unknown as { __scrollProbe?: { loaf?: string[] } }).__scrollProbe?.loaf ?? []);
+  console.log(`${label} LoAF n=${String(loaf.length)}\n  ${loaf.join("\n  ")}`);
   expect(slowFrames).toEqual([]);
   expect(probe.longtasks).toEqual([]);
 }
