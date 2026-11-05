@@ -1,0 +1,2 @@
+# This fixture must keep its CRLF bytes on every checkout.
+crlf.md -text

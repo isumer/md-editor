@@ -1,0 +1,35 @@
+City profile: north district
+Population: 120000
+Region: coastal
+Main export: timber and paper
+Main import: machinery
+Schools: 14
+Hospitals: 3
+Parks: 7
+Library branches: 2
+Museum: one
+Theatre: one
+Museum annex: open
+Gallery: two
+Stadium: one
+Airport: regional
+Harbour: cargo only
+Rail depot: two
+Bus depot: one
+Cycle lanes: 42 km
+Footpaths: 88 km
+Market day: Saturday
+Twin town: Aarden
+Sister city: Lorne
+Founded: 1842
+Charter: 1871
+Mayor: elected
+Council seats: 12
+Motto: steady and fair
+Seal: three waves
+Flag: blue and gold
+Anthem: none
+Flower: sea thrift
+Time zone: UTC+1
+Bird: herring gull
+Tree: alder

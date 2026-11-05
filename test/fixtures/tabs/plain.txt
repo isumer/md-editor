@@ -1,0 +1,20 @@
+plain-line-01 plain text row one opens this document
+plain-line-02 plain text row two follows without markdown
+plain-line-03 plain text row three stays as ordinary text
+plain-line-04 plain text row four holds no formatting
+plain-line-05 plain text row five keeps the file simple
+plain-line-06 plain text row six is easy to read
+plain-line-07 plain text row seven has no headings
+plain-line-08 plain text row eight has no lists
+plain-line-09 plain text row nine has no code fences
+plain-line-10 plain text row ten marks the middle
+plain-line-11 plain text row eleven stays plain
+plain-line-12 plain text row twelve remains unformatted
+plain-line-13 plain text row thirteen is short
+plain-line-14 plain text row fourteen is another line
+plain-line-15 plain text row fifteen continues the run
+plain-line-16 plain text row sixteen is stable
+plain-line-17 plain text row seventeen stays readable
+plain-line-18 plain text row eighteen nears the end
+plain-line-19 plain text row nineteen is the second to last
+plain-line-20 plain text row twenty closes the file

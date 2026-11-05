@@ -1,0 +1,12 @@
+  ID NAME               ROLE           CITY         
+   1 Ada Lovelace       Engineer       London       
+   2 Grace Hopper       Admiral        New York     
+   3 Alan Turing        Mathematician  London       
+   4 Edsger Dijkstra    Scientist      Rotterdam    
+   5 Barbara Liskov     Professor      Boston       
+   6 Donald Knuth       Professor      Stanford     
+   7 Katherine Johnson  Analyst        Hampton      
+   8 Linus Torvalds     Maintainer     Helsinki     
+   9 Margaret Hamilton  Engineer       Boston       
+  10 Dennis Ritchie     Researcher     Murray Hill  
+  11 Radia Perlman      Engineer       Boston       
