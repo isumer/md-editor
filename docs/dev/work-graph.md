@@ -19,7 +19,7 @@ Update a row when an item is queued, merged or sent back.
 | find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | candidate auto/nim/069 (in review, 073) |
 | compare-gen | 10 | test/fixtures/compare/generate-folders.mjs, test/fixtures/compare/README.md | main | side | merged (ce1e212) |
 | replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | queued (076) |
-| git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | in review (079) |
+| git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | merged (82c7b0a) |
 | conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | queued |
 
 ## Notes
