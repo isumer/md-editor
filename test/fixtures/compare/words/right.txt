@@ -1,0 +1,3 @@
+The quick brown cat jumps over the lazy dog.
+Version 2; released in March.
+Bugün hava çok kötü.
