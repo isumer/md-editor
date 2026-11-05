@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 import { repositoryRoot, launchEditor, stubOpenDialog } from "./helpers";
 
@@ -357,9 +357,29 @@ async function flingPreview(page: Page): Promise<ScrollProbe> {
   });
 }
 
-async function expectSmoothScroll(page: Page, label: string): Promise<void> {
+let traceIndex = 0;
+
+async function expectSmoothScroll(page: Page, label: string, application?: ElectronApplication): Promise<void> {
+  const tracePath = path.join(repositoryRoot, "test-results", "traces",
+    `${label.replace(/\W+/g, "-")}-${String(process.pid)}-${String(traceIndex++)}.json`);
+  if (application) {
+    const gpu = await application.evaluate(async ({ app, contentTracing }) => {
+      await contentTracing.startRecording({
+        included_categories: ["cc", "gpu", "viz", "benchmark", "blink", "renderer.scheduler",
+          "devtools.timeline", "disabled-by-default-devtools.timeline.frame", "toplevel"],
+      });
+      const info = await app.getGPUInfo("basic").catch((error: unknown) => String(error));
+      return { features: app.getGPUFeatureStatus(), info };
+    });
+    console.log(`${label} GPU ${JSON.stringify(gpu)}`);
+  }
   await startScrollProbe(page);
   const probe = await flingPreview(page);
+  if (application) {
+    await fs.mkdir(path.dirname(tracePath), { recursive: true });
+    await application.evaluate(({ contentTracing }, target) => contentTracing.stopRecording(target), tracePath);
+    console.log(`${label} trace ${tracePath}`);
+  }
   const slowFrames = probe.frames.filter((duration) => duration > 32);
   console.log(
     `${label}: frames=${String(probe.frames.length)} ` +
@@ -386,7 +406,7 @@ test("AC-PERF-09: fling-scrolling the 500 KB preview has no frame over 32 ms", {
     await expect.poll(() => page.getByTestId("preview").evaluate(
       (element) => (element as HTMLElement).dataset["renderComplete"],
     ), { timeout: 30_000 }).toBe("true");
-    await expectSmoothScroll(page, "AC-PERF-09 500KB scroll");
+    await expectSmoothScroll(page, "AC-PERF-09 500KB scroll", application);
   } finally {
     await application.close();
   }
@@ -406,7 +426,7 @@ test("AC-PERF-09: fling-scrolling the 20 MB preview has no frame over 32 ms", {
     ), { timeout: 360_000 }).toBe("true");
     // Bounded fill batches need about 4.4 minutes for 114,567 blocks on this machine.
     console.log(`AC-PERF-09 20MB render complete after ${String(Date.now() - started)}ms`);
-    await expectSmoothScroll(page, "AC-PERF-09 20MB scroll");
+    await expectSmoothScroll(page, "AC-PERF-09 20MB scroll", application);
   } finally {
     await application.close();
   }
