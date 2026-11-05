@@ -1,0 +1,66 @@
+<h1 data-line="0">API reference</h1>
+<h2 data-line="2"><code>nextPass(options)</code></h2>
+<p data-line="4">Returns the next visible pass for a ground station.</p>
+<table data-line="6">
+<thead data-line="6">
+<tr data-line="6">
+<th style="text-align:left">Option</th>
+<th style="text-align:left">Type</th>
+<th style="text-align:left">Default</th>
+<th style="text-align:left">Description</th>
+</tr>
+</thead>
+<tbody data-line="8">
+<tr data-line="8">
+<td style="text-align:left"><code>lat</code></td>
+<td style="text-align:left"><code>number</code></td>
+<td style="text-align:left">—</td>
+<td style="text-align:left">Latitude in degrees</td>
+</tr>
+<tr data-line="9">
+<td style="text-align:left"><code>lon</code></td>
+<td style="text-align:left"><code>number</code></td>
+<td style="text-align:left">—</td>
+<td style="text-align:left">Longitude in degrees</td>
+</tr>
+<tr data-line="10">
+<td style="text-align:left"><code>days</code></td>
+<td style="text-align:left"><code>number</code></td>
+<td style="text-align:left"><code>7</code></td>
+<td style="text-align:left">Search horizon</td>
+</tr>
+<tr data-line="11">
+<td style="text-align:left"><code>format</code></td>
+<td style="text-align:left"><code>"json" | "csv"</code></td>
+<td style="text-align:left"><code>"json"</code></td>
+<td style="text-align:left">Output encoding</td>
+</tr>
+</tbody>
+</table>
+<h3 data-line="13">Example</h3>
+<pre><code class="hljs language-ts"><span class="hljs-keyword">const</span> pass = <span class="hljs-keyword">await</span> <span class="hljs-title function_">nextPass</span>({ <span class="hljs-attr">lat</span>: <span class="hljs-number">52.52</span>, <span class="hljs-attr">lon</span>: <span class="hljs-number">13.405</span>, <span class="hljs-attr">days</span>: <span class="hljs-number">3</span> });
+
+<span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(pass.<span class="hljs-property">startsAt</span>.<span class="hljs-title function_">toISOString</span>());
+</code></pre>
+<h3 data-line="21">Errors</h3>
+<ul data-line="23">
+<li data-line="23"><code>E_RANGE</code> — the coordinates are outside the valid range</li>
+<li data-line="24"><code>E_NETWORK</code> — the TLE source could not be reached
+<ul data-line="25">
+<li data-line="25">Retry after 30 seconds</li>
+<li data-line="26">Check the proxy settings</li>
+</ul>
+</li>
+</ul>
+<details>
+<summary>Legacy callback form</summary>
+<pre><code class="hljs language-js"><span class="hljs-title function_">nextPass</span>({ <span class="hljs-attr">lat</span>: <span class="hljs-number">1</span>, <span class="hljs-attr">lon</span>: <span class="hljs-number">2</span> }, <span class="hljs-function">(<span class="hljs-params">error, pass</span>) =&gt;</span> {
+  <span class="hljs-keyword">if</span> (error) <span class="hljs-keyword">throw</span> error;
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(pass);
+});
+</code></pre>
+</details>
+<blockquote data-line="40">
+<p data-line="40">Deprecated: the callback form will be removed in 2.0.</p>
+</blockquote>
+<p data-line="42">Keyboard: press <kbd>Ctrl</kbd> + <kbd>K</kbd> to open search.</p>
