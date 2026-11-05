@@ -89,9 +89,9 @@ test("exposes stable File menu items with their accelerators", {
   }
 });
 
-test("updates the preview after editing", {
-  tag: "@AC-R1-02",
-  annotation: { type: "AC-R1-02" },
+test("typing quickly shows the final text in the preview", {
+  tag: ["@AC-R1-02", "@AC-R1-07"],
+  annotation: [{ type: "AC-R1-02" }, { type: "AC-R1-07" }],
 }, async () => {
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -99,9 +99,9 @@ test("updates the preview after editing", {
     await expect(editor).toContainText("Sample document");
     await editor.click();
     await page.keyboard.press("Control+End");
-    await page.keyboard.type("\n\n## Added");
+    await page.keyboard.type("\n\n## Added final preview");
 
-    await expect(page.getByTestId("preview").locator("h2")).toHaveText("Added", {
+    await expect(page.getByTestId("preview").locator("h2")).toHaveText("Added final preview", {
       timeout: 1_000,
     });
   } finally {
