@@ -103,3 +103,25 @@ and `eol.txt` as differing, `left-only.txt` as only on the left,
 a directory; it does not visit `node/inner.txt`. No other path is
 reported, which matches `identical` for `identical.txt` and
 `shared/nested.txt`.
+
+## Generated large folder tree
+
+`generate-folders.mjs` builds a large deterministic tree for folder-compare
+tests, so no large tree is committed. It has no dependencies.
+
+```sh
+node test/fixtures/compare/generate-folders.mjs <target-dir> <file-count>
+```
+
+- Layout: `<target-dir>/left/` and `<target-dir>/right/` hold `<file-count>`
+  shared relative paths under `dir-NNN/`. The left tree also has
+  `left-only.txt`; the right tree also has `right-only.txt`.
+- Bytes: all files are ASCII text with LF line endings. Every 7th shared
+  path (1-based: 7, 14, ...) has different bytes on the right. Every other
+  shared path is byte-identical.
+- Determinism: a fixed seed controls all content. Two runs with the same
+  file count produce byte-identical trees.
+- Output: the script prints the file count for each tree and the number of
+  differing paths (changed shared paths plus the two one-sided paths).
+- Exit codes: 0 on success; 1 on bad arguments; 2 when `<target-dir>`
+  exists and is not empty.
