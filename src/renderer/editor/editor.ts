@@ -1,14 +1,32 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState, type ChangeSet } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 
 import type { DocumentState } from "../core/document";
 
-interface EditorCallbacks {
-  onDocumentChanged(text: string): void;
+export interface EditorCallbacks {
+  onDocumentChanged(): void;
   onChanges(changes: ChangeSet): void;
   updateTitle(): void;
+}
+
+type DocumentUpdate = Pick<ViewUpdate, "docChanged" | "state" | "changes">;
+
+export function handleDocumentUpdate(
+  update: DocumentUpdate,
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): void {
+  if (!update.docChanged) {
+    return;
+  }
+  if (!documentState.applyingDocument) {
+    documentState.dirty = !update.state.doc.eq(documentState.saved);
+    callbacks.updateTitle();
+    callbacks.onChanges(update.changes);
+  }
+  callbacks.onDocumentChanged();
 }
 
 export function createEditor(
@@ -25,15 +43,7 @@ export function createEditor(
         markdown(),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
-          if (!update.docChanged) {
-            return;
-          }
-          if (!documentState.applyingDocument) {
-            documentState.dirty = !update.state.doc.eq(documentState.saved);
-            callbacks.updateTitle();
-            callbacks.onChanges(update.changes);
-          }
-          callbacks.onDocumentChanged(update.state.doc.toString());
+          handleDocumentUpdate(update, documentState, callbacks);
         }),
       ],
     }),

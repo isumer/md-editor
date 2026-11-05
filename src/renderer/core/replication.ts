@@ -1,17 +1,11 @@
 import type { ChangeSet, Text } from "@codemirror/state";
 
-type ChangeSetJson = readonly (number | readonly [number, ...string[]])[];
+import type { ChangeDocumentMessage } from "../../shared/ipc/io";
 
 export interface ReplicatedVersion {
   docId: string;
   epoch: number;
   version: number;
-}
-
-export interface ChangeMessage extends Omit<ReplicatedVersion, "version"> {
-  fromVersion: number;
-  toVersion: number;
-  changes: ChangeSetJson;
 }
 
 export class DocumentReplication {
@@ -27,18 +21,19 @@ export class DocumentReplication {
     return { ...this.currentVersion };
   }
 
-  changed(changes: ChangeSet): ChangeMessage {
+  changed(changes: ChangeSet): ChangeDocumentMessage {
     const fromVersion = this.currentVersion.version;
     this.currentVersion = {
       ...this.currentVersion,
       version: fromVersion + 1,
     };
     return {
+      op: "change",
       docId: this.currentVersion.docId,
       epoch: this.currentVersion.epoch,
       fromVersion,
       toVersion: this.currentVersion.version,
-      changes: changes.toJSON() as ChangeSetJson,
+      changes: changes.toJSON(),
     };
   }
 

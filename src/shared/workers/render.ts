@@ -1,8 +1,195 @@
-export interface RenderRequest {
-  id: number;
+export const MAX_RENDER_TEXT_LENGTH = 256 * 1024 * 1024;
+
+export type RenderChangeSetJsonPart = number | readonly [number, ...string[]];
+export type RenderChangeSetJson = readonly RenderChangeSetJsonPart[];
+
+export interface RenderAttachMessage {
+  op: "attach";
+  docId: string;
+  epoch: number;
+  version: number;
   text: string;
 }
 
-export type RenderResponse =
-  | { id: number; ok: true; html: string }
-  | { id: number; ok: false; message: string };
+export interface RenderChangeMessage {
+  op: "change";
+  docId: string;
+  epoch: number;
+  fromVersion: number;
+  toVersion: number;
+  changes: RenderChangeSetJson;
+}
+
+export interface RenderRequest {
+  op: "render";
+  id: number;
+  docId: string;
+  epoch: number;
+  version: number;
+}
+
+export interface RenderDetachMessage {
+  op: "detach";
+  docId: string;
+}
+
+export type RenderWorkerRequest =
+  | RenderAttachMessage
+  | RenderChangeMessage
+  | RenderRequest
+  | RenderDetachMessage;
+
+interface RenderResultVersion {
+  id: number;
+  docId: string;
+  epoch: number;
+  version: number;
+}
+
+export type RenderResult =
+  | (RenderResultVersion & { ok: true; html: string })
+  | (RenderResultVersion & { ok: false; message: string });
+
+export interface RenderResync extends RenderResultVersion {
+  op: "resync";
+}
+
+export type RenderResponse = RenderResult | RenderResync;
+
+function exactData(
+  value: unknown,
+  keys: readonly string[],
+): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    const ownKeys = Reflect.ownKeys(value);
+    if (ownKeys.length !== keys.length ||
+      ownKeys.some((key) => typeof key !== "string" || !keys.includes(key))) {
+      return null;
+    }
+    const record: Record<string, unknown> = {};
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor)) {
+        return null;
+      }
+      record[key] = descriptor.value;
+    }
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function arrayValues(value: unknown): readonly unknown[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  try {
+    const length = Object.getOwnPropertyDescriptor(value, "length")?.value;
+    const keys = Reflect.ownKeys(value);
+    if (typeof length !== "number" || keys.length !== length + 1 ||
+      keys.some((key) => typeof key !== "string" ||
+        (key !== "length" && !Number.isSafeInteger(Number(key))))) {
+      return null;
+    }
+    const values: unknown[] = [];
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor)) {
+        return null;
+      }
+      values.push(descriptor.value);
+    }
+    return values;
+  } catch {
+    return null;
+  }
+}
+
+function validVersion(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function validDocId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+
+function insertedLength(part: readonly unknown[]): number | null {
+  if (part.length === 0 || !validVersion(part[0])) {
+    return null;
+  }
+  let length = 0;
+  for (let index = 1; index < part.length; index += 1) {
+    const line = part[index];
+    if (typeof line !== "string") {
+      return null;
+    }
+    length += line.length + (index > 1 ? 1 : 0);
+    if (!Number.isSafeInteger(length) || length > MAX_RENDER_TEXT_LENGTH) {
+      return null;
+    }
+  }
+  return length;
+}
+
+function validChanges(value: unknown): value is RenderChangeSetJson {
+  const parts = arrayValues(value);
+  if (!parts) {
+    return false;
+  }
+  let totalInserted = 0;
+  for (const part of parts) {
+    if (validVersion(part)) {
+      continue;
+    }
+    const tuple = arrayValues(part);
+    const inserted = tuple ? insertedLength(tuple) : null;
+    if (inserted === null) {
+      return false;
+    }
+    totalInserted += inserted;
+    if (!Number.isSafeInteger(totalInserted) || totalInserted > MAX_RENDER_TEXT_LENGTH) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function validAttach(value: unknown): value is RenderAttachMessage {
+  const data = exactData(value, ["op", "docId", "epoch", "version", "text"]);
+  return data !== null && data["op"] === "attach" &&
+    validDocId(data["docId"]) && validVersion(data["epoch"]) &&
+    validVersion(data["version"]) && typeof data["text"] === "string" &&
+    data["text"].length <= MAX_RENDER_TEXT_LENGTH;
+}
+
+function validChange(value: unknown): value is RenderChangeMessage {
+  const data = exactData(
+    value,
+    ["op", "docId", "epoch", "fromVersion", "toVersion", "changes"],
+  );
+  return data !== null && data["op"] === "change" &&
+    validDocId(data["docId"]) && validVersion(data["epoch"]) &&
+    validVersion(data["fromVersion"]) && validVersion(data["toVersion"]) &&
+    data["toVersion"] === data["fromVersion"] + 1 && validChanges(data["changes"]);
+}
+
+function validRender(value: unknown): value is RenderRequest {
+  const data = exactData(value, ["op", "id", "docId", "epoch", "version"]);
+  return data !== null && data["op"] === "render" && validVersion(data["id"]) &&
+    validDocId(data["docId"]) && validVersion(data["epoch"]) &&
+    validVersion(data["version"]);
+}
+
+function validDetach(value: unknown): value is RenderDetachMessage {
+  const data = exactData(value, ["op", "docId"]);
+  return data !== null && data["op"] === "detach" && validDocId(data["docId"]);
+}
+
+export function isRenderWorkerRequest(value: unknown): value is RenderWorkerRequest {
+  return validAttach(value) || validChange(value) || validRender(value) ||
+    validDetach(value);
+}
