@@ -11,9 +11,10 @@ Update a row when an item is queued, merged or sent back.
 | 040 | 8 | test/fixtures/powertools/** | main | side | reviewed (candidate 0b6aecc dropped earlier; re-merged) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | queued |
 | 042 | 13 | export fixtures under test/fixtures/ (see branch auto/nim/042-…) | main | nim | review queued (053) |
-| 054 | 6 | test/fixtures/workspace/** | main | side | review queued (056) |
+| 054 | 6 | test/fixtures/workspace/** | main | side | review queued (062, candidate redo) |
 | 055 | 14 | test/fixtures/stability/** | main | nim | running |
-| bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | queued |
+| bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | candidate ff8da2b waiting for CI |
+| log-fixture | 7 | test/fixtures/log/** | main | side | queued (deepseek-side) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
