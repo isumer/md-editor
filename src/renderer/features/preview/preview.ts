@@ -1,6 +1,7 @@
 import type {
   RenderBlock,
   RenderBlockPatch,
+  RenderFillReadyMessage,
   RenderLineShift,
   RenderResponse,
   RenderResync,
@@ -13,6 +14,7 @@ import { RenderScheduler } from "./renderScheduler";
 import { sanitizeRenderedHtml } from "./sanitize";
 
 export interface RenderWorkerEvents {
+  postMessage(message: unknown): void;
   onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
 }
@@ -32,9 +34,14 @@ interface LineShiftRecord extends RenderLineShift {
   version: number;
 }
 
+interface ShiftTable {
+  root: HTMLElement;
+  shifts: readonly LineShiftRecord[];
+}
+
 // Each block points at the live shift ledger of its preview, so resolving a
 // line costs only the number of line-count changes since it was rendered.
-const shiftTables = new WeakMap<HTMLElement, readonly LineShiftRecord[]>();
+const shiftTables = new WeakMap<HTMLElement, ShiftTable>();
 
 const BLOCK_CLASS = "preview-block";
 // Blocks are packed into pages and pages into sections so content-visibility
@@ -106,7 +113,7 @@ function updateBlock(
 ): void {
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
-  shiftTables.set(element, shifts);
+  shiftTables.set(element, { root: wiring.preview, shifts });
   element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
 }
 
@@ -263,8 +270,8 @@ function applyRenderResult(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-): void {
-  wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
+): boolean {
+  return wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
       applyBlocks(appliedResponse, shifts, wiring, elements, layout);
       wiring.showStatus();
@@ -275,13 +282,11 @@ function applyRenderResult(
 }
 
 function anchorElement(
-  element: HTMLElement,
+  root: HTMLElement,
   blockId: string,
 ): HTMLElement | null {
   const escaped = blockId.replaceAll('"', '\\"');
-  return element.ownerDocument.querySelector<HTMLElement>(
-    `[data-block-id="${escaped}"]`,
-  );
+  return root.querySelector<HTMLElement>(`[data-block-id="${escaped}"]`);
 }
 
 // The line a block currently starts on. The worker's last sent line is the
@@ -290,7 +295,8 @@ function anchorElement(
 export function blockLine(element: HTMLElement): number {
   let line = Number(element.dataset["line"] ?? "0");
   const version = Number(element.dataset["version"] ?? "0");
-  for (const shift of shiftTables.get(element) ?? []) {
+  const table = shiftTables.get(element);
+  for (const shift of table?.shifts ?? []) {
     if (shift.version <= version) {
       continue;
     }
@@ -298,7 +304,7 @@ export function blockLine(element: HTMLElement): number {
       line += shift.delta;
       continue;
     }
-    const anchor = anchorElement(element, shift.after);
+    const anchor = table ? anchorElement(table.root, shift.after) : null;
     if (anchor && anchor !== element &&
       (anchor.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
       line += shift.delta;
@@ -341,13 +347,22 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    applyRenderResult(response, shifts, wiring, elements, layout);
-    if (response.ok) {
+    const applied = applyRenderResult(response, shifts, wiring, elements, layout);
+    if (applied && response.ok) {
       shown = {
         docId: response.docId,
         epoch: response.epoch,
         version: response.version,
       };
+      if (response.mode === "append") {
+        renderWorker.postMessage({
+          op: "fill-ready",
+          docId: response.docId,
+          epoch: response.epoch,
+          version: response.version,
+          token: response.fillToken,
+        } satisfies RenderFillReadyMessage);
+      }
     }
   };
 

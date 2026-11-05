@@ -3,8 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RenderResponse, RenderResult } from "../../src/shared/workers/render";
 import {
+  DATA_LINE_PREFIX,
   rangeIndexAt,
-  shiftDataLineAttributes,
+  shiftChunkDataLines,
   splitChunks,
 } from "../../src/renderer/workers/render/chunks";
 import { IncrementalRenderState } from "../../src/renderer/workers/render/incremental";
@@ -32,6 +33,42 @@ class FakeScope {
   results(): RenderResult[] {
     return this.responses.filter((response): response is RenderResult =>
       !("op" in response));
+  }
+}
+
+interface FillIdentity {
+  docId: string;
+  epoch: number;
+  version: number;
+}
+
+// The worker holds the next fill batch until the preview acknowledges the last
+// one, so a test must ack each append before advancing the timers again.
+async function drainFill(
+  handler: RenderWorkerHandler,
+  scope: FakeScope,
+  identity: FillIdentity = { docId: "doc", epoch: 1, version: 0 },
+): Promise<void> {
+  for (let pass = 0; pass < 1000; pass += 1) {
+    const before = scope.results().filter((result) =>
+      result.ok && result.mode === "append").length;
+    await vi.runAllTimersAsync();
+    const appends = scope.results().filter((result): result is RenderResult & {
+      ok: true;
+      mode: "append";
+    } => result.ok && result.mode === "append");
+    const last = appends.at(-1);
+    if (!last || last.complete) {
+      return;
+    }
+    if (appends.length === before) {
+      return;
+    }
+    handler.handle({
+      op: "fill-ready",
+      ...identity,
+      token: last.fillToken,
+    });
   }
 }
 
@@ -91,10 +128,11 @@ describe("markdown chunks", () => {
   });
 
   it("AC-R1-04: shifts chunk-local source lines into document lines", () => {
-    expect(shiftDataLineAttributes('<p data-line="0">x</p>', 0))
+    const line = (value: number): string => `${DATA_LINE_PREFIX}${String(value)}`;
+    expect(shiftChunkDataLines(`<p data-line="${line(0)}">x</p>`, 0))
       .toBe('<p data-line="0">x</p>');
-    expect(shiftDataLineAttributes(
-      '<h1 data-line="0">a</h1><p data-line="2">b</p>',
+    expect(shiftChunkDataLines(
+      `<h1 data-line="${line(0)}">a</h1><p data-line="${line(2)}">b</p>`,
       7,
     )).toBe('<h1 data-line="7">a</h1><p data-line="9">b</p>');
   });
@@ -221,6 +259,36 @@ describe("incremental render state", () => {
     expect(state.document).toBe(document);
   });
 
+  it("AC-R1-10: finds a reuse boundary past the chunks already split", () => {
+    const leading = Array.from(
+      { length: 11 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const fence = ["```", "alpha", "beta", "gamma", "delta", "epsilon", "```"]
+      .join("\n");
+    const document = textFrom(`${leading}\n\n${fence}\n\nafter`);
+    const state = new IncrementalRenderState("doc", 1, 0, document, (source) => source);
+    state.initial();
+    let beta = 0;
+    for (let number = 1; number <= document.lines; number += 1) {
+      if (document.line(number).text === "beta") {
+        beta = number;
+        break;
+      }
+    }
+    const change = ChangeSet.of(
+      { from: document.line(beta).from + 1, insert: "X" },
+      document.length,
+    );
+    const after = change.apply(document);
+
+    state.applyChange(document, after, 0, 1, change.toJSON());
+
+    const patch = state.patch();
+    expect(patch.blocks).toHaveLength(1);
+    expect(patch.blocks[0]?.block.html).toContain("bXeta");
+  });
+
   it("AC-R1-10: an edit after the published prefix is left for the fill pass", () => {
     vi.useFakeTimers();
     const chunks = Array.from({ length: 120 }, (_, index) =>
@@ -284,16 +352,16 @@ describe("progressive large-document rendering", () => {
     const first = scope.results()[0];
     expect(first?.ok).toBe(true);
     if (first?.ok && first.mode === "replace") {
-      expect(first.blocks).toHaveLength(40);
+      expect(first.blocks).toHaveLength(12);
       expect(first.complete).toBe(false);
     }
 
-    await vi.runAllTimersAsync();
+    await drainFill(handler, scope);
     const appended = scope.results().slice(1);
     expect(appended.length).toBeGreaterThan(0);
     const appendedBlocks = appended.flatMap((result) =>
       result.ok && result.mode === "append" ? result.blocks : []);
-    expect(appendedBlocks).toHaveLength(80);
+    expect(appendedBlocks).toHaveLength(108);
     const last = appended.at(-1);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
@@ -318,7 +386,7 @@ describe("progressive large-document rendering", () => {
       expect(patch.blocks).toHaveLength(1);
     }
 
-    await vi.runAllTimersAsync();
+    await drainFill(handler, scope, { docId: "doc", epoch: 1, version: 1 });
     const last = scope.results().at(-1);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
@@ -334,7 +402,7 @@ describe("progressive large-document rendering", () => {
     handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text });
     handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
 
-    await vi.runAllTimersAsync();
+    await drainFill(handler, scope, { docId: "doc", epoch: 1, version: 0 });
     const appends = scope.results().filter((result) =>
       result.ok && result.mode === "append");
     const appendedBlocks = appends.flatMap((result) =>
@@ -342,7 +410,7 @@ describe("progressive large-document rendering", () => {
     const last = appends.at(-1);
 
     expect(appends.length).toBeGreaterThanOrEqual(2);
-    expect(appendedBlocks).toHaveLength(210);
+    expect(appendedBlocks).toHaveLength(238);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
 
@@ -360,7 +428,7 @@ describe("progressive large-document rendering", () => {
     handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text });
     handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
 
-    await vi.runAllTimersAsync();
+    await drainFill(handler, scope, { docId: "doc", epoch: 1, version: 0 });
     const failure = scope.results().find((result) => !result.ok);
 
     expect(failure?.ok).toBe(false);
@@ -383,7 +451,7 @@ describe("progressive large-document rendering", () => {
     handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text });
     handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
 
-    await vi.runAllTimersAsync();
+    await drainFill(handler, scope, { docId: "doc", epoch: 1, version: 0 });
     const failure = scope.results().find((result) => !result.ok);
 
     expect(failure?.ok).toBe(false);

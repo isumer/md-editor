@@ -18,6 +18,7 @@ const DOC_ID = "doc";
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
 
 interface FakeWorker {
+  postMessage: (message: unknown) => void;
   onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
 }
@@ -102,7 +103,6 @@ function runSeed(seed: number): SeedStats {
   vi.useFakeTimers();
   const random = randomGenerator(seed);
   const preview = document.createElement("div");
-  const worker: FakeWorker = { onmessage: null, onerror: null };
   const editor: Editor = {
     doc: textFrom(initialSource(seed)),
     epoch: 1,
@@ -124,6 +124,14 @@ function runSeed(seed: number): SeedStats {
     }
     return renderMarkdown(source, environment);
   });
+
+  const worker: FakeWorker = {
+    postMessage: (message) => {
+      handler.handle(message);
+    },
+    onmessage: null,
+    onerror: null,
+  };
 
   const attachCurrent = (): void => {
     handler.handle({
@@ -279,7 +287,8 @@ function runSeed(seed: number): SeedStats {
     scheduler.schedule();
     vi.advanceTimersByTime(5);
     flush();
-    const dispatch = lastDispatch;
+    const dispatch = lastDispatch as
+      { id: number; epoch: number; version: number } | null;
     if (dispatch && dispatch.epoch === editor.epoch &&
       dispatch.version === editor.version &&
       appliedRequests.has(dispatch.id) &&
@@ -287,14 +296,7 @@ function runSeed(seed: number): SeedStats {
       preview.dataset["renderComplete"] === "true") {
       break;
     }
-    if (pass === 399) {
-      console.log("STUCK", dispatch, editor.epoch, editor.version,
-        appliedRequests.has(dispatch?.id ?? -1), responses.length,
-        vi.getTimerCount(), preview.dataset["renderComplete"]);
-    }
   }
-  console.log("PASSES", seed, passes);
-  console.log("TIMING", seed, "drain", cpuMs());
   const finalDispatch = lastDispatch as { id: number } | null;
   expect(finalDispatch && appliedRequests.has(finalDispatch.id),
     `seed ${String(seed)} did not render its final version`).toBe(true);
@@ -306,7 +308,6 @@ function runSeed(seed: number): SeedStats {
   fullContainer.innerHTML = sanitizeRenderedHtml(renderMarkdown(editor.doc.toString()));
   const blocks = [...preview.querySelectorAll<HTMLElement>(".preview-block")];
   const shown = blocks.map((block) => block.innerHTML).join("");
-  console.log("TIMING", seed, "full", cpuMs());
   expect(blocks.length, `seed ${String(seed)} rendered no blocks`).toBeGreaterThan(0);
   // Line attributes of blocks that were not re-rendered are resolved lazily
   // through the preview's shift ledger, so compare the rendered content.

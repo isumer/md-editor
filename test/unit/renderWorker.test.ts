@@ -382,8 +382,7 @@ function generator(seed: number): Generator {
 }
 
 function randomInsert(random: Generator): string {
-  // No newlines: the property checks version bookkeeping, and a single chunk
-  // keeps each render's HTML comparable to its named document version.
+  // No newlines: each block must equal the whole document, so it stays one chunk.
   const alphabet = ["a", "b", "c", "xy"] as const;
   return alphabet[random.next(alphabet.length)] ?? "";
 }
