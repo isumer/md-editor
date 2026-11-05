@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "theme": "system",
+  "fontSize": 14,
+  "preview": {
+    "scrollSync": true
+  },
+  "editor": {
+    "wrap": true,
+    "tabSize": 2
+  },
+  "encoding": {
+    "default": "utf-8",
+    "lineEndings": "lf"
+  },
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

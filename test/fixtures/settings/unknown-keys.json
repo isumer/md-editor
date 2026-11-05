@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "theme": "light",
+  "fontSize": 16,
+  "preview": {
+    "scrollSync": false
+  },
+  "editor": {
+    "wrap": false,
+    "tabSize": 4
+  },
+  "encoding": {
+    "default": "utf-8",
+    "lineEndings": "crlf"
+  },
+  "ignore": [
+    "dist"
+  ],
+  "futureOption": {
+    "density": "compact"
+  },
+  "futureFlag": true
+}
