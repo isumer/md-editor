@@ -175,7 +175,7 @@ test("an edit made while Save is in flight stays dirty and off disk", {
     await page.evaluate((insertedText) => {
       document.documentElement.dataset["saveRaceEdit"] = "waiting";
       const removeListener = window.api.onMenuCommand((command) => {
-        if (command !== "save") {
+        if (command !== "file-save") {
           return;
         }
         const content = document.querySelector<HTMLElement>(".cm-content");
