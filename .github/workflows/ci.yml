@@ -2,8 +2,13 @@ name: CI
 
 on:
   push:
+    # main plus the land queue's candidates (each heads a PR); work branches (auto/*) get no CI run.
     branches:
-      - "**"
+      - main
+      - "feature/**"
+      - "bug/**"
+      - "release/**"
+      - "merge/**"
     tags:
       - "v*"
   pull_request:
@@ -20,6 +25,11 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A candidate's PR is already tested by its push run; skip the duplicate pull_request run.
+    if: github.event_name != 'pull_request' || !(startsWith(github.head_ref, 'feature/') || startsWith(github.head_ref, 'bug/') || startsWith(github.head_ref, 'release/'))
+    # A red candidate must not fail the run (that sends a mail); the land queue reads the job
+    # conclusions instead and the PR shows the red job. Only main and tags fail the run.
+    continue-on-error: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
