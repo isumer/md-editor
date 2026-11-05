@@ -1,29 +1,57 @@
-import type { RenderResponse } from "../../../shared/workers/render";
+import type {
+  RenderResponse,
+  RenderResync,
+  RenderResult,
+} from "../../../shared/workers/render";
 import { formatMessage } from "../../../shared/messages/en";
+import type { ReplicatedVersion } from "../../core/replication";
 import { openExternal } from "../../platform/api";
 import { RenderScheduler } from "./renderScheduler";
 import { sanitizeRenderedHtml } from "./sanitize";
 
+export interface RenderWorkerEvents {
+  onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
+}
+
+interface RenderWorkerWiring {
+  scheduler: RenderScheduler;
+  preview: HTMLElement;
+  showStatus(message?: string): void;
+  currentVersion(): ReplicatedVersion;
+  onResync(response: RenderResync): void;
+}
+
+function applyRenderResult(result: RenderResult, wiring: RenderWorkerWiring): void {
+  wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
+    if (appliedResponse.ok) {
+      wiring.preview.innerHTML = sanitizeRenderedHtml(appliedResponse.html);
+      wiring.showStatus();
+    } else {
+      wiring.showStatus(appliedResponse.message);
+    }
+  });
+}
+
 export function wireRenderWorker(
-  renderWorker: Worker,
-  scheduler: RenderScheduler,
-  preview: HTMLElement,
-  showStatus: (message?: string) => void,
+  renderWorker: RenderWorkerEvents,
+  wiring: RenderWorkerWiring,
 ): void {
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
     const response = event.data;
-    scheduler.applyResult(response.id, response, (appliedResponse) => {
-      if (appliedResponse.ok) {
-        preview.innerHTML = sanitizeRenderedHtml(appliedResponse.html);
-        showStatus();
-      } else {
-        showStatus(appliedResponse.message);
-      }
-    });
+    const current = wiring.currentVersion();
+    if (response.docId !== current.docId || response.epoch !== current.epoch) {
+      return;
+    }
+    if ("op" in response) {
+      wiring.onResync(response);
+      return;
+    }
+    applyRenderResult(response, wiring);
   };
 
   renderWorker.onerror = (event) => {
-    showStatus(event.message || "The preview worker failed");
+    wiring.showStatus(event.message || "The preview worker failed");
   };
 }
 

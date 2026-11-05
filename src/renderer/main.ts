@@ -3,7 +3,11 @@ import type { Text } from "@codemirror/state";
 import type { DocumentReference } from "../shared/ipc/file";
 import type { Result } from "../shared/ipc/result";
 import { formatMessage } from "../shared/messages/en";
-import type { RenderRequest } from "../shared/workers/render";
+import type {
+  RenderAttachMessage,
+  RenderRequest,
+  RenderResync,
+} from "../shared/workers/render";
 import {
   createDocumentState,
   documentTitle,
@@ -73,21 +77,49 @@ function updateTitle(): void {
   document.title = documentTitle(documentState);
 }
 
-const scheduler = new RenderScheduler((request: RenderRequest) => {
-  renderWorker.postMessage(request);
+const scheduler = new RenderScheduler((request) => {
+  renderWorker.postMessage({
+    op: "render",
+    id: request.id,
+    ...replication.current(),
+  } satisfies RenderRequest);
 });
 
 const editor = createEditor(
   editorHost,
   documentState,
   {
-    onDocumentChanged: (text) => scheduler.schedule(text),
-    onChanges: (changes) => sendChanges(replication.changed(changes)),
+    onDocumentChanged: () => scheduler.schedule(),
+    onChanges: (changes) => {
+      const message = replication.changed(changes);
+      sendChanges(message);
+      renderWorker.postMessage(message);
+    },
     updateTitle,
   },
 );
 
-wireRenderWorker(renderWorker, scheduler, preview, showPreviewStatus);
+function resyncRenderWorker(response: RenderResync): void {
+  const current = replication.current();
+  if (response.docId !== current.docId || response.epoch !== current.epoch ||
+    response.version > current.version) {
+    return;
+  }
+  renderWorker.postMessage({
+    op: "attach",
+    ...current,
+    text: editor.state.doc.toString(),
+  } satisfies RenderAttachMessage);
+  scheduler.schedule();
+}
+
+wireRenderWorker(renderWorker, {
+  scheduler,
+  preview,
+  showStatus: showPreviewStatus,
+  currentVersion: () => replication.current(),
+  onResync: resyncRenderWorker,
+});
 wirePreviewLinks(preview, showStatus);
 
 async function attachText(
@@ -95,7 +127,9 @@ async function attachText(
   version: ReplicatedVersion,
   fileName: string | null,
 ): Promise<void> {
-  const result = await attachDocument({ ...version, text: document.toString() });
+  const message = { ...version, text: document.toString() };
+  renderWorker.postMessage({ op: "attach", ...message } satisfies RenderAttachMessage);
+  const result = await attachDocument(message);
   if (!result.ok) {
     valueOrStatus(result, fileName);
   }
@@ -106,6 +140,7 @@ async function displayDocument(
 ): Promise<void> {
   const replaced = replication.replace();
   detachDocument({ docId: replaced.detachedDocId });
+  renderWorker.postMessage({ op: "detach", docId: replaced.detachedDocId });
   documentState.applyingDocument = true;
   documentState.currentGrant = documentFile.grant;
   documentState.currentName = documentFile.name;
@@ -117,7 +152,7 @@ async function displayDocument(
   documentState.saved = editor.state.doc;
   documentState.dirty = false;
   updateTitle();
-  scheduler.schedule(documentFile.text);
+  scheduler.schedule();
   showStatus();
   editor.focus();
   await attachText(editor.state.doc, replaced.current, documentFile.name);
@@ -274,7 +309,7 @@ onMenuCommand((command) => {
 onOpenRequest(handleOpenRequest);
 
 async function initializeOpenRequests(): Promise<void> {
-  scheduler.schedule(editor.state.doc.toString());
+  scheduler.schedule();
   updateTitle();
   try {
     await attachText(editor.state.doc, replication.current(), null);
