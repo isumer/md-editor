@@ -1,0 +1,5 @@
+Whitespace fixtures keep the same text.
+Trailing spaces appear only on this line.   
+	Indented with a tab.
+Case matters on this line.
+Both sides share this closing line.
