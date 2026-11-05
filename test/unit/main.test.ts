@@ -424,11 +424,14 @@ describe("main process", () => {
       .resolves.toEqual({ ok: true, value: undefined });
     expect([...electron.ipcHandlers.keys()]).toEqual([
       "file:open",
+      "file:open-path",
       "file:choose-save-target",
       "file:release-document",
       "link:open-external",
       "file:open-requests-ready",
       "menu:contribute",
+      "session:load",
+      "session:close-result",
     ]);
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
@@ -552,6 +555,7 @@ describe("main process", () => {
       {
         ok: true,
         value: {
+          canonicalPath: expect.any(String),
           grant: expect.any(String),
           name: "document.md",
         },
@@ -576,6 +580,7 @@ describe("main process", () => {
       {
         ok: true,
         value: {
+          canonicalPath: expect.any(String),
           grant: expect.any(String),
           name: "second.md",
         },
@@ -592,6 +597,7 @@ describe("main process", () => {
       {
         ok: true,
         value: {
+          canonicalPath: expect.any(String),
           grant: expect.any(String),
           name: "from-finder.md",
         },
@@ -715,7 +721,7 @@ describe("main process", () => {
       expect.stringContaining('"event":"close-window"'),
     ));
 
-    electron.appHandlers.get("before-quit")?.();
+    electron.appHandlers.get("will-quit")?.();
     expect(replacement?.kill).toHaveBeenCalledOnce();
   });
 });

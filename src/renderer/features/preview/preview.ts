@@ -23,6 +23,7 @@ interface RenderWorkerWiring {
   scheduler: RenderScheduler;
   preview: HTMLElement;
   showStatus(message?: string): void;
+  showError(message?: string): void;
   currentVersion(): ReplicatedVersion;
   onResync(response: RenderResync): void;
   rewriteHtml(html: string): string;
@@ -274,8 +275,10 @@ function applyRenderResult(
   return wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
       applyBlocks(appliedResponse, shifts, wiring, elements, layout);
+      wiring.showError();
       wiring.showStatus();
     } else {
+      wiring.showError(appliedResponse.message);
       wiring.showStatus(appliedResponse.message);
     }
   });
@@ -367,7 +370,9 @@ export function wireRenderWorker(
   };
 
   renderWorker.onerror = (event) => {
-    wiring.showStatus(event.message || "The preview worker failed");
+    const message = event.message || "The preview worker failed";
+    wiring.showError(message);
+    wiring.showStatus(message);
   };
 }
 

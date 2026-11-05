@@ -367,6 +367,7 @@ describe("io-worker file service", () => {
     service.attach(1, { docId: "doc", epoch: 0, version: 4, text: "updated" });
 
     await expect(service.read(1, "grant")).resolves.toEqual({
+      canonicalPath: targetPath,
       name: "protected.md",
       text: "original",
     });

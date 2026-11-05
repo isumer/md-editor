@@ -6,6 +6,8 @@ import { resolvePathUnderRoot } from "../../node-shared/pathPolicy";
 import type {
   AttachDocumentInput,
   ChangeDocumentMessage,
+  DraftDocument,
+  DraftDocumentInput,
   SaveDocumentInput,
 } from "../../shared/ipc/io";
 import type { ResolvedAsset } from "../../shared/ipc/ioControl";
@@ -56,6 +58,8 @@ async function ensureWritable(filePath: string): Promise<void> {
 
 export class IoFileService {
   private readonly mirrors = new IoMirrors();
+  // Drafts outlive a renderer reload: only an explicit window close clears them.
+  private readonly drafts = new Map<number, Map<string, DraftDocument>>();
 
   constructor(private readonly grants: IoGrantTable) {}
 
@@ -91,10 +95,14 @@ export class IoFileService {
     throw serviceError("BAD_REQUEST", "request.invalid");
   }
 
-  async read(windowId: number, grant: string): Promise<{ name: string; text: string }> {
+  async read(
+    windowId: number,
+    grant: string,
+  ): Promise<{ canonicalPath: string; name: string; text: string }> {
     const filePath = this.grants.resolve(windowId, grant);
     try {
       return {
+        canonicalPath: filePath,
         name: path.basename(filePath),
         text: await fs.readFile(filePath, "utf8"),
       };
@@ -113,10 +121,45 @@ export class IoFileService {
 
   detach(windowId: number, docId: string): void {
     this.mirrors.detach(windowId, docId);
+    this.drafts.get(windowId)?.delete(docId);
+  }
+
+  resetWindow(windowId: number): void {
+    this.mirrors.revokeWindow(windowId);
   }
 
   revokeWindow(windowId: number): void {
     this.mirrors.revokeWindow(windowId);
+    this.drafts.delete(windowId);
+  }
+
+  // Serialised on the worker thread from the worker's mirror, never from a
+  // renderer string.
+  draft(windowId: number, input: DraftDocumentInput): void {
+    const document = this.mirrors.docAt(
+      windowId,
+      input.docId,
+      input.epoch,
+      input.version,
+    );
+    if (!document) {
+      throw serviceError("OUT_OF_SYNC", "file.outOfSync", {}, true);
+    }
+    this.grants.resolve(windowId, input.grant);
+    const drafts = this.drafts.get(windowId) ?? new Map<string, DraftDocument>();
+    drafts.set(input.docId, {
+      grant: input.grant,
+      text: document.toString(),
+    });
+    this.drafts.set(windowId, drafts);
+  }
+
+  listDrafts(windowId: number): { drafts: readonly DraftDocument[] } {
+    return { drafts: [...(this.drafts.get(windowId)?.values() ?? [])] };
+  }
+
+  clearDraft(windowId: number, docId: string): void {
+    this.drafts.get(windowId)?.delete(docId);
   }
 
   async save(
@@ -136,6 +179,7 @@ export class IoFileService {
     try {
       await ensureWritable(filePath);
       await atomicWrite(filePath, document.toString());
+      this.drafts.get(windowId)?.delete(input.docId);
       return { name: path.basename(filePath), version: input.version };
     } catch (error) {
       return fileError(error, filePath);

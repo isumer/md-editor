@@ -27,17 +27,19 @@ function wiring(options: WiringOptions = {}) {
   const scheduler = new RenderScheduler(() => undefined);
   const preview = options.preview ?? document.createElement("div");
   const showStatus = vi.fn();
+  const showError = vi.fn();
   const onResync = vi.fn();
   const rewriteHtml = options.rewriteHtml ?? ((html: string) => html);
   wireRenderWorker(worker, {
     scheduler,
     preview,
     showStatus,
+    showError,
     currentVersion: () => options.version ?? { docId: "doc", epoch: 1, version: 1 },
     onResync,
     rewriteHtml,
   });
-  return { worker, preview, showStatus, onResync, rewriteHtml };
+  return { worker, preview, showStatus, showError, onResync, rewriteHtml };
 }
 
 function send(worker: FakeWorker, response: RenderResponse): void {
@@ -176,7 +178,7 @@ describe("preview render flow", () => {
   });
 
   it("AC-R1-06: a failed render keeps the last good preview and the next success replaces it", () => {
-    const { worker, preview, showStatus } = wiring();
+    const { worker, preview, showStatus, showError } = wiring();
 
     send(worker, {
       id: 1,
@@ -199,6 +201,7 @@ describe("preview render flow", () => {
 
     expect(preview.textContent).toBe("good");
     expect(showStatus).toHaveBeenLastCalledWith("render failed");
+    expect(showError).toHaveBeenLastCalledWith("render failed");
 
     send(worker, {
       id: 3,
@@ -217,6 +220,7 @@ describe("preview render flow", () => {
 
     expect(preview.textContent).toBe("recovered");
     expect(showStatus).toHaveBeenLastCalledWith();
+    expect(showError).toHaveBeenLastCalledWith();
   });
 
   it("AC-R1-09: patches only the changed block and keeps other blocks' DOM nodes", () => {

@@ -43,12 +43,31 @@ describe("io-worker contracts", () => {
       epoch: 1,
       version: 2,
     })).toBe(true);
+    expect(isIoRequest({
+      id: "4",
+      op: "draft",
+      grant: "grant",
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+    })).toBe(true);
+    expect(isIoRequest({ id: "5", op: "drafts" })).toBe(true);
 
     expect(isIoRequest({ id: "1", op: "read", grant: "grant", extra: true }))
       .toBe(false);
     expect(isIoRequest({ id: 1, op: "read", grant: "grant" })).toBe(false);
     expect(isIoRequest({ id: "1", op: "save", grant: "grant", text: "forbidden" }))
       .toBe(false);
+    expect(isIoRequest({
+      id: "4",
+      op: "draft",
+      grant: "grant",
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+      text: "forbidden",
+    })).toBe(false);
+    expect(isIoRequest({ id: "5", op: "drafts", extra: true })).toBe(false);
     expect(isIoRequest(withOwnProto({ id: "1", op: "read", grant: "grant" })))
       .toBe(false);
   });
@@ -93,6 +112,9 @@ describe("io-worker contracts", () => {
     };
     expect(isIoOneWayMessage(change)).toBe(true);
     expect(isIoOneWayMessage({ op: "detach", docId: "doc" })).toBe(true);
+    expect(isIoOneWayMessage({ op: "clear-draft", docId: "doc" })).toBe(true);
+    expect(isIoOneWayMessage({ op: "clear-draft", docId: "doc", extra: true }))
+      .toBe(false);
 
     expect(isIoOneWayMessage({ ...change, extra: true })).toBe(false);
     expect(isIoOneWayMessage({ ...change, toVersion: 6 })).toBe(false);
@@ -141,12 +163,27 @@ describe("io-worker contracts", () => {
   it("AC-SEC-12: accepts only exact typed replies", () => {
     expect(isIoReply({
       id: "1",
-      result: { ok: true, value: { name: "note.md", text: "text" } },
+      result: {
+        ok: true,
+        value: { canonicalPath: "/tmp/note.md", name: "note.md", text: "text" },
+      },
     })).toBe(true);
+    expect(isIoReply({
+      id: "1",
+      result: { ok: true, value: { name: "note.md", text: "text" } },
+    })).toBe(false);
     expect(isIoReply({
       id: "2",
       result: { ok: true, value: { name: "note.md", version: 2 } },
     })).toBe(true);
+    expect(isIoReply({
+      id: "drafts",
+      result: { ok: true, value: { drafts: [{ grant: "grant", text: "draft" }] } },
+    })).toBe(true);
+    expect(isIoReply({
+      id: "drafts",
+      result: { ok: true, value: { drafts: [{ grant: "grant" }] } },
+    })).toBe(false);
     expect(isIoReply({
       id: "attach",
       result: { ok: true, value: {} },

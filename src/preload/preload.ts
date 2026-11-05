@@ -1,17 +1,21 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type {
   ChooseSaveTargetRequest,
   DocumentReference,
   FILE_CHANNELS as SharedFileChannels,
+  OpenPathRequest,
   OpenRequestReady,
   ReleaseDocumentRequest,
 } from "../shared/ipc/file";
 import type {
   AttachDocumentInput,
   ChangeDocumentMessage,
+  ClearDraftMessage,
   DetachDocumentMessage,
+  DraftDocumentInput,
   IO_PORT_CHANNEL as SharedIoPortChannel,
+  ListDraftsResponse,
   ReadDocumentResponse,
   SaveDocumentInput,
   SaveDocumentResponse,
@@ -23,9 +27,16 @@ import type {
   MenuContribution,
 } from "../shared/ipc/menu";
 import type { Result } from "../shared/ipc/result";
+import type {
+  SESSION_CHANNELS as SharedSessionChannels,
+  SessionCloseRequest,
+  SessionCloseResult,
+  SessionLoadResponse,
+} from "../shared/ipc/session";
 
 const FILE_CHANNELS = {
   openFile: "file:open",
+  openPath: "file:open-path",
   chooseSaveTarget: "file:choose-save-target",
   releaseDocument: "file:release-document",
   openRequestsReady: "file:open-requests-ready",
@@ -39,6 +50,11 @@ const MENU_CHANNELS = {
   command: "menu:command",
   contribute: "menu:contribute",
 } as const satisfies typeof SharedMenuChannels;
+const SESSION_CHANNELS = {
+  load: "session:load",
+  requestClose: "session:request-close",
+  closeResult: "session:close-result",
+} as const satisfies typeof SharedSessionChannels;
 
 interface RendererPort {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -50,8 +66,10 @@ interface RendererPort {
 type PortOperation =
   | { op: "read"; grant: string }
   | ({ op: "attach" } & AttachDocumentInput)
-  | ({ op: "save" } & SaveDocumentInput);
-type PortOneWay = ChangeDocumentMessage | DetachDocumentMessage;
+  | ({ op: "save" } & SaveDocumentInput)
+  | ({ op: "draft" } & DraftDocumentInput)
+  | { op: "drafts" };
+type PortOneWay = ChangeDocumentMessage | DetachDocumentMessage | ClearDraftMessage;
 
 interface PendingRequest {
   operation: PortOperation;
@@ -121,13 +139,29 @@ function validFailure(value: unknown): boolean {
     typeof error["retryable"] === "boolean";
 }
 
+function validDrafts(value: unknown): boolean {
+  const list = exactData(value, ["drafts"]);
+  if (!list || !Array.isArray(list["drafts"])) {
+    return false;
+  }
+  return (list["drafts"] as readonly unknown[]).every((draft) => {
+    const entry = exactData(draft, ["grant", "text"]);
+    return entry !== null && typeof entry["grant"] === "string" &&
+      typeof entry["text"] === "string";
+  });
+}
+
 function validSuccessValue(value: unknown, operation: PortOperation["op"]): boolean {
-  if (operation === "attach") {
+  if (operation === "attach" || operation === "draft") {
     return exactData(value, []) !== null;
   }
+  if (operation === "drafts") {
+    return validDrafts(value);
+  }
   if (operation === "read") {
-    const read = exactData(value, ["name", "text"]);
-    return read !== null && typeof read["name"] === "string" &&
+    const read = exactData(value, ["canonicalPath", "name", "text"]);
+    return read !== null && typeof read["canonicalPath"] === "string" &&
+      read["canonicalPath"].length > 0 && typeof read["name"] === "string" &&
       typeof read["text"] === "string";
   }
   const save = exactData(value, ["name", "version"]);
@@ -223,10 +257,14 @@ export class IoPortClient {
 
 interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
+  openPath(request: OpenPathRequest): Promise<Result<DocumentReference>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
   readDocument(grant: string): Promise<Result<ReadDocumentResponse>>;
   attachDocument(request: AttachDocumentInput): Promise<Result<void>>;
   saveDocument(request: SaveDocumentInput): Promise<Result<SaveDocumentResponse>>;
+  draftDocument(request: DraftDocumentInput): Promise<Result<void>>;
+  listDrafts(): Promise<Result<ListDraftsResponse>>;
+  clearDraft(request: Omit<ClearDraftMessage, "op">): void;
   sendChanges(request: Omit<ChangeDocumentMessage, "op">): void;
   detachDocument(request: Omit<DetachDocumentMessage, "op">): void;
   releaseDocument(request: ReleaseDocumentRequest): Promise<Result<void>>;
@@ -235,6 +273,10 @@ interface Api {
   onMenuCommand(listener: (command: MenuCommandMessage) => void): () => void;
   contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
+  loadSession(): Promise<Result<SessionLoadResponse>>;
+  respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
+  onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
+  pathForFile(file: File): string;
 }
 
 const ioClient = new IoPortClient();
@@ -249,6 +291,10 @@ const api: Api = {
   openFile: () => ipcRenderer.invoke(FILE_CHANNELS.openFile, {}) as Promise<
     Result<DocumentReference | null>
   >,
+  openPath: (request) => ipcRenderer.invoke(
+    FILE_CHANNELS.openPath,
+    request,
+  ) as Promise<Result<DocumentReference>>,
   chooseSaveTarget: (request) => ipcRenderer.invoke(
     FILE_CHANNELS.chooseSaveTarget,
     request,
@@ -268,6 +314,15 @@ const api: Api = {
     epoch,
     version,
   }),
+  draftDocument: ({ grant, docId, epoch, version }) => ioClient.request({
+    op: "draft",
+    grant,
+    docId,
+    epoch,
+    version,
+  }),
+  listDrafts: () => ioClient.request({ op: "drafts" }),
+  clearDraft: ({ docId }) => ioClient.send({ op: "clear-draft", docId }),
   sendChanges: ({ docId, epoch, fromVersion, toVersion, changes }) => ioClient.send({
     op: "change",
     docId,
@@ -310,6 +365,25 @@ const api: Api = {
     ipcRenderer.on(FILE_CHANNELS.openRequest, handler);
     return () => ipcRenderer.removeListener(FILE_CHANNELS.openRequest, handler);
   },
+  loadSession: () => ipcRenderer.invoke(
+    SESSION_CHANNELS.load,
+    {},
+  ) as Promise<Result<SessionLoadResponse>>,
+  respondSessionClose: (result) => ipcRenderer.invoke(
+    SESSION_CHANNELS.closeResult,
+    result,
+  ) as Promise<Result<void>>,
+  onSessionCloseRequest: (listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      request: SessionCloseRequest,
+    ) => {
+      listener(request);
+    };
+    ipcRenderer.on(SESSION_CHANNELS.requestClose, handler);
+    return () => ipcRenderer.removeListener(SESSION_CHANNELS.requestClose, handler);
+  },
+  pathForFile: (file) => webUtils.getPathForFile(file),
 };
 
 contextBridge.exposeInMainWorld("api", api);

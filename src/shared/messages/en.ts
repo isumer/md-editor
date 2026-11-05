@@ -18,7 +18,16 @@ export type MessageKey =
   | "menu.save"
   | "menu.saveAs"
   | "menu.undo"
-  | "menu.redo";
+  | "menu.redo"
+  | "tab.close"
+  | "tab.unsaved"
+  | "close.cancel"
+  | "close.discard"
+  | "close.save"
+  | "close.dirtyFile"
+  | "close.dirtyDocuments"
+  | "preview.workerRestarted"
+  | "draft.recovered";
 
 export const messages: Readonly<Record<MessageKey, string>> = {
   "request.invalid": "The request was not valid.",
@@ -41,6 +50,15 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.saveAs": "Save As",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
+  "tab.close": "Close {file}",
+  "tab.unsaved": "Unsaved changes",
+  "close.cancel": "Cancel",
+  "close.discard": "Discard",
+  "close.save": "Save",
+  "close.dirtyFile": "“{file}” has unsaved changes. Save before closing?",
+  "close.dirtyDocuments": "These documents have unsaved changes: {files}",
+  "preview.workerRestarted": "The preview stopped responding. It was restarted.",
+  "draft.recovered": "Recovered unsaved text for “{file}”.",
 };
 
 export function formatMessage(

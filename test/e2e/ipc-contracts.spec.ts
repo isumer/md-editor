@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 import {
+  closeEditor,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -131,7 +132,7 @@ for (const invalidCase of invalidSaveCases) {
       expect(await dialogCallCount(application, "save")).toBe(0);
       await expectRendererResponsive(page, invalidCase.kind);
     } finally {
-      await application.close();
+      await closeEditor(application, page);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
@@ -179,7 +180,7 @@ for (const rejectedUrl of rejectedExternalUrls) {
         (globalThis as typeof globalThis & { externalUrls?: string[] }).externalUrls,
       )).toEqual([]);
     } finally {
-      await application.close();
+      await closeEditor(application, page);
     }
   });
 }
@@ -216,7 +217,7 @@ test("the preload exposes only the fixed named API", {
       legacyGlobal: false,
     });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -252,7 +253,7 @@ test("the file-save contract rejects raw and forged grants", {
     }
     expect(await fs.readdir(temporaryDirectory)).toEqual([]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -296,7 +297,7 @@ test("the file-save contract rejects a released grant", {
     });
     expect(await fs.readFile(firstPath, "utf8")).toBe("first");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });

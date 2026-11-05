@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { readTextOrNull,
+  closeEditor,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -63,7 +64,7 @@ test("undo and redo chords revert and restore typed text with preview and dirty 
     await expect(editor).toContainText(typed);
     await expect(page).toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -133,7 +134,7 @@ test("Open, Save and Save As chords run their commands and display non-native ac
     await expect.poll(() => dialogCallCount(application, "open")).toBe(1);
     await expect(editor).toContainText("Opened by the chord");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -194,6 +195,6 @@ test("the renderer contributes the File action items and patches their state in 
       "file-save-as",
     ]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });

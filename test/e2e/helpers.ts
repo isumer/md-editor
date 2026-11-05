@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -14,22 +15,59 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
-export async function launchEditor(filePath?: string): Promise<{
+export interface LaunchedEditor {
   application: ElectronApplication;
   page: Page;
-}> {
+  userDataDir: string;
+}
+
+export async function createUserDataDirectory(): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-userdata-"));
+}
+
+export async function launchEditor(
+  filePath?: string,
+  userDataDir?: string,
+): Promise<LaunchedEditor> {
   const environment: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (name !== "ELECTRON_RUN_AS_NODE" && value !== undefined) {
       environment[name] = value;
     }
   }
+  // A unique profile per launch keeps session.json and Chromium state out of
+  // other tests; a second launch for session restore passes the same path.
+  const profileDirectory = userDataDir ?? await createUserDataDirectory();
   const application = await electron.launch({
-    args: filePath ? [repositoryRoot, filePath] : [repositoryRoot],
+    args: [
+      `--user-data-dir=${profileDirectory}`,
+      repositoryRoot,
+      ...(filePath ? [filePath] : []),
+    ],
     cwd: repositoryRoot,
     env: environment,
   });
-  return { application, page: await application.firstWindow() };
+  return { application, page: await application.firstWindow(), userDataDir: profileDirectory };
+}
+
+// A dirty document makes the window-close path show the in-page prompt, so
+// tests must answer it before the process exits.
+export async function closeEditor(
+  application: ElectronApplication,
+  page: Page,
+): Promise<void> {
+  const closing = application.close();
+  const prompt = page.getByTestId("close-prompt");
+  const outcome = await Promise.race([
+    prompt.waitFor({ state: "visible" }).then(() => "prompt" as const).catch(
+      () => "closed" as const,
+    ),
+    closing.then(() => "closed" as const),
+  ]);
+  if (outcome === "prompt") {
+    await prompt.getByRole("button", { name: "Discard" }).click();
+  }
+  await closing;
 }
 
 export async function launchSecondInstance(
@@ -37,10 +75,16 @@ export async function launchSecondInstance(
   filePath: string,
 ): Promise<void> {
   const executable = await application.evaluate(({ app }) => app.getPath("exe"));
+  const profileDirectory = await application.evaluate(({ app }) => app.getPath("userData"));
   const environment = { ...process.env };
   delete environment["ELECTRON_RUN_AS_NODE"];
-  // Same flag Playwright gives the first instance; window sandboxing (webPreferences) is unaffected.
-  const child = spawn(executable, ["--no-sandbox", repositoryRoot, filePath], {
+  // Same flags Playwright gives the first instance; window sandboxing (webPreferences) is unaffected.
+  const child = spawn(executable, [
+    "--no-sandbox",
+    `--user-data-dir=${profileDirectory}`,
+    repositoryRoot,
+    filePath,
+  ], {
     cwd: repositoryRoot,
     env: environment,
     stdio: "ignore",

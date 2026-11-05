@@ -1,13 +1,17 @@
 import type {
   ChooseSaveTargetRequest,
   DocumentReference,
+  OpenPathRequest,
   OpenRequestReady,
   ReleaseDocumentRequest,
 } from "../../shared/ipc/file";
 import type {
   AttachDocumentInput,
   ChangeDocumentMessage,
+  ClearDraftMessage,
   DetachDocumentMessage,
+  DraftDocumentInput,
+  ListDraftsResponse,
   ReadDocumentResponse,
   SaveDocumentInput,
   SaveDocumentResponse,
@@ -17,11 +21,38 @@ import type {
   MenuContribution,
 } from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
+import type {
+  SessionCloseRequest,
+  SessionCloseResult,
+  SessionLoadResponse,
+} from "../../shared/ipc/session";
 
 const api = window.api;
 
 export function openFile(): Promise<Result<DocumentReference | null>> {
   return api.openFile();
+}
+
+export function openPath(request: OpenPathRequest): Promise<Result<DocumentReference>> {
+  return api.openPath(request);
+}
+
+export function pathForFile(file: File): string {
+  return api.pathForFile(file);
+}
+
+export function loadSession(): Promise<Result<SessionLoadResponse>> {
+  return api.loadSession();
+}
+
+export function respondSessionClose(result: SessionCloseResult): Promise<Result<void>> {
+  return api.respondSessionClose(result);
+}
+
+export function onSessionCloseRequest(
+  listener: (request: SessionCloseRequest) => void,
+): () => void {
+  return api.onSessionCloseRequest(listener);
 }
 
 export function chooseSaveTarget(
@@ -42,6 +73,18 @@ export function saveDocument(
   request: SaveDocumentInput,
 ): Promise<Result<SaveDocumentResponse>> {
   return api.saveDocument(request);
+}
+
+export function draftDocument(request: DraftDocumentInput): Promise<Result<void>> {
+  return api.draftDocument(request);
+}
+
+export function listDrafts(): Promise<Result<ListDraftsResponse>> {
+  return api.listDrafts();
+}
+
+export function clearDraft(request: Omit<ClearDraftMessage, "op">): void {
+  api.clearDraft(request);
 }
 
 export function sendChanges(request: Omit<ChangeDocumentMessage, "op">): void {

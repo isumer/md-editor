@@ -2,8 +2,8 @@ import path from "node:path";
 
 import {
   app,
+  BrowserWindow,
   protocol,
-  type BrowserWindow,
   type MessagePortMain,
 } from "electron";
 
@@ -25,16 +25,20 @@ import {
   registerApplicationEvents,
   registerOpenRequestIpcHandler,
 } from "./app/startup";
+import { CloseRequestBroker } from "./app/closeRequests";
 import { applyMenuContribution } from "./app/menu";
 import { createContributionPump } from "./app/menuContribution";
+import { SessionStore, SESSION_VERSION } from "./app/session";
 import { createWindow, setMainWindow } from "./app/window";
 import { GrantTable } from "./grants/grantTable";
 import { createIoWorkerSupervisor } from "./io/ioWorker";
 import { registerFileIpcHandlers } from "./ipc/file";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
 import { registerMenuIpcHandler } from "./ipc/menu";
+import { registerSessionIpcHandler } from "./ipc/session";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
+import { SESSION_CHANNELS } from "../shared/ipc/session";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
@@ -60,6 +64,40 @@ const ioWorker = createIoWorkerSupervisor(
 const fileService = new DocumentGrantService(grants, new FileDialogs(), ioWorker);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
+let sessionStore: SessionStore | null = null;
+
+const closeRequests = new CloseRequestBroker(
+  (windowId, requestId) => {
+    const window = requireWindow(windowId);
+    window?.webContents.send(SESSION_CHANNELS.requestClose, { id: requestId });
+  },
+  async (result, windowId) => {
+    if (!sessionStore) {
+      return;
+    }
+    const documents = [];
+    for (const document of result.documents) {
+      const path = document.grant
+        ? fileService.resolvePath(windowId, document.grant)
+        : null;
+      if (path) {
+        documents.push({
+          name: document.name,
+          path,
+          savedText: document.savedText,
+          text: document.text,
+        });
+      }
+    }
+    await sessionStore.write({ documents, version: SESSION_VERSION });
+  },
+);
+
+function requireWindow(windowId: number): BrowserWindow | null {
+  const windows = BrowserWindow.getAllWindows()
+    .filter((candidate) => candidate.id === windowId);
+  return windows[0] ?? null;
+}
 
 process.on("uncaughtException", (error) => {
   logProcessEvent("uncaughtException", error);
@@ -77,6 +115,7 @@ function createApplicationWindow(): void {
       openExternalBackstop: (url) => openExternalBackstop(url, logProcessEvent),
       attachIoPort,
       closeWindow: async (windowId) => fileService.closeWindow(windowId),
+      requestClose: (window) => closeRequests.request(window.id),
     },
   );
   setMainWindow(window);
@@ -97,12 +136,18 @@ registerLinkIpcHandler();
 registerOpenRequestIpcHandler(openRequests);
 registerMenuIpcHandler(menuContributions);
 registerApplicationEvents(createApplicationWindow, logProcessEvent, openRequests);
-app.on("before-quit", () => ioWorker.stop());
+// The io-worker must outlive window close handlers: quitting with dirty tabs
+// saves through it before the app exits.
+app.on("will-quit", () => ioWorker.stop());
 void initializeApplication(
   createApplicationWindow,
   () => ioWorker.start(),
   openRequests,
   () => {
+    sessionStore = new SessionStore(
+      path.join(app.getPath("userData"), "session.json"),
+    );
+    registerSessionIpcHandler(sessionStore, fileService, closeRequests);
     registerAppProtocol(rendererDirectory);
     registerDocAssetProtocol(ioWorker);
   },

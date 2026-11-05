@@ -5,6 +5,7 @@ const electron = vi.hoisted(() => ({
   invoke: vi.fn(async () => ({ ok: true, value: null })),
   on: vi.fn(),
   removeListener: vi.fn(),
+  filePath: vi.fn(() => "/tmp/dropped.md"),
 }));
 
 vi.mock("electron", () => ({
@@ -14,6 +15,7 @@ vi.mock("electron", () => ({
     on: electron.on,
     removeListener: electron.removeListener,
   },
+  webUtils: { getPathForFile: electron.filePath },
 }));
 
 class FakePort {
@@ -56,15 +58,23 @@ describe("preload bridge", () => {
       [
         "attachDocument",
         "chooseSaveTarget",
+        "clearDraft",
         "contributeMenu",
         "detachDocument",
+        "draftDocument",
+        "listDrafts",
+        "loadSession",
         "onMenuCommand",
         "onOpenRequest",
+        "onSessionCloseRequest",
         "openExternal",
         "openFile",
+        "openPath",
+        "pathForFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
+        "respondSessionClose",
         "saveDocument",
         "sendChanges",
       ]
@@ -75,6 +85,10 @@ describe("preload bridge", () => {
     await api.releaseDocument({ grant: "grant-a" });
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
+    await api.openPath({ path: "/tmp/note.md" });
+    await api.loadSession();
+    await api.respondSessionClose({ allow: true, documents: [], id: 1 });
+    expect(api.pathForFile({} as File)).toBe("/tmp/dropped.md");
     await api.contributeMenu({
       fileMenuTitle: "File",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
@@ -85,6 +99,9 @@ describe("preload bridge", () => {
       ["file:release-document", { grant: "grant-a" }],
       ["link:open-external", { url: "https://example.com" }],
       ["file:open-requests-ready", {}],
+      ["file:open-path", { path: "/tmp/note.md" }],
+      ["session:load", {}],
+      ["session:close-result", { allow: true, documents: [], id: 1 }],
       ["menu:contribute", {
         fileMenuTitle: "File",
         items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
@@ -137,7 +154,7 @@ describe("preload bridge", () => {
     ]);
     port.reply({
       id: "io-1",
-      result: { ok: true, value: { name: "note.md", text: "opened" } },
+      result: { ok: true, value: { canonicalPath: "/tmp/note.md", name: "note.md", text: "opened" } },
     });
     port.reply({
       id: "io-2",
@@ -244,6 +261,40 @@ describe("preload bridge", () => {
     await expect(saved).resolves.toMatchObject({ ok: true });
   });
 
+  it("AC-R4-07: requests, lists and clears drafts through the port", async () => {
+    const { IoPortClient } = await loadPreload();
+    const client = new IoPortClient();
+    const port = new FakePort();
+    client.attach(port);
+
+    const drafted = client.request({
+      op: "draft",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 2,
+    });
+    const listed = client.request({ op: "drafts" });
+    client.send({ op: "clear-draft", docId: "doc" });
+
+    expect(port.messages).toEqual([
+      { id: "io-1", op: "draft", grant: "grant", docId: "doc", epoch: 0, version: 2 },
+      { id: "io-2", op: "drafts" },
+      { op: "clear-draft", docId: "doc" },
+    ]);
+
+    port.reply({ id: "io-1", result: { ok: true, value: {} } });
+    port.reply({
+      id: "io-2",
+      result: { ok: true, value: { drafts: [{ grant: "grant", text: "draft text" }] } },
+    });
+    await expect(drafted).resolves.toMatchObject({ ok: true, value: {} });
+    await expect(listed).resolves.toEqual({
+      ok: true,
+      value: { drafts: [{ grant: "grant", text: "draft text" }] },
+    });
+  });
+
   it("AC-PERF-04: sendChanges posts exactly the delta without text", async () => {
     const { api, portListener } = await loadPreload();
     const port = new FakePort();
@@ -315,8 +366,17 @@ describe("preload bridge", () => {
     await Promise.resolve();
     expect(settled).not.toHaveBeenCalled();
 
-    port.reply({ id: "io-1", result: { ok: true, value: { name: "a.md", text: "a" } } });
-    await expect(pending).resolves.toEqual({ ok: true, value: { name: "a.md", text: "a" } });
+    port.reply({
+      id: "io-1",
+      result: {
+        ok: true,
+        value: { canonicalPath: "/tmp/a.md", name: "a.md", text: "a" },
+      },
+    });
+    await expect(pending).resolves.toEqual({
+      ok: true,
+      value: { canonicalPath: "/tmp/a.md", name: "a.md", text: "a" },
+    });
   });
 
   it("AC-SEC-12: accepts an exact typed failure reply", async () => {

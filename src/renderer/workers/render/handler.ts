@@ -73,6 +73,20 @@ export class RenderWorkerHandler {
       case "fill-ready":
         this.fillReady(value);
         return;
+      case "reset":
+        this.reset(value.docId);
+        return;
+      case "ping":
+        this.postResponse({ op: "pong", id: value.id });
+        return;
+    }
+  }
+
+  private reset(docId: string): void {
+    const cache = this.renders.get(docId);
+    if (cache) {
+      this.cancelFill(cache);
+      this.renders.delete(docId);
     }
   }
 
