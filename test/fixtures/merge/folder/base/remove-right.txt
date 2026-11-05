@@ -1,0 +1,3 @@
+remove-right heading
+this file is deleted on the right
+remove-right footer
