@@ -1,0 +1,3 @@
+edit-right heading
+shared baseline line
+edit-right footer

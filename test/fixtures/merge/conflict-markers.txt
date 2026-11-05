@@ -1,0 +1,20 @@
+Release notes draft
+-------------------
+Deployment window
+<<<<<<< HEAD
+The deploy starts at 09:00 UTC.
+Rollback is automatic on failure.
+=======
+The deploy starts at 10:00 UTC.
+Rollback is manual with a checklist.
+>>>>>>> feature/merge-view
+Contact list
+The release lead is listed in the roster.
+Support rota
+<<<<<<< HEAD
+The support rota is published monthly.
+=======
+The support rota is published weekly.
+>>>>>>> feature/merge-view
+Licence
+The project is released under GPL-3.
