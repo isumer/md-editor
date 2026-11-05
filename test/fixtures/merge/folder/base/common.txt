@@ -1,0 +1,3 @@
+common heading
+common body
+common footer
