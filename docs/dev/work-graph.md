@@ -8,7 +8,8 @@ Update a row when an item is queued, merged or sent back.
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (codex) | queued (sent back 2026-11-05) |
 | 041 | 5 | src/renderer/**, src/main/**, src/shared/**, src/preload/**, test/unit/**, test/e2e/** (brief slice-5.md) | slice 4 (stacked; re-queued after fix-2) | dev | waiting for slice 4 |
-| 040 | 8 | test/fixtures/powertools/** | main | side | candidate 0b6aecc dropped by the pipeline; review re-queued |
+| 040 | 8 | test/fixtures/powertools/** | main | side | reviewed (candidate 0b6aecc dropped earlier; re-merged) |
+| outline-fixtures | 8 | test/fixtures/outline/** | main | side | queued |
 | 042 | 13 | export fixtures under test/fixtures/ (see branch auto/nim/042-…) | main | nim | review queued (053) |
 | 054 | 6 | test/fixtures/workspace/** | main | side | review queued (056) |
 | 055 | 14 | test/fixtures/stability/** | main | nim | running |
