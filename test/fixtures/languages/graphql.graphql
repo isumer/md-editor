@@ -1,0 +1,4 @@
+# note
+query GetUser {
+  user(id: 1) { name }
+}
