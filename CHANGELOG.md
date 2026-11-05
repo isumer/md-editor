@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
+- A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
+
 ### Changed
 
 - The app now loads from its own private address instead of a local file, serves only its own files, and no longer lets the page load images from local file paths.

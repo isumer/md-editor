@@ -1,0 +1,3 @@
+>>> # note
+>>> if True:
+...     pass

@@ -1,0 +1,62 @@
+<h1 data-line="0">Notes from the migration review</h1>
+<p data-line="2">A running record of decisions and loose ends. Updated 2026-03-14.</p>
+<h2 data-line="4">Agenda</h2>
+<ol data-line="6">
+<li data-line="6">Data model</li>
+<li data-line="7">Rollout</li>
+<li data-line="8">Follow-ups</li>
+</ol>
+<h2 data-line="10">Decisions</h2>
+<ul data-line="12">
+<li data-line="12"><strong>Storage</strong>
+<ul data-line="13">
+<li data-line="13">Keep the existing SQLite database
+<ul data-line="14">
+<li data-line="14">One file per workspace</li>
+<li data-line="15">WAL mode enabled</li>
+</ul>
+</li>
+<li data-line="16">Move exports to a separate directory
+<ul data-line="17">
+<li data-line="17"><code>exports/csv/</code></li>
+<li data-line="18"><code>exports/pdf/</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li data-line="19"><strong>Transport</strong>
+<ul data-line="20">
+<li data-line="20">WebSocket for live updates</li>
+<li data-line="21">Batching window: 50 ms</li>
+</ul>
+</li>
+</ul>
+<h2 data-line="23">Checklist</h2>
+<ul data-line="25">
+<li data-line="25"><input type="checkbox" disabled="" checked=""> Freeze the schema</li>
+<li data-line="26"><input type="checkbox" disabled="" checked=""> Back up production</li>
+<li data-line="27"><input type="checkbox" disabled=""> Run the dry-run import</li>
+<li data-line="28"><input type="checkbox" disabled=""> Verify row counts
+<ul data-line="29">
+<li data-line="29"><input type="checkbox" disabled=""> Users table</li>
+<li data-line="30"><input type="checkbox" disabled=""> Documents table</li>
+</ul>
+</li>
+<li data-line="31"><input type="checkbox" disabled="" checked=""> Publish the rollback plan</li>
+</ul>
+<blockquote data-line="33">
+<p data-line="33"><strong>Risk:</strong> the import touches a table without a primary key.
+Plan for a full copy before the first write.</p>
+<blockquote data-line="36">
+<p data-line="36">Nested quote: keep the old table until a week after cutover.</p>
+</blockquote>
+</blockquote>
+<h2 data-line="38">Open questions</h2>
+<ul data-line="40">
+<li data-line="40">Does the batch worker retry on 5xx? [1]</li>
+<li data-line="41">Which timezone do the reports use? [2]</li>
+<li data-line="42">Is the archive readable by the desktop client? [1]</li>
+</ul>
+<h2 data-line="44">Footnote-like references</h2>
+<p data-line="46">[1]: See <code>src/importer/retry.ts</code> for the current behaviour.
+[2]: The reporting service defaults to UTC.</p>
