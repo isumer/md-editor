@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { net, protocol } from "electron";
+import { net, protocol, type CustomScheme } from "electron";
 
 export const APP_ENTRY_URL = "app://bundle/index.html";
 
@@ -79,16 +79,18 @@ async function serveAppRequest(
   }
 }
 
+export const APP_SCHEME_PRIVILEGES: CustomScheme = {
+  scheme: APP_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    allowServiceWorkers: false,
+  },
+};
+
 export function registerAppScheme(): void {
-  protocol.registerSchemesAsPrivileged([{
-    scheme: APP_SCHEME,
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      allowServiceWorkers: false,
-    },
-  }]);
+  protocol.registerSchemesAsPrivileged([APP_SCHEME_PRIVILEGES]);
 }
 
 export function registerAppProtocol(bundleDirectory: string): void {

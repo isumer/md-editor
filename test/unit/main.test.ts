@@ -1,4 +1,5 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,6 +79,12 @@ const electron = vi.hoisted(() => {
               name: filePath.split(/[\\/]/).at(-1) ?? filePath,
             },
           },
+        }));
+      }
+      if (message.type === "resolveAsset") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: { path: "/tmp/asset.png" } },
         }));
       }
     }
@@ -345,7 +352,7 @@ describe("main process", () => {
 
     await expect(invoke("file:open-requests-ready", {})).resolves.toEqual({
       ok: true,
-      value: { notice: null, productName: "MD Editor" },
+      value: { notice: null, productName: "MD Editor", windowId: 1 },
     });
     expect(electron.app.setPath).toHaveBeenCalledWith("userData", "/profiles/default");
   });
@@ -445,6 +452,34 @@ describe("main process", () => {
     });
   });
 
+  it("AC-SEC-16 AC-SEC-17: serves document assets only through the resolver", async () => {
+    await loadMain();
+    await readyApplication();
+    const serve = electron.protocolHandlers.get("doc-asset");
+    if (!serve) {
+      throw new Error("doc-asset protocol handler was not registered");
+    }
+    const assetResponse = new Response("png", { status: 200 });
+    electron.net.fetch.mockResolvedValueOnce(assetResponse);
+
+    await expect(serve({ url: "doc-asset://1/grant/../outside.png" }))
+      .resolves.toMatchObject({ status: 404 });
+    await expect(serve({ url: "doc-asset://1/grant/images/pic.png" }))
+      .resolves.toBe(assetResponse);
+
+    expect(electron.net.fetch).toHaveBeenCalledWith(
+      pathToFileURL("/tmp/asset.png").href,
+    );
+    const requests = electron.UtilityProcessMock.instances[0]?.posts
+      .map(({ message }) => message)
+      .filter((message: { type?: string }) => message.type === "resolveAsset");
+    expect(requests).toEqual([expect.objectContaining({
+      windowId: 1,
+      grant: "grant",
+      relativePath: "images/pic.png",
+    })]);
+  });
+
   it("AC-R5-01 AC-R5-08 AC-PERF-01: creates a secure ready-to-show window and menu", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     electron.app.isPackaged = true;
@@ -491,8 +526,17 @@ describe("main process", () => {
         supportFetchAPI: true,
         allowServiceWorkers: false,
       },
+    }, {
+      scheme: "doc-asset",
+      privileges: {
+        secure: true,
+        supportFetchAPI: true,
+        allowServiceWorkers: false,
+      },
     }]);
+    expect(electron.protocol.registerSchemesAsPrivileged).toHaveBeenCalledOnce();
     expect(electron.protocol.handle).toHaveBeenCalledWith("app", expect.any(Function));
+    expect(electron.protocol.handle).toHaveBeenCalledWith("doc-asset", expect.any(Function));
     const schemeOrder = electron.protocol.registerSchemesAsPrivileged.mock.invocationCallOrder[0];
     const readyOrder = electron.app.whenReady.mock.invocationCallOrder[0];
     expect(schemeOrder).toBeLessThan(readyOrder ?? Number.NEGATIVE_INFINITY);
