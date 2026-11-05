@@ -1,0 +1,33 @@
+Project handover notes
+Introduction
+This document records the handover for the release.
+It is intentionally short and easy to diff.
+Build
+The build runs on the shared runner.
+Artefacts are archived after every build.
+Tests
+Unit tests cover the merge helpers.
+End-to-end tests drive the real window.
+Deployment
+Deployments go out on weekday mornings.
+The rollback plan is rehearsed quarterly.
+Contacts
+The release lead owns the checklist.
+The platform team owns the runner.
+Notes
+Fixtures are committed, not generated.
+Keep the diff small and readable.
+History
+First published for the merge view work.
+Reviewers
+Two reviewers approve every merge.
+Accessibility
+Every control has an accessible name.
+Localisation
+Strings live in the shared catalogue.
+Support
+The support rota is published monthly.
+Security
+Reports go to the security mailbox.
+Thanks to the release team.
+End of document.

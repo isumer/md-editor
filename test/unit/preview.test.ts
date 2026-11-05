@@ -3,7 +3,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { RenderResponse } from "../../src/shared/workers/render";
-import { wireRenderWorker } from "../../src/renderer/features/preview/preview";
+import {
+  blockLine,
+  wireRenderWorker,
+} from "../../src/renderer/features/preview/preview";
 import { RenderScheduler } from "../../src/renderer/features/preview/renderScheduler";
 
 interface FakeWorker {
@@ -297,5 +300,50 @@ describe("preview render flow", () => {
 
     expect(blocks(preview).map((element) => element.textContent))
       .toEqual(["one", "three"]);
+  });
+
+  it("AC-R1-04: a block's line follows lines inserted above it after it was rendered", () => {
+    const preview = document.createElement("div");
+    const { worker } = wiring({
+      preview,
+      version: { docId: "doc", epoch: 1, version: 2 },
+    });
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        { id: "b2", startLine: 2, endLine: 3, html: "<p>two</p>" },
+        { id: "b3", startLine: 4, endLine: 5, html: "<p>three</p>" },
+      ],
+      complete: true,
+    });
+    const elements = blocks(preview);
+
+    // Two lines are inserted above: the changed block is re-sent and the
+    // blocks after it learn the shift from the ledger, without a re-render.
+    send(worker, {
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+      ok: true,
+      mode: "patch",
+      blocks: [{
+        block: { id: "b1", startLine: 2, endLine: 3, html: "<p>one</p>" },
+        after: null,
+      }],
+      removed: [],
+      lineShifts: [{ after: "b1", delta: 2 }],
+      complete: true,
+    });
+
+    expect(elements.map((element) => element.dataset["line"])).toEqual(["2", "2", "4"]);
+    expect(elements.map((element) => blockLine(element))).toEqual([2, 4, 6]);
   });
 });

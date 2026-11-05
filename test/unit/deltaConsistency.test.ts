@@ -323,7 +323,7 @@ describe("delta consistency", () => {
     vi.useRealTimers();
   });
 
-  it("AC-R1-08: applies worker deltas interleaved with edits, fills, failures and resyncs", () => {
+  it("AC-R1-07: applies worker deltas interleaved with edits, fills, failures and resyncs", () => {
     let failed = 0;
     let resyncs = 0;
     let epochs = 0;
