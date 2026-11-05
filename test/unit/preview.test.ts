@@ -27,6 +27,7 @@ describe("preview render flow", () => {
         showStatus,
         currentVersion: () => ({ docId: "doc-2", epoch: 2, version: 0 }),
         onResync,
+        rewriteHtml: (html) => html,
       },
     );
 
@@ -56,6 +57,7 @@ describe("preview render flow", () => {
         showStatus: vi.fn(),
         currentVersion: () => ({ docId: "doc", epoch: 3, version: 5 }),
         onResync,
+        rewriteHtml: (html) => html,
       },
     );
     const current = { op: "resync", id: 2, docId: "doc", epoch: 3, version: 4 } as const;
@@ -66,5 +68,39 @@ describe("preview render flow", () => {
 
     expect(onResync).toHaveBeenCalledOnce();
     expect(onResync).toHaveBeenCalledWith(current);
+  });
+
+  it("AC-SEC-16: sanitises before rewriting and applies the rewritten HTML", () => {
+    const worker: FakeWorker = { onmessage: null, onerror: null };
+    const scheduler = new RenderScheduler(() => undefined);
+    const preview = document.createElement("div");
+    const showStatus = vi.fn();
+    const rewriteHtml = vi.fn((html: string) =>
+      html.replace('src="pic.png"', 'src="doc-asset://1/grant/pic.png"'));
+    wireRenderWorker(
+      worker,
+      {
+        scheduler,
+        preview,
+        showStatus,
+        currentVersion: () => ({ docId: "doc", epoch: 0, version: 1 }),
+        onResync: vi.fn(),
+        rewriteHtml,
+      },
+    );
+
+    worker.onmessage?.({ data: {
+      id: 1,
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+      ok: true,
+      html: '<img src="pic.png" onerror="bad()">',
+    } } as unknown as MessageEvent<RenderResponse>);
+
+    const rewrittenInput = rewriteHtml.mock.calls[0]?.[0] ?? "";
+    expect(rewrittenInput).not.toContain("onerror");
+    expect(preview.innerHTML).toBe('<img src="doc-asset://1/grant/pic.png">');
+    expect(showStatus).toHaveBeenCalledWith();
   });
 });

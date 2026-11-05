@@ -25,6 +25,7 @@ import {
   wireRenderWorker,
 } from "./features/preview/preview";
 import { RenderScheduler } from "./features/preview/renderScheduler";
+import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
 import {
   attachDocument,
   chooseSaveTarget,
@@ -58,6 +59,7 @@ const renderWorker = new Worker(
 const documentState = createDocumentState();
 const replication = new DocumentReplication();
 
+let windowId: number | null = null;
 let statusFromPreview = false;
 
 function showStatus(message = ""): void {
@@ -119,6 +121,10 @@ wireRenderWorker(renderWorker, {
   showStatus: showPreviewStatus,
   currentVersion: () => replication.current(),
   onResync: resyncRenderWorker,
+  rewriteHtml: (html) => rewriteAssetUrls(html, {
+    windowId,
+    grant: documentState.currentGrant,
+  }),
 });
 wirePreviewLinks(preview, showStatus);
 
@@ -315,8 +321,12 @@ async function initializeOpenRequests(): Promise<void> {
     await attachText(editor.state.doc, replication.current(), null);
     const ready = valueOrStatus(await readyForOpenRequests());
     if (ready) {
+      windowId = ready.windowId;
       documentState.productName = ready.productName;
       updateTitle();
+      if (documentState.currentGrant) {
+        scheduler.schedule();
+      }
       if (ready.notice) {
         showStatus(ready.notice);
       }

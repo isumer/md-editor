@@ -28,6 +28,7 @@ export type OpenedFile = DocumentReference;
 export interface OpenRequestReady {
   notice: string | null;
   productName: string;
+  windowId: number;
 }
 
 export type OpenFileResponse = DocumentReference | null;
