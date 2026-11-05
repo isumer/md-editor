@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The app now loads from its own private address instead of a local file, serves only its own files, and no longer lets the page load images from local file paths.
+
 - Typing no longer builds a copy of the whole document for the preview: the preview worker keeps its own copy fed by the same small changes, and always renders exactly the version it names, asking for the document again if it fell behind.
 - Saving no longer sends the whole document to the file process: it keeps its own copy, fed only the changes you type, and Save writes exactly the version you saved. If that copy is ever lost or behind, the editor resends the document once and the save still succeeds.
 
