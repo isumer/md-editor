@@ -4,7 +4,7 @@ review: deep
 
 Base: main
 
-Branch `feature/slice-13-export`. Follow AGENTS.md. Implement the planned
+Branch `feature/slice-13a-export-render`. Follow AGENTS.md. Implement the planned
 criteria in `docs/acceptance/R06-export.md` (AC-R6-01 … 05); mark each
 `implemented` only with its test. No new dependencies.
 
@@ -18,8 +18,16 @@ criteria in `docs/acceptance/R06-export.md` (AC-R6-01 … 05); mark each
   window in main (no preload, no node, `app://`-style isolation as in
   SEC rules) with a print stylesheet, then `webContents.printToPDF` with
   A4/Letter, margins, background on/off.
-- Both are written through the existing atomic save path (FileService in
-  the io-worker) to a path from the save dialog; the grant model applies.
+- **This step (13a) stops before the file write.** Export produces the HTML
+  string and the PDF bytes and hands them to one function in
+  `src/main/export/` that takes a granted path and the bytes. Writing those
+  bytes needs a binary request through the io-worker (`ioControl`,
+  `ioWorker`, `io-worker/control`, `FileService`); those four files are
+  under review on `feature/io-port-restart`, so the write is step 13b,
+  queued after that branch merges. In 13a, add no menu items or commands (13b
+  wires them with the write), so nothing ships half-wired; tests call the
+  export functions directly. Mark only the criteria 13a fully proves as
+  `implemented`; the rest stay `planned` for 13b.
 - Export runs off the UI thread; the editor keeps the keystroke budget
   while it runs (AC-R6-05).
 
