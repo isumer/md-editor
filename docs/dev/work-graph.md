@@ -34,6 +34,7 @@ Update a row when an item is queued, merged or sent back.
 | slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | merged (e1ee930) |
 | io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 (stacked on candidate e47bb15) | dev (Vision) | queued |
 | slice6-tree-updates | 6 | src/shared/workspace/treeUpdates.ts, test/unit/workspaceTreeUpdates.test.ts | main (treeRows merged) | side (Edith) | queued |
+| slice6-tree-store | 6 | src/renderer/features/workspace/treeStore.ts, test/unit/workspaceTreeStore.test.ts | main (treeRows merged) | dev (Vision) | queued |
 | slice7-encoding-module | 7 | src/shared/text/encoding.ts, test/unit/encoding.test.ts | main | nim (Karen) | queued |
 | slice8-line-operations | 8 | src/shared/lines/lineOperations.ts, test/unit/lineOperations.test.ts | main | dev (Vision) | queued |
 | slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | queued |
