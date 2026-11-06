@@ -69,7 +69,7 @@ body {
 
 .preview-section {
   content-visibility: auto;
-  contain-intrinsic-size: auto 60000px;
+  contain-intrinsic-size: auto 12000px;
 }
 
 #preview pre {
