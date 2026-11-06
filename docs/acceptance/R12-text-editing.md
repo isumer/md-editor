@@ -23,3 +23,9 @@ status: planned
 Given text, a query and options for case, whole word and regular expression
 When the editor finds or replaces matches
 Then a literal query matches metacharacters literally, a case-insensitive search ignores case, a whole-word match does not touch a letter, number or underscore on either side, an invalid regular expression gives no matches, and replace rewrites every kept match from left to right and expands `$&`, `$n` and `$$` only in regular-expression mode
+
+### AC-R12-05 — A file decodes in its chosen encoding
+status: planned
+Given a file's bytes and a chosen encoding (`utf-8`, `utf-16le` or `windows-1254`)
+When the editor decodes the file with that encoding
+Then one matching byte order mark is removed, the Windows-1254 fixture decodes to the six characters U+011F U+00FC U+015F U+0131 U+00F6 U+00E7 on its first line, bytes that are invalid for the encoding give a failure instead of text, and the input bytes are not changed
