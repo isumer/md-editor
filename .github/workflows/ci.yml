@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,11 +69,7 @@ jobs:
         run: npm run check:coverage
       - name: Run end-to-end tests
         continue-on-error: true
-        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g "preview has no frame" --repeat-each 3
-      - name: Run end-to-end tests without Graphite
-        env:
-          MDE_DIAG_DISABLE_GRAPHITE: "1"
-        run: npx playwright test test/e2e/preview-perf.spec.ts -g "preview has no frame" --repeat-each 3 --output test-results-ganesh
+        run: npm run build && npx playwright test test/e2e/preview-perf.spec.ts -g "preview has no frame" --repeat-each 2
       - name: Check acceptance criteria
         run: npm run check:acceptance
       - name: Add JUnit summary

@@ -366,7 +366,8 @@ async function expectSmoothScroll(page: Page, label: string, application?: Elect
     const gpu = await application.evaluate(async ({ app, contentTracing }) => {
       await contentTracing.startRecording({
         included_categories: ["cc", "gpu", "viz", "benchmark", "blink", "renderer.scheduler",
-          "devtools.timeline", "disabled-by-default-devtools.timeline.frame", "toplevel"],
+          "devtools.timeline", "disabled-by-default-devtools.timeline.frame", "toplevel",
+          "disabled-by-default-cc.debug", "disabled-by-default-devtools.timeline.layers"],
       });
       const info = await app.getGPUInfo("basic").catch((error: unknown) => String(error));
       return { features: app.getGPUFeatureStatus(), info };
