@@ -26,7 +26,6 @@ import {
   registerOpenRequestIpcHandler,
 } from "./app/startup";
 import { applyMenuContribution } from "./app/menu";
-import { applyRenderingSwitches } from "./app/renderingSwitches";
 import { createContributionPump } from "./app/menuContribution";
 import { createWindow, setMainWindow } from "./app/window";
 import { GrantTable } from "./grants/grantTable";
@@ -36,8 +35,6 @@ import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
 import { registerMenuIpcHandler } from "./ipc/menu";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
-
-applyRenderingSwitches(app.commandLine, process.platform);
 
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
