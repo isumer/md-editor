@@ -110,6 +110,55 @@ describe("io-worker supervisor", () => {
     expect(harness.logExit).toHaveBeenCalledWith(9, null);
   });
 
+  it("AC-R5-17: signals a lost port before each receiver gets its replacement", async () => {
+    const harness = createHarness();
+    const events: string[] = [];
+    harness.supervisor.start();
+    harness.children[0]?.emit("spawn");
+    await harness.supervisor.attachWindow(
+      3,
+      () => events.push("port-3"),
+      () => events.push("lost-3"),
+    );
+    await harness.supervisor.attachWindow(
+      4,
+      () => events.push("port-4"),
+      () => events.push("lost-4"),
+    );
+
+    harness.children[0]?.emit("exit", 9);
+    harness.children[1]?.emit("spawn");
+    await vi.waitFor(() => expect(events).toEqual([
+      "port-3",
+      "port-4",
+      "lost-3",
+      "lost-4",
+      "port-3",
+      "port-4",
+    ]));
+  });
+
+  it("AC-R5-17: a failing lost signal does not stop the restart", async () => {
+    const harness = createHarness();
+    const events: string[] = [];
+    harness.supervisor.start();
+    harness.children[0]?.emit("spawn");
+    await harness.supervisor.attachWindow(3, () => events.push("port-3"), () => {
+      throw new Error("webContents destroyed");
+    });
+    await harness.supervisor.attachWindow(4, () => events.push("port-4"), () => events.push("lost-4"));
+
+    harness.children[0]?.emit("exit", 9);
+    harness.children[1]?.emit("spawn");
+    await vi.waitFor(() => expect(events).toEqual([
+      "port-3",
+      "port-4",
+      "lost-4",
+      "port-3",
+      "port-4",
+    ]));
+  });
+
   it("AC-R5-17: fails an in-flight registration when the worker exits", async () => {
     const harness = createHarness();
     harness.supervisor.start();

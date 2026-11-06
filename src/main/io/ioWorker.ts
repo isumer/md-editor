@@ -55,6 +55,12 @@ function isReplyFor(kind: ControlKind, message: unknown): boolean {
 }
 
 type PortReceiver = (port: MessagePortMain) => void;
+type PortLostReceiver = () => void;
+
+interface WindowReceiver {
+  receivePort: PortReceiver;
+  notifyPortLost: PortLostReceiver;
+}
 
 const restartWindowMilliseconds = 60_000;
 const maximumRestarts = 5;
@@ -76,7 +82,7 @@ export class IoWorkerSupervisor {
   private child: UtilityProcess | null = null;
   private generationReady: Promise<void> = Promise.resolve();
   private readonly pending = new Map<string, PendingControl>();
-  private readonly receivers = new Map<number, PortReceiver>();
+  private readonly receivers = new Map<number, WindowReceiver>();
   private readonly restartTimes: number[] = [];
   private readonly failurePorts: MessagePortMain[] = [];
   private nextRequestId = 1;
@@ -167,13 +173,17 @@ export class IoWorkerSupervisor {
     this.child?.postMessage({ type: "revokeWindow", windowId });
   }
 
-  async attachWindow(windowId: number, receive: PortReceiver): Promise<void> {
-    this.receivers.set(windowId, receive);
+  async attachWindow(
+    windowId: number,
+    receivePort: PortReceiver,
+    notifyPortLost: PortLostReceiver = () => undefined,
+  ): Promise<void> {
+    this.receivers.set(windowId, { notifyPortLost, receivePort });
     await this.generationReady;
     if (this.child && !this.stopped) {
-      this.issuePort(windowId, receive);
+      this.issuePort(windowId, receivePort);
     } else {
-      this.issueFailurePort(receive);
+      this.issueFailurePort(receivePort);
     }
   }
 
@@ -252,14 +262,22 @@ export class IoWorkerSupervisor {
     this.dependencies.logExit(code, null);
     this.child = null;
     this.failPending();
+    for (const receiver of this.receivers.values()) {
+      // A window that cannot take the signal must not stop the restart for the others.
+      try {
+        receiver.notifyPortLost();
+      } catch {
+        // The replacement port still reaches that window, or it is gone.
+      }
+    }
     const cutoff = this.dependencies.now() - restartWindowMilliseconds;
     while ((this.restartTimes[0] ?? Number.POSITIVE_INFINITY) <= cutoff) {
       this.restartTimes.shift();
     }
     if (this.restartTimes.length >= maximumRestarts) {
       this.stopped = true;
-      for (const receive of this.receivers.values()) {
-        this.issueFailurePort(receive);
+      for (const receiver of this.receivers.values()) {
+        this.issueFailurePort(receiver.receivePort);
       }
       return;
     }
@@ -280,8 +298,8 @@ export class IoWorkerSupervisor {
         });
       }
     }
-    for (const [windowId, receive] of this.receivers) {
-      this.issuePort(windowId, receive);
+    for (const [windowId, receiver] of this.receivers) {
+      this.issuePort(windowId, receiver.receivePort);
     }
   }
 
