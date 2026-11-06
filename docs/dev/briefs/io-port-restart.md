@@ -2,12 +2,10 @@ review: deep
 
 # Bug: a save after an io-worker crash fails instead of waiting for the new worker
 
-Base: main
-
-Depends on: item 041 (slice 5) merged. Slice 5 changes the same files. Start
-only after it is on main.
-
-Work on a new branch from `origin/main`. Add no features. No new
+Depends on: item 041 (slice 5). Slice 5 changes the same files, so this item
+is stacked on its candidate `bug/slice-5-fix-2` (e47bb15, waiting for CI); no
+other order works. Start from `origin/bug/slice-5-fix-2`, then run
+`git merge origin/main`. Add no features. No new
 dependencies. Commit after each item. Show a red test first (AGENTS.md).
 
 ## Evidence
