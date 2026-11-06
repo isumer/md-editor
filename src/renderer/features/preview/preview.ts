@@ -2,7 +2,6 @@ import type {
   RenderBlock,
   RenderBlockPatch,
   RenderFillReadyMessage,
-  RenderLineShift,
   RenderResponse,
   RenderResync,
   RenderResult,
@@ -11,7 +10,18 @@ import { formatMessage } from "../../../shared/messages/en";
 import type { ReplicatedVersion } from "../../core/replication";
 import { openExternal } from "../../platform/api";
 import { RenderScheduler } from "./renderScheduler";
+import {
+  type BlockElements,
+  type BlockLayout,
+  type LineShiftRecord,
+  PreviewDocuments,
+  recordShiftTable,
+  resetLayout,
+} from "./previewDocuments";
 import { sanitizeRenderedHtml } from "./sanitize";
+
+export { PreviewDocuments } from "./previewDocuments";
+export { blockLine } from "./previewDocuments";
 
 export interface RenderWorkerEvents {
   postMessage(message: unknown): void;
@@ -29,21 +39,6 @@ interface RenderWorkerWiring {
   rewriteHtml(html: string): string;
 }
 
-type BlockElements = Map<string, HTMLDivElement>;
-
-interface LineShiftRecord extends RenderLineShift {
-  version: number;
-}
-
-interface ShiftTable {
-  root: HTMLElement;
-  shifts: readonly LineShiftRecord[];
-}
-
-// Each block points at the live shift ledger of its preview, so resolving a
-// line costs only the number of line-count changes since it was rendered.
-const shiftTables = new WeakMap<HTMLElement, ShiftTable>();
-
 const BLOCK_CLASS = "preview-block";
 // Blocks are packed into pages and pages into sections so content-visibility
 // skips whole regions without one containment decision per block: the cost of
@@ -53,35 +48,6 @@ const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 50;
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
-
-interface BlockLayout {
-  section: HTMLDivElement | null;
-  page: HTMLDivElement | null;
-  blocksInPage: number;
-  pagesInSection: number;
-}
-
-interface DocumentPreview {
-  container: HTMLDivElement;
-  elements: BlockElements;
-  shifts: LineShiftRecord[];
-  layout: BlockLayout;
-  epoch: number;
-  version: number;
-}
-
-export interface PreviewDocuments {
-  drop(docId: string): void;
-  reset(): void;
-  show(version: ReplicatedVersion): boolean;
-}
-
-function resetLayout(layout: BlockLayout): void {
-  layout.section = null;
-  layout.page = null;
-  layout.blocksInPage = 0;
-  layout.pagesInSection = 0;
-}
 
 function placeBlock(
   element: HTMLDivElement,
@@ -129,7 +95,7 @@ function updateBlock(
 ): void {
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
-  shiftTables.set(element, { root: wiring.preview, shifts });
+  recordShiftTable(element, wiring.preview, shifts);
   element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
 }
 
@@ -299,43 +265,11 @@ function applyRenderResult(
   });
 }
 
-function anchorElement(
-  root: HTMLElement,
-  blockId: string,
-): HTMLElement | null {
-  const escaped = blockId.replaceAll('"', '\\"');
-  return root.querySelector<HTMLElement>(`[data-block-id="${escaped}"]`);
-}
-
-// The line a block currently starts on. The worker's last sent line is the
-// baseline; line-count changes after that block was rendered are applied from
-// the preview's ledger without rewriting every block's attributes.
-export function blockLine(element: HTMLElement): number {
-  let line = Number(element.dataset["line"] ?? "0");
-  const version = Number(element.dataset["version"] ?? "0");
-  const table = shiftTables.get(element);
-  for (const shift of table?.shifts ?? []) {
-    if (shift.version <= version) {
-      continue;
-    }
-    if (shift.after === null) {
-      line += shift.delta;
-      continue;
-    }
-    const anchor = table ? anchorElement(table.root, shift.after) : null;
-    if (anchor && anchor !== element &&
-      (anchor.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
-      line += shift.delta;
-    }
-  }
-  return line;
-}
-
 export function wireRenderWorker(
   renderWorker: RenderWorkerEvents,
   wiring: RenderWorkerWiring,
 ): PreviewDocuments {
-  const previews = new Map<string, DocumentPreview>();
+  const previews = new PreviewDocuments(wiring.preview);
   // Patch results are ordered deltas, so a result is stale only once a newer
   // version has actually been shown; comparing against the live editor version
   // would discard a delta the preview still needs.
@@ -361,25 +295,7 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    let documentPreview = previews.get(response.docId);
-    if (!documentPreview || documentPreview.epoch !== response.epoch) {
-      const container = document.createElement("div");
-      container.className = "preview-document";
-      documentPreview = {
-        container,
-        elements: new Map(),
-        shifts: [],
-        layout: {
-          section: null,
-          page: null,
-          blocksInPage: 0,
-          pagesInSection: 0,
-        },
-        epoch: response.epoch,
-        version: -1,
-      };
-      previews.set(response.docId, documentPreview);
-    }
+    const documentPreview = previews.getOrCreate(response.docId, response.epoch);
     const documentWiring = { ...wiring, preview: documentPreview.container };
     const applied = applyRenderResult(
       response,
@@ -390,8 +306,7 @@ export function wireRenderWorker(
     );
     if (applied && response.ok) {
       documentPreview.version = response.version;
-      wiring.preview.replaceChildren(documentPreview.container);
-      wiring.preview.dataset["renderComplete"] = String(response.complete);
+      previews.display(documentPreview);
       shown = {
         docId: response.docId,
         epoch: response.epoch,
@@ -415,33 +330,7 @@ export function wireRenderWorker(
     wiring.showStatus(message);
   };
 
-  return {
-    drop(docId) {
-      const documentPreview = previews.get(docId);
-      if (documentPreview?.container.isConnected) {
-        wiring.preview.replaceChildren();
-      }
-      previews.delete(docId);
-    },
-    reset() {
-      previews.clear();
-      wiring.preview.replaceChildren();
-    },
-    show(version) {
-      const documentPreview = previews.get(version.docId);
-      if (!documentPreview || documentPreview.epoch !== version.epoch) {
-        wiring.preview.replaceChildren();
-        return false;
-      }
-      wiring.preview.replaceChildren(documentPreview.container);
-      wiring.preview.dataset["renderComplete"] =
-        documentPreview.container.dataset["renderComplete"] ?? "false";
-      // An incomplete render still has fill batches to receive; the switched-away
-      // window drops them, so a switch back must ask the worker to resume.
-      return documentPreview.version >= version.version &&
-        documentPreview.container.dataset["renderComplete"] === "true";
-    },
-  };
+  return previews;
 }
 
 export function wirePreviewLinks(
