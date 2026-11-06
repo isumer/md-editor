@@ -144,7 +144,6 @@ const electron = vi.hoisted(() => {
   }
 
   const app = {
-    commandLine: { appendSwitch: vi.fn() },
     getName: vi.fn(() => "MD Editor"),
     getPath: vi.fn(() => "/profiles/default"),
     isPackaged: false,
