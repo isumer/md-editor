@@ -67,7 +67,7 @@ When the user edits the text block
 Then the image is not re-requested (its request count does not increase)
 
 ### AC-R1-12 — A stuck render worker is restarted and the editor stays responsive
-status: planned
+status: implemented
 Given the render worker stops responding (stuck in a loop)
 When the user keeps typing
 Then the worker is restarted within 2.5 s, the editor stays responsive throughout, and the preview recovers

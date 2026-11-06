@@ -9,8 +9,11 @@ import { ioRequestId } from "../../shared/ipc/io";
 import {
   isRegisterGrantReply,
   isResolveAssetReply,
+  isSessionReadReply,
+  isSessionWriteReply,
   type RegisteredGrant,
   type ResolvedAsset,
+  type StoredSession,
 } from "../../shared/ipc/ioControl";
 import {
   serviceError,
@@ -28,10 +31,36 @@ interface IoWorkerDependencies {
 }
 
 interface PendingControl {
+  kind: ControlKind;
   resolve(result: Result<unknown>): void;
 }
 
+type ControlKind =
+  | "registerGrant"
+  | "resolveAsset"
+  | "readSession"
+  | "writeSession";
+
+function isReplyFor(kind: ControlKind, message: unknown): boolean {
+  if (kind === "registerGrant") {
+    return isRegisterGrantReply(message);
+  }
+  if (kind === "resolveAsset") {
+    return isResolveAssetReply(message);
+  }
+  if (kind === "readSession") {
+    return isSessionReadReply(message);
+  }
+  return isSessionWriteReply(message);
+}
+
 type PortReceiver = (port: MessagePortMain) => void;
+type PortLostReceiver = () => void;
+
+interface WindowReceiver {
+  receivePort: PortReceiver;
+  notifyPortLost: PortLostReceiver;
+}
 
 const restartWindowMilliseconds = 60_000;
 const maximumRestarts = 5;
@@ -53,7 +82,7 @@ export class IoWorkerSupervisor {
   private child: UtilityProcess | null = null;
   private generationReady: Promise<void> = Promise.resolve();
   private readonly pending = new Map<string, PendingControl>();
-  private readonly receivers = new Map<number, PortReceiver>();
+  private readonly receivers = new Map<number, WindowReceiver>();
   private readonly restartTimes: number[] = [];
   private readonly failurePorts: MessagePortMain[] = [];
   private nextRequestId = 1;
@@ -121,19 +150,40 @@ export class IoWorkerSupervisor {
     this.child?.postMessage({ type: "revokeGrant", windowId, handle });
   }
 
+  async readSession(filePath: string): Promise<Result<StoredSession>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<StoredSession>({ type: "readSession", path: filePath })
+      : failedControl();
+  }
+
+  async writeSession(
+    filePath: string,
+    session: StoredSession,
+  ): Promise<Result<void>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<void>({ type: "writeSession", path: filePath, session })
+      : failedControl();
+  }
+
   async revokeWindow(windowId: number): Promise<void> {
     this.receivers.delete(windowId);
     await this.generationReady;
     this.child?.postMessage({ type: "revokeWindow", windowId });
   }
 
-  async attachWindow(windowId: number, receive: PortReceiver): Promise<void> {
-    this.receivers.set(windowId, receive);
+  async attachWindow(
+    windowId: number,
+    receivePort: PortReceiver,
+    notifyPortLost: PortLostReceiver = () => undefined,
+  ): Promise<void> {
+    this.receivers.set(windowId, { notifyPortLost, receivePort });
     await this.generationReady;
     if (this.child && !this.stopped) {
-      this.issuePort(windowId, receive);
+      this.issuePort(windowId, receivePort);
     } else {
-      this.issueFailurePort(receive);
+      this.issueFailurePort(receivePort);
     }
   }
 
@@ -150,19 +200,25 @@ export class IoWorkerSupervisor {
   }
 
   private handleReply(message: unknown): void {
-    const reply = isRegisterGrantReply(message) || isResolveAssetReply(message)
-      ? message
-      : null;
-    if (!reply) {
-      const id = ioRequestId(message);
-      if (id) {
-        this.settleControl(id, {
-          ok: false,
-          error: serviceError("BAD_REQUEST", "request.invalid"),
-        });
-      }
+    const id = ioRequestId(message);
+    if (id === null) {
       return;
     }
+    const pending = this.pending.get(id);
+    if (!pending) {
+      return;
+    }
+    if (!isReplyFor(pending.kind, message)) {
+      this.settleControl(id, {
+        ok: false,
+        error: serviceError("BAD_REQUEST", "request.invalid"),
+      });
+      return;
+    }
+    const reply = message as {
+      id: string;
+      result: { ok: true; value: unknown } | { ok: false; error: unknown };
+    };
     const result: Result<unknown> = reply.result.ok
       ? reply.result
       : { ok: false, error: toServiceError(reply.result.error) };
@@ -177,10 +233,13 @@ export class IoWorkerSupervisor {
     }
   }
 
-  private sendControl<T>(request: Record<string, unknown>): Promise<Result<T>> {
+  private sendControl<T>(
+    request: { type: ControlKind } & Record<string, unknown>,
+  ): Promise<Result<T>> {
     const id = `control-${this.nextRequestId++}`;
     return new Promise((resolve) => {
       this.pending.set(id, {
+        kind: request.type,
         resolve: (result) => resolve(result as Result<T>),
       });
       const child = this.child;
@@ -203,14 +262,22 @@ export class IoWorkerSupervisor {
     this.dependencies.logExit(code, null);
     this.child = null;
     this.failPending();
+    for (const receiver of this.receivers.values()) {
+      // A window that cannot take the signal must not stop the restart for the others.
+      try {
+        receiver.notifyPortLost();
+      } catch {
+        // The replacement port still reaches that window, or it is gone.
+      }
+    }
     const cutoff = this.dependencies.now() - restartWindowMilliseconds;
     while ((this.restartTimes[0] ?? Number.POSITIVE_INFINITY) <= cutoff) {
       this.restartTimes.shift();
     }
     if (this.restartTimes.length >= maximumRestarts) {
       this.stopped = true;
-      for (const receive of this.receivers.values()) {
-        this.issueFailurePort(receive);
+      for (const receiver of this.receivers.values()) {
+        this.issueFailurePort(receiver.receivePort);
       }
       return;
     }
@@ -231,8 +298,8 @@ export class IoWorkerSupervisor {
         });
       }
     }
-    for (const [windowId, receive] of this.receivers) {
-      this.issuePort(windowId, receive);
+    for (const [windowId, receiver] of this.receivers) {
+      this.issuePort(windowId, receiver.receivePort);
     }
   }
 

@@ -33,6 +33,11 @@ export interface RenderDetachMessage {
   docId: string;
 }
 
+export interface RenderPingMessage {
+  op: "ping";
+  id: number;
+}
+
 // The preview has applied one fill batch and is ready for the next. The worker
 // keeps at most one batch in flight so the main thread can stay responsive.
 export interface RenderFillReadyMessage {
@@ -43,12 +48,18 @@ export interface RenderFillReadyMessage {
   token: number;
 }
 
+export interface RenderPongMessage {
+  op: "pong";
+  id: number;
+}
+
 export type RenderWorkerRequest =
   | RenderAttachMessage
   | RenderChangeMessage
   | RenderRequest
   | RenderDetachMessage
-  | RenderFillReadyMessage;
+  | RenderFillReadyMessage
+  | RenderPingMessage;
 
 interface RenderResultVersion {
   id: number;
@@ -105,7 +116,7 @@ export interface RenderResync extends RenderResultVersion {
   op: "resync";
 }
 
-export type RenderResponse = RenderResult | RenderResync;
+export type RenderResponse = RenderResult | RenderResync | RenderPongMessage;
 
 function exactData(
   value: unknown,
@@ -250,7 +261,12 @@ function validFillReady(value: unknown): value is RenderFillReadyMessage {
     validVersion(data["version"]) && validVersion(data["token"]);
 }
 
+function validPing(value: unknown): value is RenderPingMessage {
+  const data = exactData(value, ["op", "id"]);
+  return data !== null && data["op"] === "ping" && validVersion(data["id"]);
+}
+
 export function isRenderWorkerRequest(value: unknown): value is RenderWorkerRequest {
   return validAttach(value) || validChange(value) || validRender(value) ||
-    validDetach(value) || validFillReady(value);
+    validDetach(value) || validFillReady(value) || validPing(value);
 }

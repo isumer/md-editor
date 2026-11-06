@@ -110,6 +110,55 @@ describe("io-worker supervisor", () => {
     expect(harness.logExit).toHaveBeenCalledWith(9, null);
   });
 
+  it("AC-R5-17: signals a lost port before each receiver gets its replacement", async () => {
+    const harness = createHarness();
+    const events: string[] = [];
+    harness.supervisor.start();
+    harness.children[0]?.emit("spawn");
+    await harness.supervisor.attachWindow(
+      3,
+      () => events.push("port-3"),
+      () => events.push("lost-3"),
+    );
+    await harness.supervisor.attachWindow(
+      4,
+      () => events.push("port-4"),
+      () => events.push("lost-4"),
+    );
+
+    harness.children[0]?.emit("exit", 9);
+    harness.children[1]?.emit("spawn");
+    await vi.waitFor(() => expect(events).toEqual([
+      "port-3",
+      "port-4",
+      "lost-3",
+      "lost-4",
+      "port-3",
+      "port-4",
+    ]));
+  });
+
+  it("AC-R5-17: a failing lost signal does not stop the restart", async () => {
+    const harness = createHarness();
+    const events: string[] = [];
+    harness.supervisor.start();
+    harness.children[0]?.emit("spawn");
+    await harness.supervisor.attachWindow(3, () => events.push("port-3"), () => {
+      throw new Error("webContents destroyed");
+    });
+    await harness.supervisor.attachWindow(4, () => events.push("port-4"), () => events.push("lost-4"));
+
+    harness.children[0]?.emit("exit", 9);
+    harness.children[1]?.emit("spawn");
+    await vi.waitFor(() => expect(events).toEqual([
+      "port-3",
+      "port-4",
+      "lost-4",
+      "port-3",
+      "port-4",
+    ]));
+  });
+
   it("AC-R5-17: fails an in-flight registration when the worker exits", async () => {
     const harness = createHarness();
     harness.supervisor.start();
@@ -189,6 +238,83 @@ describe("io-worker supervisor", () => {
 
     await expect(harness.supervisor.resolveAsset(7, "grant", "pic.png"))
       .resolves.toMatchObject({ ok: false, error: { code: "WORKER_RESTARTED" } });
+  });
+
+  it("AC-R4-08: reads the session through the worker and validates the reply", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    const child = harness.children[0] as FakeChild;
+    child.emit("spawn");
+
+    const reading = harness.supervisor.readSession("/profiles/session.json");
+    await vi.waitFor(() => expect(child.posts).toHaveLength(1));
+    const request = child.posts[0]?.message as { id: string; type: string; path: string };
+    expect(request).toMatchObject({ type: "readSession", path: "/profiles/session.json" });
+
+    child.emit("message", {
+      id: request.id,
+      result: { ok: true, value: { version: 1, documents: [] } },
+    });
+    await expect(reading).resolves.toEqual({
+      ok: true,
+      value: { version: 1, documents: [] },
+    });
+
+    const rejected = harness.supervisor.readSession("/profiles/session.json");
+    await vi.waitFor(() => expect(child.posts).toHaveLength(2));
+    const invalid = child.posts[1]?.message as { id: string };
+    child.emit("message", { id: invalid.id, result: { ok: true, value: {} } });
+    await expect(rejected).resolves.toMatchObject({
+      ok: false,
+      error: { code: "BAD_REQUEST" },
+    });
+  });
+
+  it("AC-R4-08: writes the session through the worker and validates the reply", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    const child = harness.children[0] as FakeChild;
+    child.emit("spawn");
+    const session = {
+      documents: [{
+        name: "note.md",
+        path: "/docs/note.md",
+        savedText: "old",
+        text: "new",
+      }],
+      version: 1 as const,
+    };
+
+    const writing = harness.supervisor.writeSession("/profiles/session.json", session);
+    await vi.waitFor(() => expect(child.posts).toHaveLength(1));
+    const request = child.posts[0]?.message as {
+      id: string;
+      type: string;
+      path: string;
+      session: unknown;
+    };
+    expect(request).toMatchObject({
+      type: "writeSession",
+      path: "/profiles/session.json",
+      session,
+    });
+
+    child.emit("message", { id: request.id, result: { ok: true, value: {} } });
+    await expect(writing).resolves.toEqual({ ok: true, value: {} });
+  });
+
+  it("AC-R4-08: a stopped supervisor refuses session access", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    harness.children[0]?.emit("spawn");
+    harness.supervisor.stop();
+
+    await expect(harness.supervisor.readSession("/profiles/session.json"))
+      .resolves.toMatchObject({ ok: false, error: { code: "WORKER_RESTARTED" } });
+    await expect(harness.supervisor.writeSession("/profiles/session.json", {
+      documents: [],
+      version: 1,
+    })).resolves.toMatchObject({ ok: false, error: { code: "WORKER_RESTARTED" } });
   });
 
   it("AC-R5-17: stops after five restarts in sixty seconds", async () => {
