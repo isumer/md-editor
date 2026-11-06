@@ -1,4 +1,4 @@
-# Slice 6 module part — apply workspace changes (side lane)
+# Slice 6 module part — apply workspace changes (dev lane)
 
 Base: main
 
@@ -10,7 +10,9 @@ not edit it. No new dependencies.
 
 ## The module
 New file `src/shared/workspace/treeUpdates.ts`. Import the node type only:
-`import type { WorkspaceNode } from './treeRows';`. Exports exactly:
+`import type { WorkspaceNode } from './treeRows';`. A node has `name`,
+`kind` and optional `children`; it has no `path` field. Derive a node's
+path by joining its ancestor names with `/`. Exports exactly:
 - `export type WorkspaceChange = { readonly kind: 'created'; readonly path: string; readonly entryKind: 'folder' | 'file' } | { readonly kind: 'deleted'; readonly path: string };`
 - `export type OpenFileDecision = 'close' | 'keep';`
 - `export function applyWorkspaceChange(nodes: readonly WorkspaceNode[], change: WorkspaceChange): readonly WorkspaceNode[]`
