@@ -32,7 +32,9 @@ Update a row when an item is queued, merged or sent back.
 | slice12-settings-module | 12 | src/shared/settings/settings.ts, test/unit/settings.test.ts | main | side (Edith) | merged (5b4a267) |
 | slice8-outline-module | 8 | src/shared/outline/outline.ts, test/unit/outline.test.ts | main | nim (Karen) | merged (7ad9c3b) |
 | slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | merged (e1ee930) |
-| io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 (stacked on candidate e47bb15) | dev (Vision) | queued |
+| io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 (stacked on candidate e47bb15) | dev (Vision) | review (905) |
+| macos-e2e | 9 | test/e2e/commands.spec.ts, test/e2e/save-contracts.spec.ts, test/e2e/preview-perf.spec.ts, test/e2e/helpers.ts, .github/workflows/ci.yml | main | side (Edith) | queued |
+| slice8-word-completion | 8 | src/shared/text/wordCompletion.ts, test/unit/wordCompletion.test.ts | main | nim (Karen) | queued |
 | slice6-tree-updates | 6 | src/shared/workspace/treeUpdates.ts, test/unit/workspaceTreeUpdates.test.ts | main (treeRows merged) | side (Edith) | queued |
 | slice6-tree-store | 6 | src/renderer/features/workspace/treeStore.ts, test/unit/workspaceTreeStore.test.ts | main (treeRows merged) | dev (Vision) | queued |
 | slice7-encoding-module | 7 | src/shared/text/encoding.ts, test/unit/encoding.test.ts | main | nim (Karen) | queued |
