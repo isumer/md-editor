@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-2.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869); fix queued (872; job 871 failed on a broken worktree) |
+| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869, 881: coverage red); fix-3 queued |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | candidate 632759b (CI pending) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
@@ -28,6 +28,10 @@ Update a row when an item is queued, merged or sent back.
 | slice7-line-endings | 7 | src/shared/text/lineEndings.ts, test/unit/lineEndings.test.ts | main | nim | queued (874) |
 | slice7-find-replace | 7 | src/shared/text/findReplace.ts, test/unit/findReplace.test.ts | main | side | queued (873) |
 | slice6-tree-generator | 6 | test/fixtures/workspace/generate-tree.mjs, test/fixtures/workspace/README.md | main | dev | done (870); verify red on Pi perf only; review pending |
+| slice7-binary-open | 7 | src/io-worker/services/file.ts, src/shared/ipc/result.ts, src/shared/messages/en.ts, test/unit/ioWorker.test.ts, test/e2e/binary-open.spec.ts | main (binary.ts merged) | dev (Vision) | queued (882) |
+| slice12-settings-module | 12 | src/shared/settings/settings.ts, test/unit/settings.test.ts | main | side (Edith) | queued (883) |
+| slice8-outline-module | 8 | src/shared/outline/outline.ts, test/unit/outline.test.ts | main | nim (Karen) | queued (884) |
+| slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
