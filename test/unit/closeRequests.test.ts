@@ -63,6 +63,26 @@ describe("close request broker", () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
+  it("AC-SEC-07: only the window that received a close request can settle it", async () => {
+    const { instance, persist, timers } = broker();
+    const pending = instance.request(1);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+
+    await instance.settle(result, 2);
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(persist).not.toHaveBeenCalled();
+    expect(timers.size).toBe(1);
+
+    await instance.settle(result, 1);
+    await expect(pending).resolves.toBe(true);
+    expect(persist).toHaveBeenCalledWith(result, 1);
+  });
+
   it("AC-R4-06: an unanswered close times out and never wedges shutdown", async () => {
     const { instance, persist, fireTimeout } = broker();
 

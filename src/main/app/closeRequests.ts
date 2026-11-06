@@ -11,6 +11,7 @@ export interface CloseRequestBrokerOptions {
 interface PendingClose {
   resolve(allow: boolean): void;
   timer: TimerHandle;
+  windowId: number;
 }
 
 // Main asks the renderer before it closes a window with unsaved documents.
@@ -47,14 +48,14 @@ export class CloseRequestBroker {
           resolve(true);
         }
       }, this.timeoutMilliseconds);
-      this.pending.set(id, { resolve, timer });
+      this.pending.set(id, { resolve, timer, windowId });
       this.send(windowId, id);
     });
   }
 
   async settle(result: SessionCloseResult, windowId: number): Promise<void> {
     const pending = this.pending.get(result.id);
-    if (!pending) {
+    if (!pending || pending.windowId !== windowId) {
       return;
     }
     this.pending.delete(result.id);
