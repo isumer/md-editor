@@ -17,3 +17,9 @@ status: planned
 Given a range of lines and a 1-based column
 When the user inserts text or an increasing number at that column
 Then the inserted value starts at the same column on every line in the range, a shorter line is padded with spaces up to that column, the numbers rise by the step, and the input is never changed
+
+### AC-R13-04 — Word completion suggests words from the document
+status: planned
+Given a document and a cursor in a word
+When the user has typed at least two word characters
+Then the words elsewhere in the document that start with that prefix are suggested once each, case-insensitively, in document order, without the word at the cursor, and the input is never changed

@@ -53,3 +53,53 @@ status: implemented
 Given the app is running
 When a file is dragged and dropped onto the window
 Then the file opens in a new tab
+
+## Side-by-side views (the Notepad++ "Other View")
+
+### AC-R4-10 — A tab moves or is cloned to the other view
+status: planned
+Given one view with two tabs
+When the user picks Move to Other View on one tab and Clone to Other View on the other
+Then a second view opens holding the moved tab and a clone, and the first view keeps only the cloned tab
+
+### AC-R4-11 — An edit in a clone appears in the other view in the same frame
+status: planned
+Given a document cloned into both views
+When the user types in one view
+Then the other view shows the change in the same animation frame, keeps its own cursor and scroll, and both tabs share one dirty state
+
+### AC-R4-12 — A clone shares one undo history
+status: planned
+Given an edit made in view 1 of a cloned document
+When the user presses Undo in view 2
+Then the edit is undone once in both views, and Redo in view 1 restores it
+
+### AC-R4-13 — The second view closes with its last tab
+status: planned
+Given two views where view 2 has one tab
+When that tab is closed or dragged to view 1
+Then view 2 closes and view 1 takes the full width
+
+### AC-R4-14 — Views rotate and the divider persists
+status: planned
+Given two side-by-side views
+When the user picks View > Rotate and drags the divider to 30 %
+Then the views are stacked at 30 / 70, and orientation and position survive a restart
+
+### AC-R4-15 — Synchronised scrolling keeps the starting line offset
+status: planned
+Given two views whose top lines are 1 and 41, and vertical synchronisation is turned on
+When view 1 is scrolled to line 101
+Then view 2's top line is 141; horizontal synchronisation keeps its column offset the same way
+
+### AC-R4-16 — F8 moves focus between views
+status: planned
+Given two views with focus in view 1
+When the user presses F8
+Then focus is in view 2's editor, and a tab command such as Close acts on view 2
+
+### AC-R4-17 — A cloned Markdown tab can show its preview in the other view without a second parse
+status: planned
+Given a Markdown tab cloned into view 2 and view 2 set to preview only
+When the user edits in view 1
+Then view 2's preview updates, and the render worker parsed the change once

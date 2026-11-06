@@ -28,10 +28,19 @@ not commit). Unit tests pass; 10 e2e tests fail:
    path, fix it. Do not raise thresholds and do not skip on macOS. If a
    budget truly cannot hold on the shared macOS runner, stop and write
    the numbers in the PR body; do not change it yourself.
+   The AC-PERF-10 *open* test (one 101 ms task) is not yours: it is a
+   product problem owned by `docs/dev/briefs/perf-main-thread-tasks.md`.
 
 ## CI
 In `.github/workflows/ci.yml`, run the test matrix on
 `ubuntu-latest`, `windows-latest` and `macos-latest` for every event.
+
+## Allowed files
+`test/e2e/commands.spec.ts`, `test/e2e/save-contracts.spec.ts`,
+`test/e2e/preview-perf.spec.ts`, `test/e2e/helpers.ts` (only for a shared
+platform modifier) and `.github/workflows/ci.yml`. Nothing else. If the
+cause is proven to be in `src/`, stop and write the exact file and line
+in the report: a separate dev brief owns that change.
 
 ## Checks before you finish
 Linux here: `npm run typecheck`, unit, `npx playwright test` for the
