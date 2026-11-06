@@ -1,4 +1,5 @@
 export const IO_PORT_CHANNEL = "io:port";
+export const IO_PORT_LOST_CHANNEL = "io:port-lost";
 export const MAX_IO_TEXT_LENGTH = 256 * 1024 * 1024;
 export const MAX_IO_GRANT_LENGTH = 8 * 1024;
 
