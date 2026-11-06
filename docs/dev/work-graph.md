@@ -36,6 +36,7 @@ Update a row when an item is queued, merged or sent back.
 | slice6-tree-updates | 6 | src/shared/workspace/treeUpdates.ts, test/unit/workspaceTreeUpdates.test.ts | main (treeRows merged) | side (Edith) | queued |
 | slice7-encoding-module | 7 | src/shared/text/encoding.ts, test/unit/encoding.test.ts | main | nim (Karen) | queued |
 | slice8-line-operations | 8 | src/shared/lines/lineOperations.ts, test/unit/lineOperations.test.ts | main | dev (Vision) | queued |
+| slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
