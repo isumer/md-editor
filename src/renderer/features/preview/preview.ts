@@ -49,7 +49,9 @@ const BLOCK_CLASS = "preview-block";
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 10;
-const SECTION_PAGE_LIMIT = 50;
+const SECTION_PAGE_LIMIT = 10;
+// A section also bounds the layout work when it becomes visible: 100 blocks
+// keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
 
@@ -281,6 +283,21 @@ function applyRenderResult(
   });
 }
 
+function requestNextFill(
+  renderWorker: RenderWorkerEvents,
+  response: RenderResult & { ok: true; mode: "append" },
+): void {
+  requestAnimationFrame(() => {
+    renderWorker.postMessage({
+      op: "fill-ready",
+      docId: response.docId,
+      epoch: response.epoch,
+      version: response.version,
+      token: response.fillToken,
+    } satisfies RenderFillReadyMessage);
+  });
+}
+
 function anchorElement(
   root: HTMLElement,
   blockId: string,
@@ -355,13 +372,7 @@ export function wireRenderWorker(
         version: response.version,
       };
       if (response.mode === "append") {
-        renderWorker.postMessage({
-          op: "fill-ready",
-          docId: response.docId,
-          epoch: response.epoch,
-          version: response.version,
-          token: response.fillToken,
-        } satisfies RenderFillReadyMessage);
+        requestNextFill(renderWorker, response);
       }
     }
   };

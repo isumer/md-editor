@@ -52,6 +52,60 @@ function blocks(preview: HTMLElement): HTMLElement[] {
 }
 
 describe("preview render flow", () => {
+  it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      fillToken: 4,
+      complete: false,
+    });
+    vi.unstubAllGlobals();
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    frames[0]?.(16);
+    expect(worker.postMessage).toHaveBeenCalledWith({
+      op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
+    });
+  });
+
+  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: renderedBlocks,
+      complete: true,
+    });
+
+    const sections = [...preview.querySelectorAll(".preview-section")];
+    expect(sections).toHaveLength(2);
+    expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
+      .toEqual([100, 1]);
+  });
+
   it("AC-R1-07: ignores a render result from an older document epoch", () => {
     const preview = document.createElement("div");
     preview.innerHTML = "<p>current preview</p>";
