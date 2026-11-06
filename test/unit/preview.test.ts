@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RenderResponse } from "../../src/shared/workers/render";
 import {
@@ -51,10 +51,6 @@ function blocks(preview: HTMLElement): HTMLElement[] {
   return [...preview.querySelectorAll<HTMLElement>(".preview-block")];
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("preview render flow", () => {
   it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
     const frames: FrameRequestCallback[] = [];
@@ -75,15 +71,12 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
+    vi.unstubAllGlobals();
 
     expect(worker.postMessage).not.toHaveBeenCalled();
     frames[0]?.(16);
     expect(worker.postMessage).toHaveBeenCalledWith({
-      op: "fill-ready",
-      docId: "doc",
-      epoch: 1,
-      version: 1,
-      token: 4,
+      op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });
   });
 
