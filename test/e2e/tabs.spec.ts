@@ -168,6 +168,36 @@ test("switching back reconnects the same preview blocks without appending", {
   }
 });
 
+test("switching back resumes an incomplete preview fill", {
+  tag: "@AC-R4-01",
+  annotation: { type: "AC-R4-01" },
+}, async () => {
+  test.setTimeout(30_000);
+  const { directory, beta } = await copyFixtures();
+  const large = path.join(directory, "large.md");
+  const sections = Array.from({ length: 5_000 }, (_, index) =>
+    `## Section ${String(index)}\n\nParagraph ${String(index)}.\n`).join("\n");
+  await fs.writeFile(large, `# Large\n\n${sections}`, "utf8");
+  const { application, page } = await launchEditor(large);
+  const preview = page.getByTestId("preview");
+  try {
+    await expect(preview.locator(".preview-block").first()).toBeVisible();
+    await expect(preview).toHaveAttribute("data-render-complete", "false");
+
+    await openWithMenu(application, page, beta);
+    await expect(preview.locator("h1")).toHaveText("Beta");
+    await tab(page, "large.md").click();
+
+    await expect(preview).toHaveAttribute("data-render-complete", "true", {
+      timeout: 15_000,
+    });
+    await expect(preview).toContainText("Section 4999");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("opening a path that is already open focuses its tab without a duplicate", {
   tag: "@AC-R4-02",
   annotation: { type: "AC-R4-02" },
