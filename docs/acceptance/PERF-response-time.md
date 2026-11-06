@@ -50,9 +50,14 @@ Then the preview patch touches only the changed blocks and takes p95 < 8 ms on t
 
 ### AC-PERF-09 — Scrolling the preview keeps every frame within budget
 status: implemented
+platforms: linux, win32
 Given a 500 KB (and a 20 MB) Markdown document is previewed
 When the user flings the preview scroll
 Then no frame exceeds 32 ms and no long task is recorded
+
+macOS is skipped until a real-Mac measurement exists (owner decision, PR #9): the
+GitHub macOS VM's virtual GPU stalls presentation and raster for 40–180 ms while
+the renderer is idle, so its frame times do not show what a Mac does.
 
 ### AC-PERF-10 — Keystroke to preview, 20 MB document
 status: implemented

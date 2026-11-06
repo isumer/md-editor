@@ -14,10 +14,13 @@ import { readTextOrNull,
   stubSaveDialog,
 } from "./helpers";
 
+const PRIMARY_MODIFIER = process.platform === "darwin" ? "Meta" : "Control";
+const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+
 async function appendEditorText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(DOCUMENT_END);
   await page.keyboard.type(text);
 }
 
@@ -215,7 +218,7 @@ test("Save writes exactly the edited document version", {
     const editor = page.getByTestId("editor").locator(".cm-content");
     await expect(editor).toContainText("Before");
     await editor.click();
-    await page.keyboard.press("Control+A");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+A`);
     const edited = "# Exact version\n\nSaved from the mirror.";
     await page.keyboard.type(edited);
 

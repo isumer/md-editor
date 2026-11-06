@@ -1,5 +1,7 @@
 # Side — Slice 6 workspace tree generator (5,000 deterministic files)
 
+Base: main
+
 **Starts from `main`** and runs alongside the current slice (slice 5 owns
 `src/**`, `test/unit/**`, `test/e2e/**`; the Karen stability task owns
 `test/fixtures/stability/**`). This task touches only

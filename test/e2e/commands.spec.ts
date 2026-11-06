@@ -13,10 +13,13 @@ import { readTextOrNull,
   stubSaveDialog,
 } from "./helpers";
 
+const PRIMARY_MODIFIER = process.platform === "darwin" ? "Meta" : "Control";
+const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+
 async function appendEditorText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(DOCUMENT_END);
   await page.keyboard.type(text);
 }
 
@@ -40,29 +43,31 @@ test("undo and redo chords revert and restore typed text with preview and dirty 
     const preview = page.getByTestId("preview");
     await expect(editor).toContainText("Sample document");
     await editor.click();
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     const typed = "keyboard undo text";
     await page.keyboard.type(typed);
     await expect(preview).toContainText(typed);
     await expect(page).toHaveTitle(/•/);
 
-    await page.keyboard.press("Control+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
 
     await expect(editor).not.toContainText(typed);
     await expect(preview).not.toContainText(typed);
     await expect(page).not.toHaveTitle(/•/);
 
-    await page.keyboard.press("Control+Shift+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+z`);
 
     await expect(editor).toContainText(typed);
     await expect(preview).toContainText(typed);
     await expect(page).toHaveTitle(/•/);
 
-    await page.keyboard.press("Control+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
     await expect(editor).not.toContainText(typed);
-    await page.keyboard.press("Control+y");
-    await expect(editor).toContainText(typed);
-    await expect(page).toHaveTitle(/•/);
+    if (process.platform !== "darwin") {
+      await page.keyboard.press(`${PRIMARY_MODIFIER}+y`);
+      await expect(editor).toContainText(typed);
+      await expect(page).toHaveTitle(/•/);
+    }
   } finally {
     await closeEditor(application, page);
   }
@@ -119,18 +124,18 @@ test("Open, Save and Save As chords run their commands and display non-native ac
 
     const edit = "\n\nsaved from the Save chord";
     await appendEditorText(page, edit);
-    await page.keyboard.press("Control+s");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+s`);
     await expect.poll(() => readTextOrNull(currentPath)).toBe(originalText + edit);
     await expect(page).not.toHaveTitle(/•/);
 
     await stubSaveDialog(application, adoptedPath);
-    await page.keyboard.press("Control+Shift+s");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+s`);
     await expect.poll(() => dialogCallCount(application, "save")).toBe(1);
     await expect.poll(() => readTextOrNull(adoptedPath)).toBe(originalText + edit);
     await expect(page).toHaveTitle(/^adopted\.md —/);
 
     await stubOpenDialog(application, otherPath);
-    await page.keyboard.press("Control+o");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+o`);
     await expect.poll(() => dialogCallCount(application, "open")).toBe(1);
     await expect(editor).toContainText("Opened by the chord");
   } finally {
@@ -165,18 +170,28 @@ test("the renderer contributes the File action items and patches their state in 
       registerAccelerator: false,
     });
 
-    // A contribution with no items leaves the skeleton: the File menu has only Quit.
+    // A contribution with no items leaves only the platform-owned skeleton actions.
     await page.evaluate(() => window.api.contributeMenu({ fileMenuTitle: "File", items: [] }));
     await expect.poll(() => menuItemIds(application), { timeout: 5_000 }).toEqual([
       null,
       null,
       null,
     ]);
-    const quitRole = await application.evaluate(({ Menu }) => {
-      const fileMenu = Menu.getApplicationMenu()?.items[0];
-      return fileMenu?.submenu?.items.map((item) => item.role ?? item.id) ?? [];
+    const skeletonRoles = await application.evaluate(({ Menu }) => {
+      const menu = Menu.getApplicationMenu();
+      const roles = (items: Electron.MenuItem[]) =>
+        items.map((item) => item.role ?? item.id);
+      return {
+        applicationMenu: roles(menu?.items[0]?.submenu?.items ?? []),
+        fileMenu: roles(menu?.items.find((item) => item.label === "File")?.submenu?.items ?? []),
+      };
     });
-    expect(quitRole).toEqual(["quit"]);
+    if (process.platform === "darwin") {
+      expect(skeletonRoles.applicationMenu).toContain("quit");
+      expect(skeletonRoles.fileMenu).toEqual([]);
+    } else {
+      expect(skeletonRoles.fileMenu).toEqual(["quit"]);
+    }
 
     // The renderer's next contribution restores the items and carries their state.
     await page.evaluate(() => window.api.contributeMenu({

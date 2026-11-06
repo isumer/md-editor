@@ -13,6 +13,7 @@ const SAMPLES = 30;
 const TWENTY_MEGABYTES = "20971520";
 const large50 = path.join(repositoryRoot, "test/fixtures/big/large-50kb.md");
 const large500 = path.join(repositoryRoot, "test/fixtures/big/large-500kb.md");
+const DOCUMENT_START = process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home";
 
 let temporaryDirectory = "";
 let large20 = "";
@@ -153,7 +154,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
 async function placeCaretInFirstLine(page: Page): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+Home");
+  await page.keyboard.press(DOCUMENT_START);
   // The editor wraps lines, so End targets the visual end of the heading's first line.
   await page.keyboard.press("End");
 }
@@ -355,10 +356,14 @@ async function expectSmoothScroll(page: Page, label: string): Promise<void> {
   expect(probe.longtasks).toEqual([]);
 }
 
+// See docs/acceptance/PERF-response-time.md: macOS waits for a real-Mac measurement.
+const AC_PERF_09_MAC_SKIP = "AC-PERF-09 is skipped on the macOS CI VM until a real-Mac measurement (PR #9)";
+
 test("AC-PERF-09: fling-scrolling the 500 KB preview has no frame over 32 ms", {
   tag: "@AC-PERF-09",
   annotation: { type: "AC-PERF-09" },
 }, async () => {
+  test.skip(process.platform === "darwin", AC_PERF_09_MAC_SKIP);
   const { application, page } = await launchEditor(large500);
   try {
     await openPreview(page, await fs.readFile(large500, "utf8").then((text) =>
@@ -376,6 +381,7 @@ test("AC-PERF-09: fling-scrolling the 20 MB preview has no frame over 32 ms", {
   tag: "@AC-PERF-09",
   annotation: { type: "AC-PERF-09" },
 }, async () => {
+  test.skip(process.platform === "darwin", AC_PERF_09_MAC_SKIP);
   const firstLine = (await fs.readFile(large20, "utf8")).split("\n")[0] ?? "";
   const { application, page } = await launchEditor(large20);
   try {

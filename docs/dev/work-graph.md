@@ -6,23 +6,28 @@ Update a row when an item is queued, merged or sent back.
 
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
-| 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | review in progress (0861) |
-| 041 | 5 | src/renderer/**, src/main/**, src/shared/**, src/preload/**, test/unit/**, test/e2e/** (brief slice-5.md) | slice 4 (stacked) | dev | sent back (087); fix queued (slice-5-fix) |
-| slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | queued |
+| 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
+| 041 | 5 | listed files only (brief slice-5-fix-2.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869); fix queued (872; job 871 failed on a broken worktree) |
+| slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | candidate 632759b (CI pending) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
 | 042 | 13 | export fixtures under test/fixtures/export/** | main | nim | merged (70d4ea9) |
 | 054 | 6 | test/fixtures/workspace/** | main | side | merged (b6c2dac) |
-| 055 | 14 | test/fixtures/stability/** | main | nim | candidate merge/055 (review queued, 074) |
+| 055 | 14 | test/fixtures/stability/** | main | nim | merged (297b898) |
 | bin-detect | 7 | src/shared/text/binary.ts, test/unit/binaryDetection.test.ts | main | side | merged (1c7481b) |
 | log-fixture | 7 | test/fixtures/log/** | main | side | merged (47a2609) |
-| md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | candidate 092003d (review not queued) |
-| find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | candidate auto/nim/069 (in review, 073) |
+| md-boundaries | 4 | test/fixtures/markdown-boundaries/** | main | side | merged (092003d) |
+| find-replace-fx | 7 | test/fixtures/find-replace/** | main | nim | merged (20faee8) |
 | compare-gen | 10 | test/fixtures/compare/generate-folders.mjs, test/fixtures/compare/README.md | main | side | merged (ce1e212) |
-| replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | queued (076) |
+| replace-in-files-fx | 8 | test/fixtures/replace-in-files/** | main | nim | candidate 8035265 |
 | git-roundtrip-fx | 11 | test/fixtures/merge/git-roundtrip.mjs, test/fixtures/merge/README.md | main | side | merged (82c7b0a) |
 | conflict-style-fx | 11 | test/fixtures/merge/conflict-styles/** | main | side | merged (0724cc9) |
-| gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | queued |
+| gate-fixture-readmes | — | test/fixtures/depcruise/README.md, test/fixtures/fuses/README.md, test/fixtures/licenses/README.md | main | side | candidate de06eb1 |
+| slice7-language-module | 7 | src/shared/text/language.ts, test/unit/language.test.ts | main | nim | review queued (868) |
+| languages-fixture-readme | 7 | test/fixtures/languages/README.md | main | side | review queued (867) |
+| slice7-line-endings | 7 | src/shared/text/lineEndings.ts, test/unit/lineEndings.test.ts | main | nim | queued (874) |
+| slice7-find-replace | 7 | src/shared/text/findReplace.ts, test/unit/findReplace.test.ts | main | side | queued (873) |
+| slice6-tree-generator | 6 | test/fixtures/workspace/generate-tree.mjs, test/fixtures/workspace/README.md | main | dev | done (870); verify red on Pi perf only; review pending |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it

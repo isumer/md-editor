@@ -13,6 +13,15 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-y": "redo",
 });
 
+const DARWIN_DEFAULT_BINDINGS: KeyBindings = Object.freeze({
+  ...DEFAULT_BINDINGS,
+  "Mod-y": undefined,
+});
+
+function defaultBindings(platform: string): KeyBindings {
+  return platform === "darwin" ? DARWIN_DEFAULT_BINDINGS : DEFAULT_BINDINGS;
+}
+
 export interface KeyEventLike {
   key: string;
   code?: string;
@@ -112,7 +121,7 @@ export function chordForEvent(
 export function bindingForEvent(
   event: KeyEventLike,
   platform: string,
-  bindings: KeyBindings = DEFAULT_BINDINGS,
+  bindings: KeyBindings = defaultBindings(platform),
 ): string | undefined {
   const chord = chordForEvent(event, platform);
   return chord === null ? undefined : bindings[chord];
@@ -122,9 +131,8 @@ export function installKeymap(
   target: KeydownTarget,
   options: KeymapOptions,
 ): () => void {
-  const bindings = options.bindings ?? DEFAULT_BINDINGS;
   const listener = (event: KeyEventLike): void => {
-    const commandId = bindingForEvent(event, options.platform, bindings);
+    const commandId = bindingForEvent(event, options.platform, options.bindings);
     if (commandId === undefined) {
       return;
     }
