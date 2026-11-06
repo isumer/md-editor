@@ -28,6 +28,8 @@ not commit). Unit tests pass; 10 e2e tests fail:
    path, fix it. Do not raise thresholds and do not skip on macOS. If a
    budget truly cannot hold on the shared macOS runner, stop and write
    the numbers in the PR body; do not change it yourself.
+   The AC-PERF-10 *open* test (one 101 ms task) is not yours: it is a
+   product problem owned by `docs/dev/briefs/perf-main-thread-tasks.md`.
 
 ## CI
 In `.github/workflows/ci.yml`, run the test matrix on
