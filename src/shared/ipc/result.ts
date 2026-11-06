@@ -11,6 +11,7 @@ export type ServiceErrorCode =
   | "FORBIDDEN_SENDER"
   | "UNSUPPORTED_SCHEME"
   | "TOO_LARGE"
+  | "BINARY_FILE"
   | "UNKNOWN";
 
 export type MessageKey =
@@ -27,6 +28,7 @@ export type MessageKey =
   | "file.diskFull"
   | "file.conflict"
   | "file.tooLarge"
+  | "file.binary"
   | "file.unknown";
 
 export interface ServiceError {

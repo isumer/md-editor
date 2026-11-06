@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Opening a binary file now shows "it is a binary file" and keeps your current document. Files with a UTF-8 or UTF-16 byte order mark still open as text.
 - Images next to a document now show in the preview: relative image paths load from the document's own folder (and its subfolders) and nowhere else; paths that try to escape the folder are refused.
 - A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.

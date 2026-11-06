@@ -10,6 +10,7 @@ import type {
 } from "../../shared/ipc/io";
 import type { ResolvedAsset } from "../../shared/ipc/ioControl";
 import { serviceError, toServiceError } from "../../shared/ipc/result";
+import { isBinarySample } from "../../shared/text/binary";
 import { IoGrantTable } from "../grants";
 import { IoMirrors } from "../mirrors";
 
@@ -93,11 +94,13 @@ export class IoFileService {
 
   async read(windowId: number, grant: string): Promise<{ name: string; text: string }> {
     const filePath = this.grants.resolve(windowId, grant);
+    const name = path.basename(filePath);
     try {
-      return {
-        name: path.basename(filePath),
-        text: await fs.readFile(filePath, "utf8"),
-      };
+      const bytes = await fs.readFile(filePath);
+      if (isBinarySample(bytes)) {
+        throw serviceError("BINARY_FILE", "file.binary", { file: name });
+      }
+      return { name, text: bytes.toString("utf8") };
     } catch (error) {
       return fileError(error, filePath);
     }

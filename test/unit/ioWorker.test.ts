@@ -379,6 +379,46 @@ describe("io-worker file service", () => {
     await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("updated");
   });
 
+  it("AC-R12-01: reading a binary file rejects with its typed error", async () => {
+    const grants = new IoGrantTable();
+    const service = new IoFileService(grants);
+    await service.registerGrant(1, "binary", path.join(
+      __dirname, "../fixtures/binary/nul-byte.bin",
+    ), true);
+
+    await expect(service.read(1, "binary")).rejects.toMatchObject({
+      code: "BINARY_FILE",
+      messageKey: "file.binary",
+      params: { file: "nul-byte.bin" },
+    });
+  });
+
+  it("AC-R12-01: a UTF-16LE BOM exempts a file with NUL bytes", async () => {
+    const grants = new IoGrantTable();
+    const service = new IoFileService(grants);
+    await service.registerGrant(1, "utf16", path.join(
+      __dirname, "../fixtures/binary/utf16le-bom.txt",
+    ), true);
+
+    await expect(service.read(1, "utf16")).resolves.toEqual({
+      name: "utf16le-bom.txt",
+      text: "\uFFFD\uFFFDh\u0000e\u0000l\u0000l\u0000o\u0000",
+    });
+  });
+
+  it("AC-R12-01: a UTF-8 BOM keeps its exact text", async () => {
+    const grants = new IoGrantTable();
+    const service = new IoFileService(grants);
+    await service.registerGrant(1, "utf8-bom", path.join(
+      __dirname, "../fixtures/encodings/utf8-bom.txt",
+    ), true);
+
+    await expect(service.read(1, "utf8-bom")).resolves.toEqual({
+      name: "utf8-bom.txt",
+      text: "\uFEFFhello\n",
+    });
+  });
+
   it("AC-R5-16: read and save failures name the file", async () => {
     const grants = new IoGrantTable();
     const service = new IoFileService(grants);
