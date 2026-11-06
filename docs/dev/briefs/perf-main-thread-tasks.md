@@ -15,6 +15,13 @@ dependencies. Follow AGENTS.md. Commit after each finding.
    the 20 MB preview: one long task of 125 ms (budget: no frame over
    32 ms). Other Windows runs pass.
 
+3. Real Mac (user, 2026-11-07, `--repeat-each 5`): AC-PERF-09 and -10
+   all pass; open long tasks n=0, max 0 ms, ~10,000 blocks in the
+   first preview (CI macOS: 2,532 blocks and one 101 ms task). The
+   tasks appear only on slow shared runners, so reproduce them on
+   Linux with CPU throttling (CDP `Emulation.setCPUThrottlingRate`,
+   4x–6x) in a local probe, not in the committed test.
+
 Both are product problems, not flakes: a task that sometimes crosses the
 budget is a task that is too long. Read the logs with
 `gh run view <run> --log-failed`.
