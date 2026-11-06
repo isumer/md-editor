@@ -32,6 +32,7 @@ Update a row when an item is queued, merged or sent back.
 | slice12-settings-module | 12 | src/shared/settings/settings.ts, test/unit/settings.test.ts | main | side (Edith) | queued (883) |
 | slice8-outline-module | 8 | src/shared/outline/outline.ts, test/unit/outline.test.ts | main | nim (Karen) | queued (884) |
 | slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | queued |
+| io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 merged (same files) | dev | planned: queue when 041 is on main (brief io-port-restart.md) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
