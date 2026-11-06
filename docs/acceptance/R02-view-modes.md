@@ -41,3 +41,9 @@ status: planned
 Given the preview max width is 900 px
 When the window is widened beyond it
 Then the preview text column stays 900 px wide
+
+### AC-R2-08 — View modes take no screen row of their own
+status: planned
+Given the main window with default settings
+When it is shown
+Then there is no toolbar row for view modes; the mode is chosen from the View menu or its shortcut, and the editor area starts directly under the tab bar

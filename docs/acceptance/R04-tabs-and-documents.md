@@ -103,3 +103,9 @@ status: planned
 Given a Markdown tab cloned into view 2 and view 2 set to preview only
 When the user edits in view 1
 Then view 2's preview updates, and the render worker parsed the change once
+
+### AC-R4-18 — Dragging a tab to the right edge opens the second view
+status: planned
+Given one view with two tabs
+When the user drags one tab over the right half of the editor area, sees the drop highlight there, and releases it
+Then a second view opens on the right holding that tab, the first view keeps the other tab, and dropping back on the tab bar of view 1 moves it back (AC-R4-13 then closes view 2)
