@@ -31,6 +31,7 @@ Update a row when an item is queued, merged or sent back.
 | slice7-binary-open | 7 | src/io-worker/services/file.ts, src/shared/ipc/result.ts, src/shared/messages/en.ts, test/unit/ioWorker.test.ts, test/e2e/binary-open.spec.ts | main (binary.ts merged) | dev (Vision) | queued (882) |
 | slice12-settings-module | 12 | src/shared/settings/settings.ts, test/unit/settings.test.ts | main | side (Edith) | queued (883) |
 | slice8-outline-module | 8 | src/shared/outline/outline.ts, test/unit/outline.test.ts | main | nim (Karen) | queued (884) |
+| slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
