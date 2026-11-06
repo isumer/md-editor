@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-2.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869); fix queued (872; job 871 failed on a broken worktree) |
+| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | sent back (087, 869, 881: coverage red); fix-3 queued |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | candidate 632759b (CI pending) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
