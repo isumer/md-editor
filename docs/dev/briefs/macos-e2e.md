@@ -33,6 +33,13 @@ not commit). Unit tests pass; 10 e2e tests fail:
 In `.github/workflows/ci.yml`, run the test matrix on
 `ubuntu-latest`, `windows-latest` and `macos-latest` for every event.
 
+## Allowed files
+`test/e2e/commands.spec.ts`, `test/e2e/save-contracts.spec.ts`,
+`test/e2e/preview-perf.spec.ts`, `test/e2e/helpers.ts` (only for a shared
+platform modifier) and `.github/workflows/ci.yml`. Nothing else. If the
+cause is proven to be in `src/`, stop and write the exact file and line
+in the report: a separate dev brief owns that change.
+
 ## Checks before you finish
 Linux here: `npm run typecheck`, unit, `npx playwright test` for the
 touched specs, all green, with the platform logic covered for darwin in
