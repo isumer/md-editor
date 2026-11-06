@@ -6,3 +6,4 @@ reports/
 playwright-report/
 coverage/
 *.log
+.vitest/
