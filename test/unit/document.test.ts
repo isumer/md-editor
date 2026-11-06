@@ -1,11 +1,64 @@
+import { EditorState, Text } from "@codemirror/state";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createDocumentRecord,
   createDocumentState,
   documentTitle,
+  isDocumentDirty,
+  markDocumentSaved,
   messageParams,
+  setDocumentEol,
   settleDocumentReplacement,
 } from "../../src/renderer/core/document";
+
+describe("document dirty tracking", () => {
+  function record(text: readonly string[], savedText = Text.of(text)) {
+    const state = EditorState.create({ doc: Text.of(text) });
+    return createDocumentRecord({
+      replication: {
+        current: () => ({ docId: "doc", epoch: 1, version: 0 }),
+        changed: vi.fn(),
+      },
+      savedText,
+      state,
+    });
+  }
+
+  it("AC-R4-03: compares text with Text.eq and never flattens the document", () => {
+    const document = record(["# Title", "", "Body"]);
+    const toString = vi.spyOn(Text.prototype, "toString");
+    try {
+      expect(isDocumentDirty(document)).toBe(false);
+      document.state = EditorState.create({ doc: Text.of(["# Title", "", "Body!"]) });
+      expect(isDocumentDirty(document)).toBe(true);
+      expect(toString).not.toHaveBeenCalled();
+    } finally {
+      toString.mockRestore();
+    }
+  });
+
+  it("AC-R4-03: an EOL change is dirty until it is saved", () => {
+    const document = record(["line"]);
+
+    setDocumentEol(document, "crlf");
+
+    expect(document.dirty).toBe(true);
+    markDocumentSaved(document, document.state.doc, 1);
+    expect(document.dirty).toBe(false);
+    expect(document.saved.eol).toBe("crlf");
+  });
+
+  it("AC-R4-03: an edit during a save keeps the document dirty", () => {
+    const document = record(["before"]);
+    const savedSnapshot = document.state.doc;
+    document.state = EditorState.create({ doc: Text.of(["before", "after"]) });
+
+    markDocumentSaved(document, savedSnapshot, 1);
+
+    expect(document.dirty).toBe(true);
+  });
+});
 
 describe("document title", () => {
   it("AC-R5-02: names an untitled clean document without a marker", () => {
