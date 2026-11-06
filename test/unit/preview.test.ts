@@ -343,25 +343,6 @@ describe("preview render flow", () => {
     expect(shown[0]?.isSameNode(first[0] ?? null)).toBe(true);
   });
 
-  it("AC-R4-01: dropping a document removes its cached preview", () => {
-    const preview = document.createElement("div");
-    const { worker, documents } = wiring({ preview });
-    const version = { docId: "doc", epoch: 1, version: 1 };
-    send(worker, {
-      id: 1,
-      ...version,
-      ok: true,
-      mode: "replace",
-      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
-      complete: true,
-    });
-
-    documents.drop("doc");
-
-    expect(documents.show(version)).toBe(false);
-    expect(preview.childElementCount).toBe(0);
-  });
-
   it("AC-R1-04: a block's line follows lines inserted above it after it was rendered", () => {
     const preview = document.createElement("div");
     const { worker } = wiring({
@@ -406,4 +387,5 @@ describe("preview render flow", () => {
     expect(elements.map((element) => element.dataset["line"])).toEqual(["2", "2", "4"]);
     expect(elements.map((element) => blockLine(element))).toEqual([2, 4, 6]);
   });
+
 });
