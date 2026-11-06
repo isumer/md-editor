@@ -1,7 +1,7 @@
 # R08 — Light, dark and system themes, with saved settings
 
 ### AC-R08-01 — Settings load with defaults, migrate and save the same shape
-status: planned
+status: implemented
 Given a settings document
 When the editor loads it
 Then a missing, empty, invalid or wrong-shaped document gives the documented defaults, a version-0 document migrates by renaming `editor.tabWidth` to `editor.tabSize` and keeping its value, unknown keys survive a load-then-save round trip, and saving writes the same shape back
