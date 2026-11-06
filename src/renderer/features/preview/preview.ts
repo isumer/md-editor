@@ -281,6 +281,21 @@ function applyRenderResult(
   });
 }
 
+function requestNextFill(
+  renderWorker: RenderWorkerEvents,
+  response: RenderResult & { ok: true; mode: "append" },
+): void {
+  requestAnimationFrame(() => {
+    renderWorker.postMessage({
+      op: "fill-ready",
+      docId: response.docId,
+      epoch: response.epoch,
+      version: response.version,
+      token: response.fillToken,
+    } satisfies RenderFillReadyMessage);
+  });
+}
+
 function anchorElement(
   root: HTMLElement,
   blockId: string,
@@ -355,13 +370,7 @@ export function wireRenderWorker(
         version: response.version,
       };
       if (response.mode === "append") {
-        renderWorker.postMessage({
-          op: "fill-ready",
-          docId: response.docId,
-          epoch: response.epoch,
-          version: response.version,
-          token: response.fillToken,
-        } satisfies RenderFillReadyMessage);
+        requestNextFill(renderWorker, response);
       }
     }
   };
