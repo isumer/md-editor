@@ -40,6 +40,9 @@ Update a row when an item is queued, merged or sent back.
 | slice7-encoding-module | 7 | src/shared/text/encoding.ts, test/unit/encoding.test.ts | main | nim (Karen) | queued |
 | slice8-line-operations | 8 | src/shared/lines/lineOperations.ts, test/unit/lineOperations.test.ts | main | dev (Vision) | merged (f719ffd) |
 | slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | merged (1cebe83) |
+| slice9-views-sync-scroll | 9 | src/renderer/features/views/**, sync-scroll/**, their tests; minimal registration files (brief slice-9-views-sync-scroll.md) | main | dev (Vision) | brief on main (44c27c5); waits for slice-13a (registry overlap) |
+| slice10-line-diff | 10 | src/shared/diff/lineDiff.ts, src/shared/diff/wordDiff.ts, test/unit/{lineDiff,wordDiff}.test.ts | main | dev (Vision) | queued |
+| slice13a-export | 13 | export module, main export dir, tests, fixtures; registry and message registration (brief slice-13-export.md) | main | dev2 (Vision) | running (921) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
