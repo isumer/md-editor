@@ -76,9 +76,12 @@ describe("close request broker", () => {
   it("AC-R4-06: ignores a result for a request that already settled", async () => {
     const { instance, persist } = broker();
 
+    const pending = instance.request(7);
+    await instance.settle(result, 7);
+    await expect(pending).resolves.toBe(true);
     await instance.settle(result, 7);
 
-    expect(persist).not.toHaveBeenCalled();
+    expect(persist).toHaveBeenCalledOnce();
   });
 
   it("AC-R4-06: uses the system timers when none are injected", async () => {

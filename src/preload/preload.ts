@@ -260,7 +260,6 @@ export class IoPortClient {
 
 interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
-  openPath(request: OpenPathRequest): Promise<Result<DocumentReference>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
   readDocument(grant: string): Promise<Result<ReadDocumentResponse>>;
   attachDocument(request: AttachDocumentInput): Promise<Result<void>>;
@@ -279,7 +278,44 @@ interface Api {
   loadSession(): Promise<Result<SessionLoadResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
-  pathForFile(file: File): string;
+}
+
+const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
+
+type DropFile = Parameters<typeof webUtils.getPathForFile>[0];
+
+interface TrustedDropEvent {
+  readonly dataTransfer: { readonly files: ArrayLike<DropFile> } | null;
+  readonly isTrusted: boolean;
+  preventDefault(): void;
+}
+
+interface DropTarget {
+  addEventListener(type: "drop", listener: (event: TrustedDropEvent) => void): void;
+}
+
+function deliverOpenRequest(request: Result<DocumentReference>): void {
+  for (const listener of openRequestListeners) {
+    listener(request);
+  }
+}
+
+async function openDroppedFiles(event: TrustedDropEvent): Promise<void> {
+  if (!event.isTrusted) {
+    return;
+  }
+  event.preventDefault();
+  for (const file of Array.from(event.dataTransfer?.files ?? [])) {
+    const path = webUtils.getPathForFile(file);
+    if (!path) {
+      continue;
+    }
+    const result = await ipcRenderer.invoke(
+      FILE_CHANNELS.openPath,
+      { path } satisfies OpenPathRequest,
+    ) as Result<DocumentReference>;
+    deliverOpenRequest(result);
+  }
 }
 
 const ioClient = new IoPortClient();
@@ -294,10 +330,6 @@ const api: Api = {
   openFile: () => ipcRenderer.invoke(FILE_CHANNELS.openFile, {}) as Promise<
     Result<DocumentReference | null>
   >,
-  openPath: (request) => ipcRenderer.invoke(
-    FILE_CHANNELS.openPath,
-    request,
-  ) as Promise<Result<DocumentReference>>,
   chooseSaveTarget: (request) => ipcRenderer.invoke(
     FILE_CHANNELS.chooseSaveTarget,
     request,
@@ -366,7 +398,11 @@ const api: Api = {
       listener(request);
     };
     ipcRenderer.on(FILE_CHANNELS.openRequest, handler);
-    return () => ipcRenderer.removeListener(FILE_CHANNELS.openRequest, handler);
+    openRequestListeners.add(listener);
+    return () => {
+      openRequestListeners.delete(listener);
+      ipcRenderer.removeListener(FILE_CHANNELS.openRequest, handler);
+    };
   },
   loadSession: () => ipcRenderer.invoke(
     SESSION_CHANNELS.load,
@@ -386,7 +422,13 @@ const api: Api = {
     ipcRenderer.on(SESSION_CHANNELS.requestClose, handler);
     return () => ipcRenderer.removeListener(SESSION_CHANNELS.requestClose, handler);
   },
-  pathForFile: (file) => webUtils.getPathForFile(file),
 };
+
+const dropTarget = globalThis as unknown as Partial<DropTarget>;
+if (typeof dropTarget.addEventListener === "function") {
+  dropTarget.addEventListener("drop", (event) => {
+    void openDroppedFiles(event).catch(() => undefined);
+  });
+}
 
 contextBridge.exposeInMainWorld("api", api);

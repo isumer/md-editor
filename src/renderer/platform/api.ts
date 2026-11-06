@@ -1,7 +1,6 @@
 import type {
   ChooseSaveTargetRequest,
   DocumentReference,
-  OpenPathRequest,
   OpenRequestReady,
   ReleaseDocumentRequest,
 } from "../../shared/ipc/file";
@@ -31,14 +30,6 @@ const api = window.api;
 
 export function openFile(): Promise<Result<DocumentReference | null>> {
   return api.openFile();
-}
-
-export function openPath(request: OpenPathRequest): Promise<Result<DocumentReference>> {
-  return api.openPath(request);
-}
-
-export function pathForFile(file: File): string {
-  return api.pathForFile(file);
 }
 
 export function loadSession(): Promise<Result<SessionLoadResponse>> {

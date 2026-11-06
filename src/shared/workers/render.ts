@@ -28,24 +28,8 @@ export interface RenderRequest {
   version: number;
 }
 
-// Shows the worker's cached blocks for a document without parsing it again.
-export interface RenderShowMessage {
-  op: "show";
-  id: number;
-  docId: string;
-  epoch: number;
-  version: number;
-}
-
 export interface RenderDetachMessage {
   op: "detach";
-  docId: string;
-}
-
-// Drops the cached incremental render so the next request rebuilds the preview
-// from the mirror. Used when a tab becomes active again.
-export interface RenderResetMessage {
-  op: "reset";
   docId: string;
 }
 
@@ -73,10 +57,8 @@ export type RenderWorkerRequest =
   | RenderAttachMessage
   | RenderChangeMessage
   | RenderRequest
-  | RenderShowMessage
   | RenderDetachMessage
   | RenderFillReadyMessage
-  | RenderResetMessage
   | RenderPingMessage;
 
 interface RenderResultVersion {
@@ -112,7 +94,6 @@ export type RenderResult =
     mode: "replace";
     blocks: readonly RenderBlock[];
     complete: boolean;
-    cached?: boolean;
   })
   | (RenderResultVersion & {
     ok: true;
@@ -265,13 +246,6 @@ function validRender(value: unknown): value is RenderRequest {
     validVersion(data["version"]);
 }
 
-function validShow(value: unknown): value is RenderShowMessage {
-  const data = exactData(value, ["op", "id", "docId", "epoch", "version"]);
-  return data !== null && data["op"] === "show" && validVersion(data["id"]) &&
-    validDocId(data["docId"]) && validVersion(data["epoch"]) &&
-    validVersion(data["version"]);
-}
-
 function validDetach(value: unknown): value is RenderDetachMessage {
   const data = exactData(value, ["op", "docId"]);
   return data !== null && data["op"] === "detach" && validDocId(data["docId"]);
@@ -287,11 +261,6 @@ function validFillReady(value: unknown): value is RenderFillReadyMessage {
     validVersion(data["version"]) && validVersion(data["token"]);
 }
 
-function validReset(value: unknown): value is RenderResetMessage {
-  const data = exactData(value, ["op", "docId"]);
-  return data !== null && data["op"] === "reset" && validDocId(data["docId"]);
-}
-
 function validPing(value: unknown): value is RenderPingMessage {
   const data = exactData(value, ["op", "id"]);
   return data !== null && data["op"] === "ping" && validVersion(data["id"]);
@@ -299,6 +268,5 @@ function validPing(value: unknown): value is RenderPingMessage {
 
 export function isRenderWorkerRequest(value: unknown): value is RenderWorkerRequest {
   return validAttach(value) || validChange(value) || validRender(value) ||
-    validShow(value) || validDetach(value) || validFillReady(value) ||
-    validReset(value) || validPing(value);
+    validDetach(value) || validFillReady(value) || validPing(value);
 }

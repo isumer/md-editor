@@ -49,10 +49,18 @@ describe("draft scheduler", () => {
     expect(draftScheduler.hasPending("doc")).toBe(false);
   });
 
-  it("AC-R4-07: waits ten seconds for a document above five megabytes", () => {
+  it("AC-R4-07: keeps two seconds at five megabytes", () => {
     const { draftScheduler, timers } = scheduler();
 
     draftScheduler.documentChanged("large", 5 * 1024 * 1024);
+
+    expect([...timers.values()][0]?.milliseconds).toBe(2_000);
+  });
+
+  it("AC-R4-07: waits ten seconds above five megabytes", () => {
+    const { draftScheduler, timers } = scheduler();
+
+    draftScheduler.documentChanged("large", 5 * 1024 * 1024 + 1);
 
     expect([...timers.values()][0]?.milliseconds).toBe(10_000);
   });

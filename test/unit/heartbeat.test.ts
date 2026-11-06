@@ -113,12 +113,15 @@ describe("render worker heartbeat", () => {
   });
 
   it("AC-R1-12: uses the system timers when none are injected", () => {
+    const onPing = vi.fn();
     const monitor = new WorkerHeartbeat({
-      onPing: vi.fn(),
+      onPing,
       onStuck: vi.fn(),
     });
 
     monitor.start();
     monitor.stop();
+
+    expect(onPing).toHaveBeenCalledOnce();
   });
 });

@@ -37,7 +37,7 @@ export class DraftScheduler {
 
   documentChanged(docId: string, size: number): void {
     this.cancel(docId);
-    const large = size >= this.largeSize;
+    const large = size > this.largeSize;
     const delay = large ? this.largeIdleMilliseconds : this.idleMilliseconds;
     const handle = this.setTimer(() => {
       this.scheduled.delete(docId);

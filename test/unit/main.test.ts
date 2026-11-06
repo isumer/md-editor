@@ -470,7 +470,7 @@ describe("main process", () => {
     });
   });
 
-  it("AC-R1-12: reloads the renderer after a crash but not after a clean exit", async () => {
+  it("AC-R4-07: reloads the renderer after a crash but not after a clean exit", async () => {
     await loadMain();
     await readyApplication();
     const window = electron.BrowserWindowMock.instances[0];

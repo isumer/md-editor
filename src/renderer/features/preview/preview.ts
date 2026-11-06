@@ -61,6 +61,21 @@ interface BlockLayout {
   pagesInSection: number;
 }
 
+interface DocumentPreview {
+  container: HTMLDivElement;
+  elements: BlockElements;
+  shifts: LineShiftRecord[];
+  layout: BlockLayout;
+  epoch: number;
+  version: number;
+}
+
+export interface PreviewDocuments {
+  drop(docId: string): void;
+  reset(): void;
+  show(version: ReplicatedVersion): boolean;
+}
+
 function resetLayout(layout: BlockLayout): void {
   layout.section = null;
   layout.page = null;
@@ -246,7 +261,6 @@ function applyBlocks(
     // can apply to them.
     shifts.length = 0;
     replaceBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
-    wiring.preview.dataset["renderCache"] = result.cached === true ? "hit" : "miss";
   } else if (result.mode === "append") {
     appendBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else {
@@ -320,15 +334,8 @@ export function blockLine(element: HTMLElement): number {
 export function wireRenderWorker(
   renderWorker: RenderWorkerEvents,
   wiring: RenderWorkerWiring,
-): void {
-  const elements: BlockElements = new Map();
-  const shifts: LineShiftRecord[] = [];
-  const layout: BlockLayout = {
-    section: null,
-    page: null,
-    blocksInPage: 0,
-    pagesInSection: 0,
-  };
+): PreviewDocuments {
+  const previews = new Map<string, DocumentPreview>();
   // Patch results are ordered deltas, so a result is stale only once a newer
   // version has actually been shown; comparing against the live editor version
   // would discard a delta the preview still needs.
@@ -354,8 +361,37 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    const applied = applyRenderResult(response, shifts, wiring, elements, layout);
+    let documentPreview = previews.get(response.docId);
+    if (!documentPreview || documentPreview.epoch !== response.epoch) {
+      const container = document.createElement("div");
+      container.className = "preview-document";
+      documentPreview = {
+        container,
+        elements: new Map(),
+        shifts: [],
+        layout: {
+          section: null,
+          page: null,
+          blocksInPage: 0,
+          pagesInSection: 0,
+        },
+        epoch: response.epoch,
+        version: -1,
+      };
+      previews.set(response.docId, documentPreview);
+    }
+    const documentWiring = { ...wiring, preview: documentPreview.container };
+    const applied = applyRenderResult(
+      response,
+      documentPreview.shifts,
+      documentWiring,
+      documentPreview.elements,
+      documentPreview.layout,
+    );
     if (applied && response.ok) {
+      documentPreview.version = response.version;
+      wiring.preview.replaceChildren(documentPreview.container);
+      wiring.preview.dataset["renderComplete"] = String(response.complete);
       shown = {
         docId: response.docId,
         epoch: response.epoch,
@@ -377,6 +413,31 @@ export function wireRenderWorker(
     const message = event.message || "The preview worker failed";
     wiring.showError(message);
     wiring.showStatus(message);
+  };
+
+  return {
+    drop(docId) {
+      const documentPreview = previews.get(docId);
+      if (documentPreview?.container.isConnected) {
+        wiring.preview.replaceChildren();
+      }
+      previews.delete(docId);
+    },
+    reset() {
+      previews.clear();
+      wiring.preview.replaceChildren();
+    },
+    show(version) {
+      const documentPreview = previews.get(version.docId);
+      if (!documentPreview || documentPreview.epoch !== version.epoch) {
+        wiring.preview.replaceChildren();
+        return false;
+      }
+      wiring.preview.replaceChildren(documentPreview.container);
+      wiring.preview.dataset["renderComplete"] =
+        documentPreview.container.dataset["renderComplete"] ?? "false";
+      return documentPreview.version >= version.version;
+    },
   };
 }
 

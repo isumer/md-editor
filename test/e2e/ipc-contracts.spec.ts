@@ -213,8 +213,6 @@ test("the preload exposes only the fixed named API", {
         "onSessionCloseRequest",
         "openExternal",
         "openFile",
-        "openPath",
-        "pathForFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
@@ -224,6 +222,31 @@ test("the preload exposes only the fixed named API", {
       ],
       legacyGlobal: false,
     });
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+test("page scripts cannot open a path or create a trusted drop", {
+  tag: "@AC-SEC-09",
+  annotation: { type: "AC-SEC-09" },
+}, async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page.getByTestId("tab")).toHaveCount(1);
+
+    const exposed = await page.evaluate(() => ({
+      openPath: "openPath" in window.api,
+      pathForFile: "pathForFile" in window.api,
+    }));
+    expect(exposed).toEqual({ openPath: false, pathForFile: false });
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new DragEvent("drop", {
+        dataTransfer: new DataTransfer(),
+      }));
+    });
+    await expect(page.getByTestId("tab")).toHaveCount(1);
   } finally {
     await closeEditor(application, page);
   }

@@ -51,5 +51,10 @@ describe("document registry", () => {
 
     expect(registry.all()).toEqual([untitled]);
     expect(registry.get("one")).toBe(untitled);
+    expect(registry.findByPath("/tmp/new.md")).toBeUndefined();
+
+    registry.adoptPath("one", "/tmp/new.md");
+
+    expect(registry.findByPath("/tmp/new.md")).toBe(untitled);
   });
 });

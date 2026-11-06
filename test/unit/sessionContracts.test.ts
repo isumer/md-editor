@@ -50,12 +50,12 @@ describe("session IPC contracts", () => {
     expect(isSessionLoadRequest(accessor)).toBe(false);
   });
 
-  it("AC-R4-08: accepts a valid close result with a grant and a document list", () => {
+  it("AC-R4-06: accepts a valid close result with a grant and a document list", () => {
     expect(isSessionCloseResult(validClose)).toBe(true);
     expect(sessionContracts.closeResult.channel).toBe(SESSION_CHANNELS.closeResult);
   });
 
-  it("AC-R4-08: rejects close results with invalid scalar fields", () => {
+  it("AC-SEC-07: rejects close results with invalid scalar fields", () => {
     for (const value of [
       null,
       [],
@@ -72,7 +72,7 @@ describe("session IPC contracts", () => {
     expect(isSessionCloseResult(accessor)).toBe(false);
   });
 
-  it("AC-R4-08: rejects a documents value that is not a plain array", () => {
+  it("AC-SEC-07: rejects a documents value that is not a plain array", () => {
     const badLength = new Proxy([], {
       getOwnPropertyDescriptor: (target, key) => key === "length"
         ? { configurable: false, enumerable: false, value: "1", writable: true }
@@ -100,12 +100,12 @@ describe("session IPC contracts", () => {
     expect(isSessionCloseResult({ ...validClose, documents: hostile })).toBe(false);
   });
 
-  it("AC-R4-08: rejects more than 512 documents", () => {
+  it("AC-SEC-07: rejects more than 512 documents", () => {
     const documents = Array.from({ length: 513 }, () => validDocument);
     expect(isSessionCloseResult({ ...validClose, documents })).toBe(false);
   });
 
-  it("AC-R4-08: rejects a malformed document entry", () => {
+  it("AC-SEC-07: rejects a malformed document entry", () => {
     const invalidDocuments = [
       null,
       1,

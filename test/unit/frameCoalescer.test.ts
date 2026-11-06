@@ -34,7 +34,7 @@ describe("frame coalescer", () => {
     expect(applied).toEqual(["a"]);
   });
 
-  it("AC-R4-03: keeps one pending update per document", () => {
+  it("AC-R4-03: frame batching keeps one pending update per document", () => {
     const { applied, coalescer, runFrame } = harness();
 
     coalescer.changed({ id: "a" });
@@ -45,7 +45,7 @@ describe("frame coalescer", () => {
     expect(applied).toEqual(["a", "b"]);
   });
 
-  it("AC-R4-03: forgets a closed document before the frame runs", () => {
+  it("AC-R4-03: frame batching forgets a closed document before the frame runs", () => {
     const { applied, coalescer, runFrame } = harness();
 
     coalescer.changed({ id: "a" });

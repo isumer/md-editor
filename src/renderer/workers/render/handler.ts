@@ -8,7 +8,6 @@ import type {
   RenderRequest,
   RenderResponse,
   RenderResult,
-  RenderShowMessage,
 } from "../../../shared/workers/render";
 import { isRenderWorkerRequest } from "../../../shared/workers/render";
 import { DocumentMirror } from "../../../shared/replication/mirror";
@@ -68,29 +67,15 @@ export class RenderWorkerHandler {
       case "render":
         this.render(value);
         return;
-      case "show":
-        this.show(value);
-        return;
       case "detach":
         this.detach(value.docId);
         return;
       case "fill-ready":
         this.fillReady(value);
         return;
-      case "reset":
-        this.reset(value.docId);
-        return;
       case "ping":
         this.postResponse({ op: "pong", id: value.id });
         return;
-    }
-  }
-
-  private reset(docId: string): void {
-    const cache = this.renders.get(docId);
-    if (cache) {
-      this.cancelFill(cache);
-      this.renders.delete(docId);
     }
   }
 
@@ -208,44 +193,6 @@ export class RenderWorkerHandler {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-  }
-
-  private show(request: RenderShowMessage): void {
-    const cache = this.renders.get(request.docId);
-    const batch = cache && cache.state.epoch === request.epoch &&
-        cache.state.version === request.version
-      ? cache.state.show()
-      : null;
-    if (!cache || !batch) {
-      this.render({
-        op: "render",
-        id: request.id,
-        docId: request.docId,
-        epoch: request.epoch,
-        version: request.version,
-      });
-      return;
-    }
-    this.cancelFill(cache);
-    cache.request = {
-      op: "render",
-      id: request.id,
-      docId: request.docId,
-      epoch: request.epoch,
-      version: request.version,
-    };
-    this.postResponse({
-      id: request.id,
-      docId: request.docId,
-      epoch: request.epoch,
-      version: request.version,
-      ok: true,
-      mode: "replace",
-      blocks: batch.blocks,
-      complete: batch.complete,
-      cached: true,
-    });
-    this.scheduleFill(cache);
   }
 
   private cachedRender(request: RenderRequest, document: Text): CachedRender {

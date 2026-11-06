@@ -130,31 +130,34 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
   }
 });
 
-test("switching back to a tab shows its cached preview blocks without a re-render", {
+test("switching back reconnects the same preview blocks without appending", {
   tag: "@AC-R4-01",
   annotation: { type: "AC-R4-01" },
 }, async () => {
   const { directory, alpha, beta } = await copyFixtures();
   const { application, page } = await launchEditor(alpha);
   const preview = page.getByTestId("preview");
-  const blockSnapshot = () => preview.locator(".preview-block").evaluateAll(
-    (elements) => elements.map((element) => ({
-      id: (element as HTMLElement).dataset["blockId"],
-      html: element.innerHTML,
-    })),
-  );
   try {
     await expect(preview.locator("h1")).toHaveText("Alpha");
-    const alphaBlocks = await blockSnapshot();
-    expect(alphaBlocks.length).toBeGreaterThan(0);
+    await preview.locator(".preview-block").evaluateAll((elements) => {
+      (globalThis as typeof globalThis & { alphaBlocks?: Element[] }).alphaBlocks = elements;
+    });
 
     await openWithMenu(application, page, beta);
     await expect(preview.locator("h1")).toHaveText("Beta");
+    await page.evaluate(() => performance.clearMeasures("preview-append"));
 
     await tab(page, "alpha.md").click();
     await expect(preview.locator("h1")).toHaveText("Alpha");
-    await expect(preview).toHaveAttribute("data-render-cache", "hit");
-    await expect.poll(blockSnapshot).toEqual(alphaBlocks);
+    const sameNodes = await preview.locator(".preview-block").evaluateAll((elements) => {
+      const saved = (globalThis as typeof globalThis & { alphaBlocks?: Element[] }).alphaBlocks;
+      return saved?.length === elements.length && elements.every(
+        (element, index) => element.isSameNode(saved[index] ?? null) && element.isConnected,
+      );
+    });
+    expect(sameNodes).toBe(true);
+    expect(await page.evaluate(() =>
+      performance.getEntriesByName("preview-append").length)).toBe(0);
   } finally {
     await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });

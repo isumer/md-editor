@@ -1,7 +1,6 @@
 import type {
   ChooseSaveTargetRequest,
   DocumentReference,
-  OpenPathRequest,
   OpenRequestReady,
   ReleaseDocumentRequest,
 } from "../../shared/ipc/file";
@@ -29,7 +28,6 @@ import type {
 
 interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
-  openPath(request: OpenPathRequest): Promise<Result<DocumentReference>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
   readDocument(grant: string): Promise<Result<ReadDocumentResponse>>;
   attachDocument(request: AttachDocumentInput): Promise<Result<void>>;
@@ -48,7 +46,6 @@ interface Api {
   loadSession(): Promise<Result<SessionLoadResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
-  pathForFile(file: File): string;
 }
 
 declare global {
