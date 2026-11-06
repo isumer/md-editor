@@ -84,6 +84,18 @@ describe("close request broker", () => {
     expect(persist).toHaveBeenCalledOnce();
   });
 
+  it("AC-R4-06: a failed session write still lets the close finish", async () => {
+    const send = vi.fn();
+    const persist = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    const instance = new CloseRequestBroker(send, persist);
+
+    const pending = instance.request(7);
+    await expect(instance.settle(result, 7)).rejects.toThrow("disk full");
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("AC-R4-06: uses the system timers when none are injected", async () => {
     const send = vi.fn();
     const persist = vi.fn(async () => undefined);

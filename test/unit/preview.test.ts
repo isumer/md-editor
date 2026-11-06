@@ -33,7 +33,7 @@ function wiring(options: WiringOptions = {}) {
   const showError = vi.fn();
   const onResync = vi.fn();
   const rewriteHtml = options.rewriteHtml ?? ((html: string) => html);
-  wireRenderWorker(worker, {
+  const documents = wireRenderWorker(worker, {
     scheduler,
     preview,
     showStatus,
@@ -42,7 +42,7 @@ function wiring(options: WiringOptions = {}) {
     onResync,
     rewriteHtml,
   });
-  return { worker, preview, showStatus, showError, onResync, rewriteHtml };
+  return { worker, preview, showStatus, showError, onResync, rewriteHtml, documents };
 }
 
 function send(worker: FakeWorker, response: RenderResponse): void {
@@ -300,6 +300,47 @@ describe("preview render flow", () => {
 
     expect(blocks(preview).map((element) => element.textContent))
       .toEqual(["one", "three"]);
+  });
+
+  it("AC-R4-01: a switch back keeps the cached nodes but resumes an unfinished fill", () => {
+    const preview = document.createElement("div");
+    const { worker, documents } = wiring({
+      preview,
+      version: { docId: "doc", epoch: 1, version: 1 },
+    });
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      complete: false,
+    });
+    const first = blocks(preview);
+
+    // The fill pass was still running when the window switched away, so the
+    // cached preview is incomplete: the switch back must ask for a render.
+    expect(documents.show({ docId: "doc", epoch: 1, version: 1 })).toBe(false);
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b2", startLine: 2, endLine: 3, html: "<p>two</p>" }],
+      fillToken: 1,
+      complete: true,
+    });
+
+    expect(documents.show({ docId: "doc", epoch: 1, version: 1 })).toBe(true);
+    const shown = blocks(preview);
+    expect(shown.map((element) => element.textContent)).toEqual(["one", "two"]);
+    expect(shown[0]?.isSameNode(first[0] ?? null)).toBe(true);
   });
 
   it("AC-R1-04: a block's line follows lines inserted above it after it was rendered", () => {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
-  invoke: vi.fn(async () => ({ ok: true, value: null })),
+  invoke: vi.fn(async (): Promise<{ ok: boolean; value: unknown }> => ({ ok: true, value: null })),
   on: vi.fn(),
   removeListener: vi.fn(),
   filePath: vi.fn(() => "/tmp/dropped.md"),
@@ -33,10 +33,24 @@ class FakePort {
   }
 }
 
+interface DropEvent {
+  readonly isTrusted: boolean;
+  readonly dataTransfer: { readonly files: ArrayLike<File> } | null;
+  preventDefault(): void;
+}
+
+const dropListeners = new Map<string, (event: DropEvent) => void>();
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   electron.invoke.mockResolvedValue({ ok: true, value: null });
+  dropListeners.clear();
+  (globalThis as unknown as {
+    addEventListener: (type: string, listener: (event: DropEvent) => void) => void;
+  }).addEventListener = (type, listener) => {
+    dropListeners.set(type, listener);
+  };
 });
 
 async function loadPreload() {
@@ -69,8 +83,6 @@ describe("preload bridge", () => {
         "onSessionCloseRequest",
         "openExternal",
         "openFile",
-        "openPath",
-        "pathForFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
@@ -79,16 +91,16 @@ describe("preload bridge", () => {
         "sendChanges",
       ]
     `);
+    expect(api).not.toHaveProperty("openPath");
+    expect(api).not.toHaveProperty("pathForFile");
 
     await api.openFile();
     await api.chooseSaveTarget({ grant: "grant-a" });
     await api.releaseDocument({ grant: "grant-a" });
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
-    await api.openPath({ path: "/tmp/note.md" });
     await api.loadSession();
     await api.respondSessionClose({ allow: true, documents: [], id: 1 });
-    expect(api.pathForFile({} as File)).toBe("/tmp/dropped.md");
     await api.contributeMenu({
       fileMenuTitle: "File",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
@@ -99,7 +111,6 @@ describe("preload bridge", () => {
       ["file:release-document", { grant: "grant-a" }],
       ["link:open-external", { url: "https://example.com" }],
       ["file:open-requests-ready", {}],
-      ["file:open-path", { path: "/tmp/note.md" }],
       ["session:load", {}],
       ["session:close-result", { allow: true, documents: [], id: 1 }],
       ["menu:contribute", {
@@ -170,6 +181,51 @@ describe("preload bridge", () => {
       ok: true,
       value: { name: "note.md", version: 1 },
     });
+  });
+
+  it("AC-SEC-09: opens only files from a trusted drop, through the preload", async () => {
+    const { api } = await loadPreload();
+    const opened: unknown[] = [];
+    api.onOpenRequest((request: unknown) => {
+      opened.push(request);
+    });
+    const listener = dropListeners.get("drop");
+    expect(listener).toBeDefined();
+    const file = { name: "dropped.md" } as unknown as File;
+
+    // A page-created drop is not trusted: it must not reach the main process.
+    const untrusted = {
+      isTrusted: false,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    };
+    listener?.(untrusted);
+    await Promise.resolve();
+    expect(electron.invoke).not.toHaveBeenCalled();
+    expect(untrusted.preventDefault).not.toHaveBeenCalled();
+
+    // A real drop reaches main as a path and reports the result to the renderer.
+    const reference = {
+      canonicalPath: "/tmp/dropped.md",
+      grant: "grant-d",
+      name: "dropped.md",
+    };
+    electron.invoke.mockResolvedValueOnce({ ok: true, value: reference });
+    const trusted = {
+      isTrusted: true,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    };
+    listener?.(trusted);
+
+    await vi.waitFor(() => {
+      expect(opened).toEqual([{ ok: true, value: reference }]);
+    });
+    expect(trusted.preventDefault).toHaveBeenCalledOnce();
+    expect(electron.invoke).toHaveBeenCalledWith(
+      "file:open-path",
+      { path: "/tmp/dropped.md" },
+    );
   });
 
   it("AC-R5-17: fails pending requests when a replacement port arrives", async () => {

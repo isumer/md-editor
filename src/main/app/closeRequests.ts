@@ -59,9 +59,14 @@ export class CloseRequestBroker {
     }
     this.pending.delete(result.id);
     this.clearTimer(pending.timer);
-    if (result.allow) {
-      await this.persist(result, windowId);
+    // A failed snapshot write must not wedge shutdown; the timeout path
+    // already closes without a snapshot.
+    try {
+      if (result.allow) {
+        await this.persist(result, windowId);
+      }
+    } finally {
+      pending.resolve(result.allow);
     }
-    pending.resolve(result.allow);
   }
 }

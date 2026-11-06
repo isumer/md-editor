@@ -44,7 +44,7 @@ describe("document registry", () => {
     expect(first.canonicalPath).toBe("/tmp/new.md");
   });
 
-  it("AC-R4-01: keeps documents without a path out of the path index", () => {
+  it("AC-R4-02: keeps documents without a path out of the path index", () => {
     const registry = new DocumentRegistry();
     const untitled = document("one", null);
     registry.add(untitled);

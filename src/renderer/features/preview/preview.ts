@@ -436,7 +436,10 @@ export function wireRenderWorker(
       wiring.preview.replaceChildren(documentPreview.container);
       wiring.preview.dataset["renderComplete"] =
         documentPreview.container.dataset["renderComplete"] ?? "false";
-      return documentPreview.version >= version.version;
+      // An incomplete render still has fill batches to receive; the switched-away
+      // window drops them, so a switch back must ask the worker to resume.
+      return documentPreview.version >= version.version &&
+        documentPreview.container.dataset["renderComplete"] === "true";
     },
   };
 }

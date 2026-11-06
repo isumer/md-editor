@@ -16,6 +16,8 @@ import {
   stubOpenDialog,
 } from "./helpers";
 
+const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+
 test.describe.configure({ timeout: 30_000 });
 
 async function copyFixture(): Promise<{ directory: string; document: string }> {
@@ -28,7 +30,7 @@ async function copyFixture(): Promise<{ directory: string; document: string }> {
 async function appendText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(DOCUMENT_END);
   await page.keyboard.type(text);
 }
 
@@ -306,7 +308,7 @@ test("a stuck render worker is restarted within 2.5 s and typing stays responsiv
 
     const editor = page.getByTestId("editor").locator(".cm-content");
     await editor.click();
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("WATCHDOG");
     await expect(editor).toContainText("WATCHDOG", { timeout: 1_000 });
 

@@ -13,6 +13,10 @@ import {
   stubOpenDialog,
 } from "./helpers";
 
+const PRIMARY_MODIFIER = process.platform === "darwin" ? "Meta" : "Control";
+const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+const DOCUMENT_START = process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home";
+
 const tabsDirectory = path.join(repositoryRoot, "test/fixtures/tabs");
 const alphaFixture = path.join(tabsDirectory, "alpha.md");
 const betaFixture = path.join(tabsDirectory, "beta.md");
@@ -67,7 +71,7 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
     await expect(editor).toContainText("alpha-line-01");
 
     await editor.click();
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.press("Enter");
     await page.keyboard.type("ALPHA-EDIT");
     await scrollEditorTo(page, 200);
@@ -78,7 +82,7 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
     // Select the introduction line, then switch away and back: the selection
     // must stay so the next keystroke replaces it.
     await editor.click();
-    await page.keyboard.press("Control+Home");
+    await page.keyboard.press(DOCUMENT_START);
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Shift+End");
@@ -88,7 +92,7 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
     await tab(page, "beta.md").click();
     await page.keyboard.type("BETA-SELECTED");
     await expect(editor).not.toContainText("Beta is the second of two tab fixtures");
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.press("Enter");
     await page.keyboard.type("BETA-END");
 
@@ -103,9 +107,9 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
     // the replacement and then return to the end for the next edit.
     await expect.poll(() => scroller(page).evaluate((element) => element.scrollTop))
       .toBeGreaterThan(150);
-    await page.keyboard.press("Control+Home");
+    await page.keyboard.press(DOCUMENT_START);
     await expect(editor).toContainText("BETA-SELECTED");
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await expect(editor).toContainText("BETA-END");
     await page.keyboard.type("Z");
     await expect(editor).toContainText("BETA-ENDZ");
@@ -113,16 +117,16 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
       .toBeGreaterThan(150);
 
     // Beta's undo history is beta's own.
-    await page.keyboard.press("Control+z");
-    await page.keyboard.press("Control+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
     await expect(editor).not.toContainText("BETA-END");
-    await page.keyboard.press("Control+Home");
+    await page.keyboard.press(DOCUMENT_START);
     await expect(editor).toContainText("beta-line-01");
 
     await tab(page, "alpha.md").click();
-    await page.keyboard.press("Control+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
     await expect(editor).not.toContainText("ALPHA-EDIT");
-    await page.keyboard.press("Control+Home");
+    await page.keyboard.press(DOCUMENT_START);
     await expect(editor).toContainText("alpha-line-01");
   } finally {
     await closeEditor(application, page);
@@ -199,19 +203,19 @@ test("only the dirty tab is marked, and saving or undoing clears it", {
     await openWithMenu(application, page, beta);
     await tab(page, "alpha.md").click();
     const editor = page.getByTestId("editor").locator(".cm-content");
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("DIRTY-A");
 
     await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
     await expect(dirtyMarker(page, "beta.md")).toBeHidden();
 
     // Undo returns to the saved text and clears the marker; redo sets it again.
-    await page.keyboard.press("Control+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
     await expect(dirtyMarker(page, "alpha.md")).toBeHidden();
-    await page.keyboard.press("Control+Shift+z");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+z`);
     await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
 
-    await page.keyboard.press("Control+s");
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+s`);
     await expect(dirtyMarker(page, "alpha.md")).toBeHidden();
     await expect.poll(() => fs.readFile(alpha, "utf8")).toContain("DIRTY-A");
   } finally {
@@ -256,7 +260,7 @@ test("closing a dirty tab honours Cancel, Discard and Save", {
     const editor = page.getByTestId("editor").locator(".cm-content");
     const prompt = page.getByTestId("close-prompt");
     await editor.click();
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("DISCARD-ME");
 
     await tab(page, "alpha.md").getByTestId("tab-close").click();
@@ -278,7 +282,7 @@ test("closing a dirty tab honours Cancel, Discard and Save", {
     await openWithMenu(application, page, alpha);
     await expect(editor).toContainText("alpha-line-01");
     await editor.click();
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("SAVE-ME");
     await tab(page, "alpha.md").getByTestId("tab-close").click();
     await prompt.getByRole("button", { name: "Save" }).click();
