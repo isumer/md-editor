@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | candidate 83a6ac5 (Friday gate passed 2026-11-07; lands when CI is green) |
+| 041 | 5 | listed files only (brief slice-5-fix-4.md: documentLifecycle.ts, en.ts, tabs unit tests, tabs.spec.ts) | slice 4 (stacked) | dev (Vision) | sent back 2026-11-07 (review 946): Save As collision blocker; fix queued (slice-5-fix-4). CI red 42323452878 = AC-PERF-10, owned by 944 |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | merged (main) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
