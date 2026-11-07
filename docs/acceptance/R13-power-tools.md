@@ -29,3 +29,9 @@ status: planned
 Given the default key bindings and a user binding table read from settings
 When the table binds, rebinds or unbinds chords, or holds invalid entries
 Then valid entries replace the defaults in canonical chord form, invalid or duplicate entries and chords that can never fire on the platform are reported and ignored, and the inputs are never changed
+
+### AC-R13-06 — The command palette finds and ranks commands by typed letters
+status: planned
+Given the command list, the recently used command ids and a typed query
+When the palette filters the list
+Then only commands whose titles contain the query letters in order (ignoring case and spaces) are listed, word starts and consecutive letters rank higher, recent commands win ties, the matched letters are reported for highlighting, and the inputs are never changed
