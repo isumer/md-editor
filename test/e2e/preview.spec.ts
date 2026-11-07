@@ -78,12 +78,13 @@ test("editing one block does not re-request another block's image", {
     "![probe](probe.png)\n\nText paragraph without an image.\n",
     "utf8",
   );
-  const { application, page } = await launchEditor(documentPath);
   const imageRequests: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("probe.png")) {
-      imageRequests.push(request.url());
-    }
+  const { application, page } = await launchEditor(documentPath, (readyPage) => {
+    readyPage.on("request", (request) => {
+      if (request.url().includes("probe.png")) {
+        imageRequests.push(request.url());
+      }
+    });
   });
   try {
     const preview = page.getByTestId("preview");

@@ -14,7 +14,10 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
-export async function launchEditor(filePath?: string): Promise<{
+export async function launchEditor(
+  filePath?: string,
+  onPage?: (page: Page) => void,
+): Promise<{
   application: ElectronApplication;
   page: Page;
 }> {
@@ -29,7 +32,19 @@ export async function launchEditor(filePath?: string): Promise<{
     cwd: repositoryRoot,
     env: environment,
   });
-  return { application, page: await application.firstWindow() };
+  const page = await application.firstWindow();
+  // Runs before the argv document is applied, so startup traffic is observable.
+  onPage?.(page);
+  if (filePath) {
+    await expect.poll(
+      () => page.title(),
+      {
+        message: `argv document did not open: ${path.basename(filePath)}`,
+        timeout: 10_000,
+      },
+    ).toContain(path.basename(filePath));
+  }
+  return { application, page };
 }
 
 export async function launchSecondInstance(
