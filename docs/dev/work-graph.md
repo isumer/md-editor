@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | candidate 83a6ac5 (macOS AC-R1-12 fix: 250 ms heartbeat and page-clock timing; c0a3e96 was red) |
+| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | candidate 83a6ac5 (Friday gate passed 2026-11-07; lands when CI is green) |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | merged (main) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
@@ -33,7 +33,7 @@ Update a row when an item is queued, merged or sent back.
 | slice8-outline-module | 8 | src/shared/outline/outline.ts, test/unit/outline.test.ts | main | nim (Karen) | merged (7ad9c3b) |
 | slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | merged (e1ee930) |
 | io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 (stacked on candidate e47bb15) | dev (Vision) | candidate 88aff9b (contains 041 b9130c4, macOS-red; must merge 041 c0a3e96 before it can land) |
-| macos-e2e | 9 | test/e2e/commands.spec.ts, test/e2e/save-contracts.spec.ts, test/e2e/preview-perf.spec.ts, test/e2e/helpers.ts, .github/workflows/ci.yml | main | side (Edith) | queued |
+| macos-e2e | 9 | test/e2e/commands.spec.ts, test/e2e/save-contracts.spec.ts, test/e2e/preview-perf.spec.ts, test/e2e/helpers.ts, .github/workflows/ci.yml | main | side (Edith) | candidate e00eb4a |
 | slice8-word-completion | 8 | src/shared/text/wordCompletion.ts, test/unit/wordCompletion.test.ts | main | nim (Karen) | candidate aad8ad9 |
 | merge-conflict-markers | 11 | src/shared/merge/conflictMarkers.ts, test/unit/conflictMarkers.test.ts | main | dev (Vision) | queued (brief slice-11-conflict-markers-module.md) |
 | slice6-tree-updates | 6 | src/shared/workspace/treeUpdates.ts, test/unit/workspaceTreeUpdates.test.ts | main (treeRows merged) | dev (Vision) | candidate 501e728 |
@@ -43,11 +43,14 @@ Update a row when an item is queued, merged or sent back.
 | slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | merged (1cebe83) |
 | slice9-views-sync-scroll | 9 | src/renderer/features/views/**, sync-scroll/**, their tests; minimal registration files (brief slice-9-views-sync-scroll.md) | main | dev (Vision) | brief on main (44c27c5); waits for slice-13a (registry overlap) |
 | slice10-line-diff | 10 | src/shared/diff/lineDiff.ts, src/shared/diff/wordDiff.ts, test/unit/{lineDiff,wordDiff}.test.ts | main | dev (Vision) | candidate a23d557 |
-| slice13a-export | 13 | export module, main export dir, tests, fixtures; registry and message registration (brief slice-13-export.md) | main | dev2 (Vision) | review (926) |
+| slice13a-export | 13 | export module, main export dir, tests, fixtures; registry and message registration (brief slice-13-export.md) | main | dev2 (Vision) | Friday gate passed 2026-11-07 (merge on d6bc525; AC-R6-02/-04 back to planned for 13b); lands when CI is green |
 | update-policy | 14 | src/shared/update/updatePolicy.ts, test/unit/updateVersion.test.ts, test/unit/updateFeed.test.ts, test/unit/updatePolicy.test.ts | main | dev (Vision) | running (931) |
 | slice10-folder-compare | 10 | src/shared/diff/folderCompare.ts, test/unit/folderCompare.test.ts | main | dev (Vision) | queued (938; brief slice-10-folder-compare-module.md) |
 | slice12-appearance | 12 | src/shared/settings/appearance.ts, test/unit/appearance.test.ts | main | nim (Karen) | queued (940; brief slice-12-appearance-module-nim.md) |
 | slice14-update-feed-fixtures | 14 | test/fixtures/update/** | main | side (Edith) | queued (939; brief slice-14-update-feed-fixtures-side.md) |
+| perf-open-long-task-2 | 4 (bug) | src/renderer/features/preview/{preview,renderScheduler}.ts, src/renderer/workers/render/{handler,incremental,chunks}.ts, their unit tests, test/e2e/preview-perf.spec.ts (message only) | main | dev (Vision) | queued (944; brief perf-open-long-task-2.md; owns main's macOS AC-PERF-10 red) |
+| slice8-user-bindings | 8 | src/shared/keymap/userBindings.ts, test/unit/userBindings.test.ts | main | nim (Karen) | queued (945; brief slice-8-user-bindings-module-nim.md) |
+| slice11-merge-chunks | 11 | src/shared/merge/mergeChunks.ts, test/unit/mergeChunks.test.ts | main | dev (Vision) | queued (brief slice-11-merge-chunks-module.md; dev reserve) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it

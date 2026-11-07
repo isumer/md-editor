@@ -23,3 +23,9 @@ status: planned
 Given a document and a cursor in a word
 When the user has typed at least two word characters
 Then the words elsewhere in the document that start with that prefix are suggested once each, case-insensitively, in document order, without the word at the cursor, and the input is never changed
+
+### AC-R13-05 — User key bindings override the defaults safely
+status: planned
+Given the default key bindings and a user binding table read from settings
+When the table binds, rebinds or unbinds chords, or holds invalid entries
+Then valid entries replace the defaults in canonical chord form, invalid or duplicate entries and chords that can never fire on the platform are reported and ignored, and the inputs are never changed
