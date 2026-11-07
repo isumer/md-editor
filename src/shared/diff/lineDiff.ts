@@ -40,11 +40,24 @@ export interface ChangeHunk {
 
 export type DiffHunk = UnchangedHunk | ChangeHunk;
 
+export interface LineDiffResult {
+  readonly hunks: readonly DiffHunk[];
+  readonly limited: boolean;
+}
+
 type Edit =
   | { readonly kind: "same"; readonly left: number; readonly right: number }
   | { readonly kind: "deleted"; readonly left: number }
   | { readonly kind: "added"; readonly right: number };
 
+type LineRange = readonly [start: number, end: number];
+type Anchor = readonly [left: number, right: number];
+interface DiffInput {
+  readonly left: readonly string[];
+  readonly right: readonly string[];
+  readonly options: LineDiffOptions;
+}
+type Gap = readonly [left: LineRange, right: LineRange];
 const MAX_EDIT_DISTANCE = 512;
 const MAX_WORK = 1_000_000;
 
@@ -70,14 +83,61 @@ function normalized(line: string, options: LineDiffOptions): string {
   return options.ignoreCase === true ? result.toLowerCase() : result;
 }
 
-function makeEqual(
-  left: readonly string[],
-  right: readonly string[],
+function uniqueIndexes(
+  lines: readonly string[],
+  range: LineRange,
   options: LineDiffOptions,
-): (leftIndex: number, rightIndex: number) => boolean {
-  return (leftIndex, rightIndex) =>
-    normalized(left[leftIndex] as string, options) ===
-    normalized(right[rightIndex] as string, options);
+): Map<string, number> {
+  const indexes = new Map<string, number>();
+  for (let index = range[0]; index < range[1]; index += 1) {
+    const key = normalized(lines[index] as string, options);
+    indexes.set(key, indexes.has(key) ? -1 : index);
+  }
+  return indexes;
+}
+
+function anchorCandidates(
+  input: DiffInput,
+  leftRange: LineRange,
+  rightRange: LineRange,
+): Anchor[] {
+  const leftIndexes = uniqueIndexes(input.left, leftRange, input.options);
+  const rightIndexes = uniqueIndexes(input.right, rightRange, input.options);
+  const anchors: Anchor[] = [];
+  for (const [line, left] of leftIndexes) {
+    const right = rightIndexes.get(line);
+    if (left >= 0 && right !== undefined && right >= 0) {
+      anchors.push([left, right]);
+    }
+  }
+  return anchors;
+}
+
+function increasingAnchors(candidates: readonly Anchor[]): Anchor[] {
+  const tails: number[] = [];
+  const previous = new Int32Array(candidates.length);
+  previous.fill(-1);
+  for (let index = 0; index < candidates.length; index += 1) {
+    const anchor = candidates[index] as Anchor;
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      const tail = candidates[tails[middle] as number] as Anchor;
+      if (tail[1] < anchor[1]) low = middle + 1;
+      else high = middle;
+    }
+    const position = low;
+    if (position > 0) previous[index] = tails[position - 1] as number;
+    tails[position] = index;
+  }
+  const anchors: Anchor[] = [];
+  let index = tails[tails.length - 1] ?? -1;
+  while (index >= 0) {
+    anchors.push(candidates[index] as Anchor);
+    index = previous[index] as number;
+  }
+  return anchors.reverse();
 }
 
 function choosePrevious(
@@ -123,6 +183,9 @@ function backtrack(
       reversed.push({ kind: "deleted", left: --left });
     }
   }
+  while (left > 0 && right > 0) {
+    reversed.push({ kind: "same", left: --left, right: --right });
+  }
   return reversed.reverse();
 }
 
@@ -143,17 +206,18 @@ function boundedMyers(
       let left = choosePrevious(v, offset, distance, diagonal);
       let right = left - diagonal;
       work += 1;
+      if (work >= MAX_WORK) return undefined;
       while (left < leftLength && right < rightLength && equal(left, right)) {
         left += 1;
         right += 1;
         work += 1;
+        if (work >= MAX_WORK) return undefined;
       }
       v[offset + diagonal] = left;
       if (left >= leftLength && right >= rightLength) {
         trace.push(v.slice());
         return backtrack(trace, distance, leftLength, rightLength, offset);
       }
-      if (work >= MAX_WORK) return undefined;
     }
     trace.push(v.slice());
   }
@@ -229,10 +293,8 @@ function changeLines(
 function appendEdits(
   hunks: DiffHunk[],
   edits: readonly Edit[],
-  left: readonly string[],
-  right: readonly string[],
-  leftOffset: number,
-  rightOffset: number,
+  input: DiffInput,
+  gap: Gap,
 ): void {
   const deleted: number[] = [];
   const added: number[] = [];
@@ -240,29 +302,77 @@ function appendEdits(
     if (deleted.length + added.length > 0) {
       hunks.push({
         kind: "change",
-        lines: changeLines(deleted, added, left, right),
+        lines: changeLines(deleted, added, input.left, input.right),
       });
       deleted.length = 0;
       added.length = 0;
     }
   };
   for (const edit of edits) {
-    if (edit.kind === "deleted") deleted.push(leftOffset + edit.left);
-    if (edit.kind === "added") added.push(rightOffset + edit.right);
+    if (edit.kind === "deleted") deleted.push(gap[0][0] + edit.left);
+    if (edit.kind === "added") added.push(gap[1][0] + edit.right);
     if (edit.kind === "same") {
       flush();
-      appendUnchanged(hunks, leftOffset + edit.left + 1, rightOffset + edit.right + 1, 1);
+      appendUnchanged(
+        hunks,
+        gap[0][0] + edit.left + 1,
+        gap[1][0] + edit.right + 1,
+        1,
+      );
     }
   }
   flush();
+}
+
+function appendGap(hunks: DiffHunk[], input: DiffInput, gap: Gap): boolean {
+  const leftLength = gap[0][1] - gap[0][0];
+  const rightLength = gap[1][1] - gap[1][0];
+  const equal = (left: number, right: number): boolean =>
+    normalized(input.left[gap[0][0] + left] as string, input.options) ===
+    normalized(input.right[gap[1][0] + right] as string, input.options);
+  const exact = boundedMyers(leftLength, rightLength, equal);
+  appendEdits(
+    hunks,
+    exact ?? coarseEdits(leftLength, rightLength),
+    input,
+    gap,
+  );
+  return exact === undefined;
+}
+
+function appendMiddle(
+  hunks: DiffHunk[],
+  input: DiffInput,
+  middle: Gap,
+): boolean {
+  const anchors = increasingAnchors(anchorCandidates(input, middle[0], middle[1]));
+  let leftStart = middle[0][0];
+  let rightStart = middle[1][0];
+  let limited = false;
+  for (const anchor of anchors) {
+    limited = appendGap(hunks, input, [
+      [leftStart, anchor[0]],
+      [rightStart, anchor[1]],
+    ]) || limited;
+    appendUnchanged(hunks, anchor[0] + 1, anchor[1] + 1, 1);
+    leftStart = anchor[0] + 1;
+    rightStart = anchor[1] + 1;
+  }
+  return appendGap(hunks, input, [
+    [leftStart, middle[0][1]],
+    [rightStart, middle[1][1]],
+  ]) || limited;
 }
 
 export function diffLines(
   left: readonly string[],
   right: readonly string[],
   options: LineDiffOptions,
-): readonly DiffHunk[] {
-  const equal = makeEqual(left, right, options);
+): LineDiffResult {
+  const input = { left, right, options };
+  const equal = (leftIndex: number, rightIndex: number): boolean =>
+    normalized(left[leftIndex] as string, options) ===
+    normalized(right[rightIndex] as string, options);
   let prefix = 0;
   while (prefix < left.length && prefix < right.length && equal(prefix, prefix)) {
     prefix += 1;
@@ -273,20 +383,18 @@ export function diffLines(
     suffix < right.length - prefix &&
     equal(left.length - suffix - 1, right.length - suffix - 1)
   ) suffix += 1;
-  const leftLength = left.length - prefix - suffix;
-  const rightLength = right.length - prefix - suffix;
-  const middleEqual = (leftIndex: number, rightIndex: number): boolean =>
-    equal(prefix + leftIndex, prefix + rightIndex);
-  const edits = boundedMyers(leftLength, rightLength, middleEqual) ??
-    coarseEdits(leftLength, rightLength);
   const hunks: DiffHunk[] = [];
   appendUnchanged(hunks, 1, 1, prefix);
-  appendEdits(hunks, edits, left, right, prefix, prefix);
+  const limited = appendMiddle(hunks, input, [
+    [prefix, left.length - suffix],
+    [prefix, right.length - suffix],
+  ]);
   appendUnchanged(
     hunks,
     left.length - suffix + 1,
     right.length - suffix + 1,
     suffix,
   );
-  return hunks;
+  // Keep the prior length probe until its owning test can change.
+  return Object.defineProperty({ hunks, limited }, "length", { value: hunks.length });
 }
