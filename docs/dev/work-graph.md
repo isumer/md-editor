@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | candidate 83a6ac5 (macOS AC-R1-12 fix: 250 ms heartbeat and page-clock timing; c0a3e96 was red) |
+| 041 | 5 | listed files only (brief slice-5-fix-3.md; no broad globs) | slice 4 (stacked) | dev | candidate 83a6ac5 (Friday gate passed 2026-11-07; lands when CI is green) |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | merged (main) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
@@ -48,6 +48,8 @@ Update a row when an item is queued, merged or sent back.
 | slice10-folder-compare | 10 | src/shared/diff/folderCompare.ts, test/unit/folderCompare.test.ts | main | dev (Vision) | queued (938; brief slice-10-folder-compare-module.md) |
 | slice12-appearance | 12 | src/shared/settings/appearance.ts, test/unit/appearance.test.ts | main | nim (Karen) | queued (940; brief slice-12-appearance-module-nim.md) |
 | slice14-update-feed-fixtures | 14 | test/fixtures/update/** | main | side (Edith) | queued (939; brief slice-14-update-feed-fixtures-side.md) |
+| perf-open-long-task-2 | 4 (bug) | src/renderer/features/preview/{preview,renderScheduler}.ts, src/renderer/workers/render/{handler,incremental,chunks}.ts, their unit tests, test/e2e/preview-perf.spec.ts (message only) | main | dev (Vision) | queued (944; brief perf-open-long-task-2.md; owns main's macOS AC-PERF-10 red) |
+| slice8-user-bindings | 8 | src/shared/keymap/userBindings.ts, test/unit/userBindings.test.ts | main | nim (Karen) | queued (945; brief slice-8-user-bindings-module-nim.md) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
