@@ -65,7 +65,7 @@ interface ChangedRange {
 // Only the first screen is sent in the initial replace. The rest arrives in
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
-const FILL_BATCH_SIZE = 8;
+const FILL_BATCH_SIZE = 4;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
 // Segment lookups are linear; compacting an edit-heavy session keeps the list
 // short. Compaction is amortised over the edits that created the segments.

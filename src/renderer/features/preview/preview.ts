@@ -364,7 +364,9 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
+    performance.mark("preview-apply-start");
     const applied = applyRenderResult(response, shifts, wiring, elements, layout);
+    performance.mark("preview-apply-end");
     if (applied && response.ok) {
       shown = {
         docId: response.docId,
