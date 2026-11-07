@@ -42,7 +42,8 @@ Update a row when an item is queued, merged or sent back.
 | slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | merged (1cebe83) |
 | slice9-views-sync-scroll | 9 | src/renderer/features/views/**, sync-scroll/**, their tests; minimal registration files (brief slice-9-views-sync-scroll.md) | main | dev (Vision) | brief on main (44c27c5); waits for slice-13a (registry overlap) |
 | slice10-line-diff | 10 | src/shared/diff/lineDiff.ts, src/shared/diff/wordDiff.ts, test/unit/{lineDiff,wordDiff}.test.ts | main | dev (Vision) | queued |
-| slice13a-export | 13 | export module, main export dir, tests, fixtures; registry and message registration (brief slice-13-export.md) | main | dev2 (Vision) | running (921) |
+| slice13a-export | 13 | export module, main export dir, tests, fixtures; registry and message registration (brief slice-13-export.md) | main | dev2 (Vision) | review (926) |
+| update-policy | 14 | src/shared/update/updatePolicy.ts, test/unit/updateVersion.test.ts, test/unit/updateFeed.test.ts, test/unit/updatePolicy.test.ts | main | dev (Vision) | queued |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
