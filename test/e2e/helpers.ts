@@ -9,6 +9,11 @@ import {
   type Page,
 } from "@playwright/test";
 
+// macOS uses Cmd (Meta) where Windows and Linux use Ctrl; chords follow the platform.
+export const PRIMARY_MODIFIER = process.platform === "darwin" ? "Meta" : "Control";
+export const DOCUMENT_START = process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home";
+export const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+
 export const repositoryRoot = path.resolve(__dirname, "../..");
 export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
