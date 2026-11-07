@@ -89,6 +89,7 @@ describe("IPC contracts", () => {
   it("AC-SEC-11: contract channel names and menu item ids are fixed", () => {
     expect(FILE_CHANNELS).toEqual({
       openFile: "file:open",
+      openPath: "file:open-path",
       chooseSaveTarget: "file:choose-save-target",
       releaseDocument: "file:release-document",
       openRequestsReady: "file:open-requests-ready",

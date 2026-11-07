@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { launchEditor } from "./helpers";
+import { closeEditor, launchEditor } from "./helpers";
 
 test.describe.configure({ timeout: 60_000 });
 
@@ -56,7 +56,7 @@ test("typing in paragraph 3 keeps every other preview paragraph's DOM node", {
       before.filter((_text, index) => index !== 3),
     );
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
@@ -102,7 +102,7 @@ test("editing one block does not re-request another block's image", {
 
     expect(imageRequests.length).toBe(requestsBefore);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
