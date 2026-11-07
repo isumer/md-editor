@@ -1,4 +1,4 @@
-# Slice 10 folder compare fix — prove the right-only error branch (send-back of gate 958)
+# Slice 10 folder compare fix - prove the right-only error branch (send-back of gate 958)
 
 Work on branch `feature/slice10-folder-compare` (tip `e71c58e`). Run
 `git merge origin/main` first. Change no behaviour. Add no dependency. Add
@@ -18,7 +18,7 @@ check:deps and test:unit pass. AC-R14-12, -14 and -15 stay `planned`.
 
 Change no other file.
 
-## Finding 1 (Major) — the right-only unreadable-file branch has no proof
+## Finding 1 (Major) - the right-only unreadable-file branch has no proof
 `src/shared/diff/folderCompare.ts:125` returns `error` for a file that is
 present only on the right and has `error` set. No test has such an entry.
 Evidence: change the line to `const status = "right-only";`. All 12 tests
