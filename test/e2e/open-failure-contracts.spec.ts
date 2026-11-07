@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   clickMenuItem,
+  closeEditor,
   fixturePath,
   launchEditor,
   stubOpenDialog,
@@ -29,7 +30,7 @@ async function expectFailedOpenToPreserveDocument(
     expect(await editor.textContent()).toBe(editorText);
     expect(await page.title()).toBe(title);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 }
 
