@@ -87,6 +87,18 @@ const electron = vi.hoisted(() => {
           result: { ok: true, value: { path: "/tmp/asset.png" } },
         }));
       }
+      if (message.type === "readSession") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: { version: 1, documents: [] } },
+        }));
+      }
+      if (message.type === "writeSession") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: {} },
+        }));
+      }
     }
   }
 
@@ -104,6 +116,7 @@ const electron = vi.hoisted(() => {
     readonly webHandlers = new Map<string, (...args: any[]) => unknown>();
     windowOpenHandler: ((details: { url: string }) => unknown) | undefined;
     destroyed = false;
+    close = vi.fn();
     show = vi.fn();
     focus = vi.fn();
     restore = vi.fn();
@@ -119,6 +132,7 @@ const electron = vi.hoisted(() => {
       }),
       send: vi.fn(),
       postMessage: vi.fn(),
+      reload: vi.fn(),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => unknown) => {
         this.windowOpenHandler = handler;
       }),
@@ -297,6 +311,21 @@ async function readyApplication(): Promise<void> {
   await vi.waitFor(() => expect(electron.BrowserWindowMock.instances).toHaveLength(1));
 }
 
+async function withPlatform(
+  platform: NodeJS.Platform,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { configurable: true, value: platform });
+  try {
+    await operation();
+  } finally {
+    if (descriptor) {
+      Object.defineProperty(process, "platform", descriptor);
+    }
+  }
+}
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
@@ -424,11 +453,14 @@ describe("main process", () => {
       .resolves.toEqual({ ok: true, value: undefined });
     expect([...electron.ipcHandlers.keys()]).toEqual([
       "file:open",
+      "file:open-path",
       "file:choose-save-target",
       "file:release-document",
       "link:open-external",
       "file:open-requests-ready",
       "menu:contribute",
+      "session:load",
+      "session:close-result",
     ]);
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
@@ -451,6 +483,19 @@ describe("main process", () => {
       ok: true,
       value: { productName: "MD Editor" },
     });
+  });
+
+  it("AC-R4-07: reloads the renderer after a crash but not after a clean exit", async () => {
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    const processGone = window?.webHandlers.get("render-process-gone");
+
+    processGone?.({}, { reason: "clean-exit" });
+    expect(window?.webContents.reload).not.toHaveBeenCalled();
+
+    processGone?.({}, { reason: "crashed" });
+    expect(window?.webContents.reload).toHaveBeenCalledOnce();
   });
 
   it("AC-SEC-16 AC-SEC-17: serves document assets only through the resolver", async () => {
@@ -552,6 +597,7 @@ describe("main process", () => {
       {
         ok: true,
         value: {
+          canonicalPath: expect.any(String),
           grant: expect.any(String),
           name: "document.md",
         },
@@ -576,6 +622,7 @@ describe("main process", () => {
       {
         ok: true,
         value: {
+          canonicalPath: expect.any(String),
           grant: expect.any(String),
           name: "second.md",
         },
@@ -592,6 +639,7 @@ describe("main process", () => {
       {
         ok: true,
         value: {
+          canonicalPath: expect.any(String),
           grant: expect.any(String),
           name: "from-finder.md",
         },
@@ -692,7 +740,8 @@ describe("main process", () => {
     await vi.waitFor(() => expect(worker?.pid).toBeDefined());
 
     if (window) {
-      window.mainFrame.url = "https://example.com/";
+      // A same-prefix URL must be refused too: the check is exact match, not startsWith.
+      window.mainFrame.url = "app://bundle/index.html/extra";
     }
     window?.webHandlers.get("did-finish-load")?.();
     await vi.waitFor(() => expect(worker?.posts).toContainEqual(expect.objectContaining({
@@ -706,6 +755,7 @@ describe("main process", () => {
       code: 9,
       signal: null,
     }));
+    expect(window?.webContents.send).not.toHaveBeenCalledWith("io:port-lost");
     const replacement = electron.UtilityProcessMock.instances[1];
     await vi.waitFor(() => expect(replacement?.pid).toBeDefined());
     if (replacement) {
@@ -722,7 +772,158 @@ describe("main process", () => {
       expect.stringContaining('"event":"close-window"'),
     ));
 
-    electron.appHandlers.get("before-quit")?.();
+    electron.appHandlers.get("will-quit")?.();
     expect(replacement?.kill).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R5-17: tells the window when its io-worker port is lost", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    const worker = electron.UtilityProcessMock.instances[0];
+    await vi.waitFor(() => expect(worker?.pid).toBeDefined());
+    window?.webHandlers.get("did-finish-load")?.();
+    await vi.waitFor(() => expect(worker?.posts).toContainEqual(expect.objectContaining({
+      message: { type: "attachPort", windowId: window?.id },
+    })));
+
+    worker?.emit("exit", 9);
+
+    expect(window?.webContents.send).toHaveBeenCalledWith("io:port-lost");
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"io-worker-exit"'));
+  });
+
+  it("AC-R4-06: asks the renderer before closing and writes the allowed session", async () => {
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    if (!window) {
+      throw new Error("missing application window");
+    }
+    fileSystem.access.mockResolvedValueOnce(undefined);
+    fileSystem.readFile.mockResolvedValueOnce("saved text");
+    fileSystem.realpath.mockResolvedValueOnce("/tmp/session-open.md");
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ["/tmp/session-open.md"],
+    });
+    const opened = await invoke("file:open", {});
+    const grant = (opened as { value: { grant: string } }).value.grant;
+
+    const preventDefault = vi.fn();
+    window.windowHandlers.get("close")?.({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(window.webContents.send).toHaveBeenCalledWith(
+      "session:request-close",
+      { id: 1 },
+    ));
+
+    await expect(invoke("session:close-result", {
+      allow: true,
+      documents: [
+        {
+          grant,
+          name: "session-open.md",
+          savedText: "saved text",
+          text: "unsaved text",
+        },
+        {
+          grant: "missing-grant",
+          name: "gone.md",
+          savedText: "saved",
+          text: "unsaved",
+        },
+      ],
+      id: 1,
+    })).resolves.toEqual({ ok: true, value: undefined });
+    await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+
+    const worker = electron.UtilityProcessMock.instances.at(-1);
+    const write = worker?.posts.find(({ message }) =>
+      (message as { type?: string }).type === "writeSession")?.message as
+      | { session?: { documents?: unknown[]; version?: number } }
+      | undefined;
+    expect(write?.session).toEqual({
+      documents: [{
+        name: "session-open.md",
+        path: "/tmp/session-open.md",
+        savedText: "saved text",
+        text: "unsaved text",
+      }],
+      version: 1,
+    });
+  });
+
+  it("AC-R4-06: a failing close request still closes the window", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    if (!window) {
+      throw new Error("missing application window");
+    }
+    window.webContents.send.mockImplementationOnce(() => {
+      throw new Error("renderer gone");
+    });
+
+    window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+
+    await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+    expect(errorSpy).toHaveBeenCalledWith(JSON.stringify({
+      event: "close-request",
+      message: "renderer gone",
+    }));
+  });
+
+  it("AC-R4-06: a quit deferred by the close prompt quits after the window closes", async () => {
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+      const window = electron.BrowserWindowMock.instances[0];
+      if (!window) {
+        throw new Error("missing application window");
+      }
+
+      // app.quit() stops at the window close prompt. The quit must resume
+      // once the user answers and the last window is gone.
+      electron.appHandlers.get("before-quit")?.();
+      window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+      await expect(invoke("session:close-result", {
+        allow: true,
+        documents: [],
+        id: 1,
+      })).resolves.toEqual({ ok: true, value: undefined });
+      await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+
+      electron.appHandlers.get("window-all-closed")?.();
+
+      expect(electron.app.quit).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("AC-R4-06: cancelling the close prompt cancels the deferred quit", async () => {
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+      const window = electron.BrowserWindowMock.instances[0];
+      if (!window) {
+        throw new Error("missing application window");
+      }
+
+      electron.appHandlers.get("before-quit")?.();
+      window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+      await expect(invoke("session:close-result", {
+        allow: false,
+        documents: [],
+        id: 1,
+      })).resolves.toEqual({ ok: true, value: undefined });
+
+      electron.appHandlers.get("window-all-closed")?.();
+
+      // Keep editing leaves the window open, so a later window close is a
+      // plain macOS close, not the cancelled quit.
+      expect(electron.app.quit).not.toHaveBeenCalled();
+    });
   });
 });
