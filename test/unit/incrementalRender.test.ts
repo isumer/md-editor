@@ -414,31 +414,6 @@ describe("progressive large-document rendering", () => {
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
 
-  it("AC-PERF-10: each progressive fill limits synchronous preview work", async () => {
-    vi.useFakeTimers();
-    const scope = new FakeScope();
-    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
-    handler.handle({
-      op: "attach",
-      docId: "doc",
-      epoch: 1,
-      version: 0,
-      text: largeDocument(),
-    });
-    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
-
-    await drainFill(handler, scope);
-    const appends = scope.results().filter((result) =>
-      result.ok && result.mode === "append");
-
-    expect(appends.length).toBeGreaterThan(0);
-    for (const result of appends) {
-      if (result.ok && result.mode === "append") {
-        expect(result.blocks.length).toBeLessThanOrEqual(4);
-      }
-    }
-  });
-
   it("AC-R1-06: a non-Error fill failure is reported as a message", async () => {
     vi.useFakeTimers();
     const scope = new FakeScope();

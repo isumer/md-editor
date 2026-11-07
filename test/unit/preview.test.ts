@@ -52,6 +52,49 @@ function blocks(preview: HTMLElement): HTMLElement[] {
 }
 
 describe("preview render flow", () => {
+  it("AC-PERF-10: defers part of a large preview append to a later task", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+
+    expect(blocks(preview).length).toBeGreaterThan(0);
+    expect(blocks(preview).length).toBeLessThan(renderedBlocks.length);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview)).toHaveLength(renderedBlocks.length);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+
+    frames[0]?.(16);
+    expect(worker.postMessage).toHaveBeenCalledWith({
+      op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
+    });
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
