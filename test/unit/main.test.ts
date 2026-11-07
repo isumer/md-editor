@@ -311,6 +311,21 @@ async function readyApplication(): Promise<void> {
   await vi.waitFor(() => expect(electron.BrowserWindowMock.instances).toHaveLength(1));
 }
 
+async function withPlatform(
+  platform: NodeJS.Platform,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { configurable: true, value: platform });
+  try {
+    await operation();
+  } finally {
+    if (descriptor) {
+      Object.defineProperty(process, "platform", descriptor);
+    }
+  }
+}
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
@@ -725,7 +740,8 @@ describe("main process", () => {
     await vi.waitFor(() => expect(worker?.pid).toBeDefined());
 
     if (window) {
-      window.mainFrame.url = "https://example.com/";
+      // A same-prefix URL must be refused too: the check is exact match, not startsWith.
+      window.mainFrame.url = "app://bundle/index.html/extra";
     }
     window?.webHandlers.get("did-finish-load")?.();
     await vi.waitFor(() => expect(worker?.posts).toContainEqual(expect.objectContaining({
@@ -858,5 +874,56 @@ describe("main process", () => {
       event: "close-request",
       message: "renderer gone",
     }));
+  });
+
+  it("AC-R4-06: a quit deferred by the close prompt quits after the window closes", async () => {
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+      const window = electron.BrowserWindowMock.instances[0];
+      if (!window) {
+        throw new Error("missing application window");
+      }
+
+      // app.quit() stops at the window close prompt. The quit must resume
+      // once the user answers and the last window is gone.
+      electron.appHandlers.get("before-quit")?.();
+      window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+      await expect(invoke("session:close-result", {
+        allow: true,
+        documents: [],
+        id: 1,
+      })).resolves.toEqual({ ok: true, value: undefined });
+      await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+
+      electron.appHandlers.get("window-all-closed")?.();
+
+      expect(electron.app.quit).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("AC-R4-06: cancelling the close prompt cancels the deferred quit", async () => {
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+      const window = electron.BrowserWindowMock.instances[0];
+      if (!window) {
+        throw new Error("missing application window");
+      }
+
+      electron.appHandlers.get("before-quit")?.();
+      window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+      await expect(invoke("session:close-result", {
+        allow: false,
+        documents: [],
+        id: 1,
+      })).resolves.toEqual({ ok: true, value: undefined });
+
+      electron.appHandlers.get("window-all-closed")?.();
+
+      // Keep editing leaves the window open, so a later window close is a
+      // plain macOS close, not the cancelled quit.
+      expect(electron.app.quit).not.toHaveBeenCalled();
+    });
   });
 });

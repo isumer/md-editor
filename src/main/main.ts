@@ -115,7 +115,13 @@ function createApplicationWindow(): void {
       openExternalBackstop: (url) => openExternalBackstop(url, logProcessEvent),
       attachIoPort,
       closeWindow: async (windowId) => fileService.closeWindow(windowId),
-      requestClose: (window) => closeRequests.request(window.id),
+      requestClose: async (window) => {
+        const allow = await closeRequests.request(window.id);
+        if (!allow) {
+          applicationEvents.cancelQuit();
+        }
+        return allow;
+      },
     },
   );
   setMainWindow(window);
@@ -144,7 +150,11 @@ registerFileIpcHandlers(fileService);
 registerLinkIpcHandler();
 registerOpenRequestIpcHandler(openRequests);
 registerMenuIpcHandler(menuContributions);
-registerApplicationEvents(createApplicationWindow, logProcessEvent, openRequests);
+const applicationEvents = registerApplicationEvents(
+  createApplicationWindow,
+  logProcessEvent,
+  openRequests,
+);
 // The io-worker must outlive window close handlers: quitting with dirty tabs
 // saves through it before the app exits.
 app.on("will-quit", () => ioWorker.stop());

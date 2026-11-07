@@ -217,7 +217,6 @@ export class IoPortClient {
 
   portLost(): void {
     this.failPending();
-    this.queued = [];
     this.port?.close();
     this.port = null;
   }

@@ -207,6 +207,7 @@ export class DocumentLifecycle {
     for (const stored of session.value.documents) {
       const read = await readDocument(stored.grant);
       if (!read.ok || this.options.registry.findByPath(read.value.canonicalPath)) {
+        await this.discardGrant(stored.grant);
         continue;
       }
       const document = this.options.newDocument({
@@ -223,6 +224,11 @@ export class DocumentLifecycle {
 
   async releaseGrant(grant: string): Promise<void> {
     this.value(await releaseDocument({ grant }));
+  }
+
+  private async discardGrant(grant: string): Promise<void> {
+    // The grant belongs to no document; a failed release here is a normal race, not an error.
+    await releaseDocument({ grant });
   }
 
   private async confirmClose(documents: readonly DocumentRecord[]): Promise<boolean> {
@@ -319,6 +325,7 @@ export class DocumentLifecycle {
     }
     const read = await readDocument(draft.grant);
     if (!read.ok || this.options.registry.findByPath(read.value.canonicalPath)) {
+      await this.discardGrant(draft.grant);
       return false;
     }
     return this.addRecovered(

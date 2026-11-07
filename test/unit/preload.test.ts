@@ -300,6 +300,33 @@ describe("preload bridge", () => {
     await expect(saved).resolves.toMatchObject({ ok: true, value: { version: 1 } });
   });
 
+  it("AC-R5-17: a second port loss keeps a message queued after the first", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    portLostListener?.({});
+    api.sendChanges({
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    });
+
+    portLostListener?.({});
+
+    const replacement = new FakePort();
+    portListener({ ports: [replacement] });
+    expect(replacement.messages).toEqual([{
+      op: "change",
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    }]);
+  });
+
   it("AC-R5-17: port loss fails a request pending on the old port", async () => {
     const { api, portListener, portLostListener } = await loadPreload();
     const first = new FakePort();

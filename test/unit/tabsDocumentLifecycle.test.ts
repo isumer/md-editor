@@ -212,6 +212,31 @@ describe("document lifecycle", () => {
     expect(context.registry.findByPath("/one.md")?.saved.text.toString()).toBe("saved");
   });
 
+  it("AC-R4-08: restore releases grants for unreadable and already open documents", async () => {
+    const open = record({ path: "/open.md", grant: "open", name: "open.md" });
+    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
+    const context = fixture([open]);
+    api.loadSession.mockResolvedValue(ok({ documents: [
+      { grant: "bad", name: "bad.md", savedText: "bad", text: "bad" },
+      { grant: "duplicate", name: "open.md", savedText: "open", text: "open" },
+      { grant: "fresh", name: "fresh.md", savedText: "fresh", text: "fresh" },
+    ] }));
+    api.readDocument.mockImplementation(async (grant) => grant === "bad"
+      ? failure
+      : ok({
+        canonicalPath: grant === "duplicate" ? "/open.md" : "/fresh.md",
+        name: `${grant}.md`,
+        text: "disk",
+      }));
+
+    await new DocumentLifecycle(context.options).restoreSession();
+
+    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "bad" });
+    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "duplicate" });
+    expect(api.releaseDocument).not.toHaveBeenCalledWith({ grant: "fresh" });
+    expect(context.registry.findByPath("/fresh.md")).toBeDefined();
+  });
+
   it("AC-R4-02: an open request uses the same open path", async () => {
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture();

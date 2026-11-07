@@ -159,6 +159,8 @@ describe("render controller", () => {
       fillToken: 4,
       complete: true,
     } } as unknown as MessageEvent<RenderResponse>);
+    // The renderer requests the next fill on the next animation frame.
+    await vi.advanceTimersByTimeAsync(0);
     expect(worker?.messages).toContainEqual({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });

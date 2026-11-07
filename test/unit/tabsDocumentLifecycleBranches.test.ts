@@ -146,6 +146,7 @@ describe("document lifecycle branches", () => {
 
     await expect(new DocumentLifecycle(context.options).recover()).resolves.toBe(true);
     expect(context.options.registry.all()).toHaveLength(1);
+    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "bad" });
   });
 
   it("AC-R5-03: save-as cancellation keeps the document unchanged", async () => {
