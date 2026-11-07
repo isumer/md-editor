@@ -36,7 +36,7 @@ describe("preview documents", () => {
     const observer = new MutationObserver((batch) => records.push(...batch));
     observer.observe(host, { childList: true });
     documents.display(preview);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
     observer.disconnect();
 
     expect(records).toEqual([]);

@@ -107,7 +107,7 @@ function fixture(initial: readonly DocumentRecord[] = []) {
 }
 
 describe("document lifecycle branches", () => {
-  it("AC-R5-01: cancelled opens and failed open results keep the active document", async () => {
+  it("AC-R5-12 AC-R5-13: cancelled and failed opens keep the active document", async () => {
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture();
     const lifecycle = new DocumentLifecycle(context.options);
@@ -149,7 +149,7 @@ describe("document lifecycle branches", () => {
     expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "bad" });
   });
 
-  it("AC-R5-03: save-as cancellation keeps the document unchanged", async () => {
+  it("AC-R5-12: save-as cancellation keeps the document unchanged", async () => {
     const untitled = record(null, "changed");
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture([untitled]);
@@ -159,7 +159,7 @@ describe("document lifecycle branches", () => {
     expect(api.saveDocument).not.toHaveBeenCalled();
   });
 
-  it("AC-R5-03: saving untitled content adopts a path without releasing a grant", async () => {
+  it("AC-R5-11: saving untitled content adopts a path without releasing a grant", async () => {
     const untitled = record(null, "changed");
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture([untitled]);
