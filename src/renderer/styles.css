@@ -18,13 +18,126 @@ body {
 
 body {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+#tabs {
+  display: flex;
+  min-height: 34px;
+  overflow-x: auto;
+  border-bottom: 1px solid #d0d7de;
+  background: #f6f8fa;
+}
+
+.tab {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 240px;
+  padding: 6px 8px 6px 12px;
+  border-right: 1px solid #d0d7de;
+  cursor: default;
+  color: #57606a;
+  font-size: 13px;
+}
+
+.tab[aria-selected="true"] {
+  color: #1f2328;
+  background: #ffffff;
+}
+
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-dirty {
+  color: #9a3412;
+}
+
+.tab-close {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  font-size: 14px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.tab-close:hover {
+  background: #d0d7de;
 }
 
 #workspace {
+  position: relative;
   display: grid;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+#preview-error {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  max-width: 40%;
+  padding: 4px 10px;
+  border: 1px solid #f5b7a8;
+  border-radius: 6px;
+  color: #9a3412;
+  background: #fff1ef;
+  font-size: 12px;
+}
+
+#close-prompt {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 25%);
+}
+
+#close-prompt[hidden] {
+  display: none;
+}
+
+.close-prompt-panel {
+  width: min(440px, 90vw);
+  padding: 20px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 20%);
+}
+
+.close-prompt-panel p {
+  margin: 0 0 16px;
+}
+
+.close-prompt-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.close-prompt-actions button {
+  min-width: 80px;
+  padding: 6px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  cursor: pointer;
+}
+
+.close-prompt-actions button[data-action="discard"] {
+  color: #b42318;
+}
+
+.close-prompt-actions button[data-action="save"] {
+  border-color: #1f883d;
+  color: #ffffff;
+  background: #1f883d;
 }
 
 #editor,
