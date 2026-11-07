@@ -74,18 +74,45 @@ async function openPreview(
 
 interface LongTaskProbe {
   longtasks: { start: number; duration: number }[];
+  marks: { name: string; start: number }[];
 }
 
 async function installLongTaskProbe(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const probe: LongTaskProbe = { longtasks: [] };
+    const probe: LongTaskProbe = { longtasks: [], marks: [] };
     (window as unknown as { __longTaskProbe?: LongTaskProbe }).__longTaskProbe = probe;
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
+        if (entry.entryType === "longtask") {
+          probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
+        } else if (entry.entryType === "mark") {
+          probe.marks.push({ name: entry.name, start: entry.startTime });
+        }
       }
-    }).observe({ type: "longtask" });
+    }).observe({ entryTypes: ["longtask", "mark"] });
   });
+}
+
+function openTaskDiagnostics(
+  tasks: readonly { start: number; duration: number }[],
+  marks: readonly { name: string; start: number }[],
+): string {
+  const largest = tasks.reduce<typeof tasks[number] | undefined>(
+    (current, task) => current === undefined || task.duration > current.duration
+      ? task
+      : current,
+    undefined,
+  );
+  if (largest === undefined) {
+    return "largest=none marks=[]";
+  }
+  const taskEnd = largest.start + largest.duration;
+  const nearby = marks.filter((mark) =>
+    mark.start >= largest.start - 50 && mark.start <= taskEnd + 50);
+  const markSummary = nearby.map((mark) =>
+    `${mark.name}@${mark.start.toFixed(1)}`).join(", ");
+  return `largest=start ${largest.start.toFixed(1)} ms duration ` +
+    `${largest.duration.toFixed(1)} ms marks=[${markSummary}]`;
 }
 
 async function openLargeThroughMenu(
@@ -134,18 +161,23 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
       const scope = window as unknown as { __longTaskProbe?: LongTaskProbe };
       return {
         longtasks: scope.__longTaskProbe?.longtasks ?? [],
+        marks: scope.__longTaskProbe?.marks ?? [],
         blocks: document.querySelectorAll("#preview .preview-block").length,
       };
     });
     const afterOpen = probe.longtasks
-      .filter((entry) => entry.start >= shownAt)
-      .map((entry) => entry.duration);
+      .filter((entry) => entry.start >= shownAt);
+    const diagnostics = openTaskDiagnostics(afterOpen, probe.marks);
     console.log(
       `AC-PERF-10 open longtasks: n=${String(afterOpen.length)} ` +
-      `max=${Math.max(...afterOpen, 0).toFixed(1)} ms blocks=${String(probe.blocks)}`,
+      `max=${Math.max(...afterOpen.map((entry) => entry.duration), 0).toFixed(1)} ms ` +
+      `blocks=${String(probe.blocks)} ${diagnostics}`,
     );
     expect(probe.blocks).toBeGreaterThan(1);
-    expect(afterOpen.filter((duration) => duration >= 100)).toEqual([]);
+    expect(
+      afterOpen.filter((entry) => entry.duration >= 100),
+      `AC-PERF-10 open task failed. ${diagnostics}`,
+    ).toEqual([]);
   } finally {
     await application.close();
   }
