@@ -5,6 +5,7 @@ import type {
   MenuCommandMessage,
   MenuContribution,
   MenuItemId,
+  WindowAction,
 } from "../shared/ipc/menu";
 import type { Result } from "../shared/ipc/result";
 import { formatMessage } from "../shared/messages/en";
@@ -30,11 +31,22 @@ import {
 } from "./core/replication";
 import { createEditor, dispatchRedo, dispatchUndo } from "./editor/editor";
 import {
+  previewTopLine,
+  scrollPreviewToLine,
   wirePreviewLinks,
   wireRenderWorker,
 } from "./features/preview/preview";
 import { RenderScheduler } from "./features/preview/renderScheduler";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
+import {
+  createSyncScrollController,
+} from "./features/sync-scroll/syncScroll";
+import {
+  registerViewCommands,
+  VIEW_MENU_COMMANDS,
+  viewMenuItems,
+} from "./features/views/viewCommands";
+import { createViewController } from "./features/views/viewController";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
@@ -72,6 +84,7 @@ function defaultRenderWorkerFactory(url: URL): RenderWorkerPort {
 
 const editorHost = requiredElement<HTMLElement>("#editor");
 const preview = requiredElement<HTMLElement>("#preview");
+const divider = requiredElement<HTMLElement>("#view-divider");
 const status = requiredElement<HTMLElement>("#status");
 const renderWorker = defaultRenderWorkerFactory(
   new URL(renderWorkerUrl, window.location.href),
@@ -126,15 +139,41 @@ const editor = createEditor(
     onStateChanged: () => refreshContextKeys(),
   },
 );
+const viewController = createViewController({
+  workspace: requiredElement<HTMLElement>("#workspace"),
+  divider,
+  status,
+  storage: window.localStorage,
+});
+
+function scrollListener(element: HTMLElement, listener: () => void): () => void {
+  element.addEventListener("scroll", listener, { passive: true });
+  return () => element.removeEventListener("scroll", listener);
+}
+
+const syncScroll = createSyncScrollController({
+  editor: {
+    topLine: () => editor.state.doc.lineAt(
+      editor.lineBlockAtHeight(editor.scrollDOM.scrollTop).from,
+    ).number,
+    scrollToLine: (line) => {
+      const safeLine = Math.min(Math.max(1, line), editor.state.doc.lines);
+      editor.scrollDOM.scrollTop = editor.lineBlockAt(editor.state.doc.line(safeLine).from).top;
+    },
+    onScroll: (listener) => scrollListener(editor.scrollDOM, listener),
+  },
+  preview: {
+    topLine: () => previewTopLine(preview),
+    scrollToLine: (line) => scrollPreviewToLine(preview, line),
+    onScroll: (listener) => scrollListener(preview, listener),
+  },
+  storage: window.localStorage,
+});
 
 const contextKeys = createContextKeys();
 const commandContext = { contextKeys };
 const commands = createCommandRegistry();
-const menuItemCommands: Readonly<Record<MenuItemId, string>> = {
-  "file-open": "file.open",
-  "file-save": "file.save",
-  "file-save-as": "file.saveAs",
-};
+const menuItemCommands: Readonly<Record<MenuItemId, string>> = VIEW_MENU_COMMANDS;
 
 function refreshContextKeys(): void {
   const keys = new Set<string>();
@@ -184,8 +223,17 @@ commands.register({
   },
 });
 
-function menuContribution(): MenuContribution {
-  return {
+registerViewCommands({
+  commands,
+  view: viewController,
+  syncScroll,
+  publish: (action) => {
+    void publishMenuContribution(action).catch(showUnexpectedError);
+  },
+});
+
+function menuContribution(action?: WindowAction): MenuContribution {
+  const contribution: MenuContribution = {
     fileMenuTitle: formatMessage("menu.file", {}),
     items: [
       { id: "file-open", title: formatMessage("menu.open", {}), accelerator: "CmdOrCtrl+O" },
@@ -196,11 +244,14 @@ function menuContribution(): MenuContribution {
         accelerator: "CmdOrCtrl+Shift+S",
       },
     ],
+    viewMenuTitle: formatMessage("menu.view", {}),
+    viewItems: viewMenuItems(viewController, syncScroll, platformName()),
   };
+  return action === undefined ? contribution : { ...contribution, windowAction: action };
 }
 
-async function publishMenuContribution(): Promise<void> {
-  valueOrStatus(await contributeMenu(menuContribution()));
+async function publishMenuContribution(action?: WindowAction): Promise<void> {
+  valueOrStatus(await contributeMenu(menuContribution(action)));
 }
 
 function runMenuCommand(menuItemId: MenuCommandMessage): void {

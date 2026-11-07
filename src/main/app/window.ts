@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from "electron";
 
+import type { WindowAction } from "../../shared/ipc/menu";
 import {
   registerTrustedWindow,
   unregisterTrustedWindow,
@@ -7,6 +8,7 @@ import {
 import { APP_ENTRY_URL } from "./appProtocol";
 
 let mainWindow: BrowserWindow | null = null;
+let fullScreenBeforeFocus: boolean | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
@@ -14,6 +16,33 @@ export function getMainWindow(): BrowserWindow | null {
 
 export function setMainWindow(window: BrowserWindow | null): void {
   mainWindow = window;
+  if (window === null) {
+    fullScreenBeforeFocus = null;
+  }
+}
+
+export function applyWindowAction(action: WindowAction): void {
+  const window = mainWindow;
+  if (window === null || window.isDestroyed()) {
+    return;
+  }
+  try {
+    if (action === "toggle-full-screen") {
+      window.setFullScreen(!window.isFullScreen());
+      return;
+    }
+    if (action === "enter-focus") {
+      fullScreenBeforeFocus ??= window.isFullScreen();
+      window.setFullScreen(true);
+      return;
+    }
+    if (fullScreenBeforeFocus !== null) {
+      window.setFullScreen(fullScreenBeforeFocus);
+      fullScreenBeforeFocus = null;
+    }
+  } catch {
+    // The window can close between the destroyed check and the state change.
+  }
 }
 
 interface WindowDependencies {
@@ -88,6 +117,7 @@ export function createWindow(
     });
     if (mainWindow === window) {
       mainWindow = null;
+      fullScreenBeforeFocus = null;
     }
   });
   void window.loadURL(APP_ENTRY_URL);
