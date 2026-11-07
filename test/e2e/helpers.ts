@@ -29,7 +29,17 @@ export async function launchEditor(filePath?: string): Promise<{
     cwd: repositoryRoot,
     env: environment,
   });
-  return { application, page: await application.firstWindow() };
+  const page = await application.firstWindow();
+  if (filePath) {
+    await expect.poll(
+      () => page.title(),
+      {
+        message: `argv document did not open: ${path.basename(filePath)}`,
+        timeout: 2_000,
+      },
+    ).toContain(path.basename(filePath));
+  }
+  return { application, page };
 }
 
 export async function launchSecondInstance(
