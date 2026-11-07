@@ -42,7 +42,7 @@ Update a row when an item is queued, merged or sent back.
 | slice8-line-operations | 8 | src/shared/lines/lineOperations.ts, test/unit/lineOperations.test.ts | main | dev (Vision) | merged (f719ffd) |
 | slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | merged (1cebe83) |
 | slice9-views-sync-scroll | 9 | src/renderer/features/views/**, sync-scroll/**, their tests; minimal registration files (brief slice-9-views-sync-scroll.md) | main | dev (Vision) | brief on main (44c27c5); 13a is on main; now waits for perf-open-long-task-2 (944 owns preview.ts and workers/render) |
-| slice10-line-diff | 10 | src/shared/diff/lineDiff.ts, src/shared/diff/wordDiff.ts, test/unit/{lineDiff,wordDiff}.test.ts | main | dev (Vision) | candidate b2bc72e (Friday gate passed 2026-11-07; linear trailing-blank fix; lands when CI is green) |
+| slice10-line-diff | 10 | src/shared/diff/lineDiff.ts, src/shared/diff/wordDiff.ts, test/unit/{lineDiff,wordDiff}.test.ts | main | dev (Vision) | merged b2bc72e |
 | slice13a-export | 13 | export module, main export dir, tests, fixtures; registry and message registration (brief slice-13-export.md) | main | dev2 (Vision) | Friday gate passed 2026-11-07 (merge on d6bc525; AC-R6-02/-04 back to planned for 13b); lands when CI is green |
 | update-policy | 14 | src/shared/update/updatePolicy.ts, test/unit/updateVersion.test.ts, test/unit/updateFeed.test.ts, test/unit/updatePolicy.test.ts | main | dev (Vision) | running (931) |
 | slice10-folder-compare | 10 | src/shared/diff/folderCompare.ts, test/unit/folderCompare.test.ts | main | dev (Vision) | queued (938; brief slice-10-folder-compare-module.md) |
@@ -52,7 +52,7 @@ Update a row when an item is queued, merged or sent back.
 | slice8-user-bindings | 8 | src/shared/keymap/userBindings.ts, test/unit/userBindings.test.ts | main | nim (Karen) | queued (945; brief slice-8-user-bindings-module-nim.md) |
 | slice11-merge-chunks | 11 | src/shared/merge/mergeChunks.ts, test/unit/mergeChunks.test.ts | main | dev (Vision) | running (949; brief slice-11-merge-chunks-module.md) |
 | slice8-palette-match | 8 | src/shared/commands/paletteMatch.ts, test/unit/paletteMatch.test.ts | main | dev (Vision) | queued (brief slice-8-palette-match-module.md; dev reserve; AC-R13-06) |
-| slice10-line-diff-anchors | 10 | src/shared/diff/lineDiff.ts, test/unit/lineDiff.test.ts | slice10-line-diff | dev (Vision) | waits for slice10-line-diff on main (brief slice-10-line-diff-anchors.md; exact AC-R14-10 diff at 1 % changes; limited flag for AC-R14-11) |
+| slice10-line-diff-anchors | 10 | src/shared/diff/lineDiff.ts, test/unit/lineDiff.test.ts | slice10-line-diff | dev (Vision) | queued (brief slice-10-line-diff-anchors.md; exact AC-R14-10 diff at 1 % changes; limited flag for AC-R14-11) |
 
 ## Notes
 - Slice 5's brief owns broad globs. Before the next slice-5 run, narrow it
