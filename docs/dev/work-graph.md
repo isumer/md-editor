@@ -33,7 +33,7 @@ Update a row when an item is queued, merged or sent back.
 | slice8-outline-module | 8 | src/shared/outline/outline.ts, test/unit/outline.test.ts | main | nim (Karen) | merged (7ad9c3b) |
 | slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | merged (e1ee930) |
 | io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 (stacked on candidate e47bb15) | dev (Vision) | candidate 88aff9b (contains 041 b9130c4, macOS-red; must merge 041 c0a3e96 before it can land) |
-| macos-e2e | 9 | test/e2e/commands.spec.ts, test/e2e/save-contracts.spec.ts, test/e2e/preview-perf.spec.ts, test/e2e/helpers.ts, .github/workflows/ci.yml | main | side (Edith) | queued |
+| macos-e2e | 9 | test/e2e/commands.spec.ts, test/e2e/save-contracts.spec.ts, test/e2e/preview-perf.spec.ts, test/e2e/helpers.ts, .github/workflows/ci.yml | main | side (Edith) | candidate e00eb4a |
 | slice8-word-completion | 8 | src/shared/text/wordCompletion.ts, test/unit/wordCompletion.test.ts | main | nim (Karen) | candidate aad8ad9 |
 | merge-conflict-markers | 11 | src/shared/merge/conflictMarkers.ts, test/unit/conflictMarkers.test.ts | main | dev (Vision) | queued (brief slice-11-conflict-markers-module.md) |
 | slice6-tree-updates | 6 | src/shared/workspace/treeUpdates.ts, test/unit/workspaceTreeUpdates.test.ts | main (treeRows merged) | dev (Vision) | candidate 501e728 |
