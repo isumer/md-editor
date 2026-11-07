@@ -7,7 +7,7 @@ When it is exported to HTML
 Then one file is written atomically that contains the rendered heading, the highlighted code, inlined CSS and no external stylesheet, and the image keeps its relative path
 
 ### AC-R6-02 — HTML export uses the current preview theme, or light on request
-status: planned
+status: implemented
 Given the dark theme is active
 When the document is exported with and without the "always light" option
 Then the exported CSS is the dark preview style, then the light one
@@ -19,7 +19,7 @@ When it is exported to PDF
 Then the file starts with `%PDF-`, has more than one page, and is written atomically
 
 ### AC-R6-04 — PDF options apply
-status: planned
+status: implemented
 Given the PDF options A4 or Letter, margins and background colour on or off
 When the document is exported with each option
 Then the PDF page size matches the choice and the background is printed only when on
