@@ -313,6 +313,43 @@ export function blockLine(element: HTMLElement): number {
   return line;
 }
 
+function topPreviewBlock(preview: HTMLElement): HTMLElement | null {
+  const bounds = preview.getBoundingClientRect();
+  for (const offset of [1, 25]) {
+    const target = document.elementFromPoint(
+      bounds.left + bounds.width / 2,
+      bounds.top + offset,
+    );
+    const block = target instanceof Element
+      ? target.closest<HTMLElement>(".preview-block")
+      : null;
+    if (block) {
+      return block;
+    }
+  }
+  return null;
+}
+
+export function previewTopLine(preview: HTMLElement): number {
+  const block = topPreviewBlock(preview);
+  return block === null ? 1 : blockLine(block);
+}
+
+export function scrollPreviewToLine(preview: HTMLElement, line: number): void {
+  let selected: HTMLElement | null = null;
+  for (const block of preview.querySelectorAll<HTMLElement>(".preview-block")) {
+    if (blockLine(block) > line) {
+      break;
+    }
+    selected = block;
+  }
+  selected ??= preview.querySelector<HTMLElement>(".preview-block");
+  if (selected) {
+    const top = selected.getBoundingClientRect().top - preview.getBoundingClientRect().top;
+    preview.scrollTop += top;
+  }
+}
+
 export function wireRenderWorker(
   renderWorker: RenderWorkerEvents,
   wiring: RenderWorkerWiring,

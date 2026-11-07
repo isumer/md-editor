@@ -7,7 +7,7 @@ import {
   type MenuContributionItem,
   type MenuItemId,
 } from "../../shared/ipc/menu";
-import { getMainWindow } from "./window";
+import { applyWindowAction, getMainWindow } from "./window";
 
 export interface MenuEntry {
   id: string;
@@ -92,6 +92,11 @@ function contributedMenuItem(
   item: MenuContributionItem,
   send: (id: MenuItemId) => void,
 ): MenuItemConstructorOptions {
+  const type = item.id === "view-sync-scroll" || item.id === "view-focus"
+    ? "checkbox"
+    : item.id === "view-split" || item.id === "view-editor" || item.id === "view-preview"
+    ? "radio"
+    : "normal";
   return {
     id: item.id,
     label: item.title,
@@ -99,6 +104,7 @@ function contributedMenuItem(
     registerAccelerator: false,
     enabled: item.enabled ?? true,
     checked: item.checked ?? false,
+    type,
     click: () => send(item.id),
   };
 }
@@ -120,14 +126,22 @@ export function buildContributionTemplate(
       label: contribution.fileMenuTitle,
       submenu: items,
     });
-    return template;
+  } else {
+    const fileMenu = template[fileMenuIndex(platform)];
+    if (fileMenu) {
+      fileMenu.label = contribution.fileMenuTitle;
+      fileMenu.submenu = items.length > 0
+        ? [...items, { type: "separator" }, { role: "quit" }]
+        : [{ role: "quit" }];
+    }
   }
-  const fileMenu = template[fileMenuIndex(platform)];
-  if (fileMenu) {
-    fileMenu.label = contribution.fileMenuTitle;
-    fileMenu.submenu = items.length > 0
-      ? [...items, { type: "separator" }, { role: "quit" }]
-      : [{ role: "quit" }];
+  if (contribution.viewMenuTitle !== undefined && contribution.viewItems !== undefined) {
+    const viewItems = contribution.viewItems.map((item) => contributedMenuItem(item, send));
+    const windowIndex = template.findIndex((item) => item.role === "windowMenu");
+    template.splice(windowIndex, 0, {
+      label: contribution.viewMenuTitle,
+      submenu: viewItems,
+    });
   }
   return template;
 }
@@ -152,6 +166,14 @@ export function patchContribution(
       entry.checked = item.checked ?? false;
     }
   }
+  for (const item of contribution.viewItems ?? []) {
+    const entry = menu.getMenuItemById(item.id);
+    if (entry) {
+      entry.label = item.title;
+      entry.enabled = item.enabled ?? true;
+      entry.checked = item.checked ?? false;
+    }
+  }
 }
 
 function sameStructure(
@@ -159,7 +181,9 @@ function sameStructure(
   right: MenuContribution,
 ): boolean {
   return left.items.length === right.items.length &&
-    left.items.every((item, index) => right.items[index]?.id === item.id);
+    left.items.every((item, index) => right.items[index]?.id === item.id) &&
+    (left.viewItems?.length ?? 0) === (right.viewItems?.length ?? 0) &&
+    (left.viewItems ?? []).every((item, index) => right.viewItems?.[index]?.id === item.id);
 }
 
 export function createMenuController(
@@ -216,5 +240,8 @@ export function createMenu(): void {
 }
 
 export function applyMenuContribution(contribution: MenuContribution): void {
+  if (contribution.windowAction !== undefined) {
+    applyWindowAction(contribution.windowAction);
+  }
   menuController?.applyContribution(contribution);
 }

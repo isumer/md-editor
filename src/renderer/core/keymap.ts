@@ -11,11 +11,21 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",
   "Mod-y": "redo",
+  "Mod-1": "view.split",
+  "Mod-2": "view.editor",
+  "Mod-3": "view.preview",
+  "Mod-0": "view.resetDivider",
+  "Mod-Shift-f": "view.focus",
+  "Mod-Shift-y": "view.syncScroll",
+  F11: "view.fullScreen",
+  Escape: "view.exitFocus",
 });
 
 const DARWIN_DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   ...DEFAULT_BINDINGS,
   "Mod-y": undefined,
+  F11: undefined,
+  "Mod-Ctrl-f": "view.fullScreen",
 });
 
 function defaultBindings(platform: string): KeyBindings {
@@ -69,6 +79,7 @@ const MODIFIER_KEYS = new Set([
 ]);
 
 const PHYSICAL_KEY = /^(?:Key([A-Z])|Digit([0-9]))$/;
+const BARE_KEYS = new Set(["Escape", "F11"]);
 
 function normalizedKey(key: string, code: string | undefined): string | null {
   if (key.length === 0 || MODIFIER_KEYS.has(key)) {
@@ -113,7 +124,7 @@ export function chordForEvent(
     parts.push("Shift");
   }
   if (parts.length === 0) {
-    return null;
+    return BARE_KEYS.has(key) ? key : null;
   }
   return `${parts.join("-")}-${key}`;
 }

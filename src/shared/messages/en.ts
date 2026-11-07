@@ -19,7 +19,16 @@ export type MessageKey =
   | "menu.save"
   | "menu.saveAs"
   | "menu.undo"
-  | "menu.redo";
+  | "menu.redo"
+  | "menu.view"
+  | "menu.viewSplit"
+  | "menu.viewEditor"
+  | "menu.viewPreview"
+  | "menu.resetDivider"
+  | "menu.fullScreen"
+  | "menu.focusMode"
+  | "menu.exitFocusMode"
+  | "menu.syncScroll";
 
 export const messages: Readonly<Record<MessageKey, string>> = {
   "request.invalid": "The request was not valid.",
@@ -43,6 +52,15 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.saveAs": "Save As",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
+  "menu.view": "View",
+  "menu.viewSplit": "Split",
+  "menu.viewEditor": "Editor Only",
+  "menu.viewPreview": "Preview Only",
+  "menu.resetDivider": "Reset Divider",
+  "menu.fullScreen": "Full Screen",
+  "menu.focusMode": "Focus Mode",
+  "menu.exitFocusMode": "Exit Focus Mode",
+  "menu.syncScroll": "Sync Scroll",
 };
 
 export function formatMessage(
