@@ -3,7 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   diffLines,
   type DiffHunk,
+  type LineDiffOptions,
 } from "../../src/shared/diff/lineDiff";
+
+function lineHunks(
+  left: readonly string[],
+  right: readonly string[],
+  options: LineDiffOptions = {},
+): readonly DiffHunk[] {
+  return diffLines(left, right, options).hunks;
+}
 
 function rebuild(
   hunks: readonly DiffHunk[],
@@ -41,7 +50,7 @@ describe("line diff", () => {
     const left = ["same", "old", "left only", "anchor", "tail"];
     const right = ["same", "new", "anchor", "right only", "tail"];
 
-    expect(diffLines(left, right, {})).toEqual([
+    expect(lineHunks(left, right)).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
       {
         kind: "change",
@@ -68,11 +77,11 @@ describe("line diff", () => {
   });
 
   it("AC-R14-08: ignores trailing whitespace only when enabled", () => {
-    expect(diffLines(["value \t"], ["value"], {})).not.toEqual([
+    expect(lineHunks(["value \t"], ["value"])).not.toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
     ]);
     expect(
-      diffLines(["value \t"], ["value"], { ignoreTrailingWhitespace: true }),
+      lineHunks(["value \t"], ["value"], { ignoreTrailingWhitespace: true }),
     ).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
     ]);
@@ -81,7 +90,7 @@ describe("line diff", () => {
   it("AC-R14-08: trims trailing whitespace without rescanning a long blank run", () => {
     const blanks = " ".repeat(40_000);
     expect(
-      diffLines([`${blanks}a \t\r\n`], [`${blanks}a\r\n`], {
+      lineHunks([`${blanks}a \t\r\n`], [`${blanks}a\r\n`], {
         ignoreTrailingWhitespace: true,
       }),
     ).toEqual([
@@ -90,10 +99,10 @@ describe("line diff", () => {
   });
 
   it("AC-R14-08: ignores case only when enabled", () => {
-    expect(diffLines(["Value"], ["value"], {})).not.toEqual([
+    expect(lineHunks(["Value"], ["value"])).not.toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
     ]);
-    expect(diffLines(["Value"], ["value"], { ignoreCase: true })).toEqual([
+    expect(lineHunks(["Value"], ["value"], { ignoreCase: true })).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
     ]);
   });
@@ -102,10 +111,10 @@ describe("line diff", () => {
     const left = ["one\r", "two\n", "three\r\n"];
     const right = ["one\n", "two\r\n", "three\r"];
 
-    expect(diffLines(left, right, {})).not.toEqual([
+    expect(lineHunks(left, right)).not.toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 3 },
     ]);
-    expect(diffLines(left, right, { ignoreLineEndings: true })).toEqual([
+    expect(lineHunks(left, right, { ignoreLineEndings: true })).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 3 },
     ]);
   });
@@ -115,7 +124,7 @@ describe("line diff", () => {
     const right = [...left];
     right[499] = "changed";
 
-    expect(diffLines(left, right, {})).toEqual([
+    expect(lineHunks(left, right)).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 499 },
       {
         kind: "change",
@@ -137,7 +146,7 @@ describe("line diff", () => {
     const left = ["a", "old one", "keep 1", "keep 2", "keep 3", "old two", "z"];
     const right = ["a", "new one", "keep 1", "keep 2", "keep 3", "new two", "z"];
 
-    expect(diffLines(left, right, {})).toEqual([
+    expect(lineHunks(left, right)).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
       {
         kind: "change",
@@ -169,17 +178,17 @@ describe("line diff", () => {
   });
 
   it("boundary: returns no hunks for two empty inputs", () => {
-    expect(diffLines([], [], {})).toEqual([]);
+    expect(lineHunks([], [])).toEqual([]);
   });
 
   it("boundary: returns one unchanged run for identical inputs", () => {
-    expect(diffLines(["a", "b"], ["a", "b"], {})).toEqual([
+    expect(lineHunks(["a", "b"], ["a", "b"])).toEqual([
       { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 2 },
     ]);
   });
 
   it("boundary: pairs fully different inputs by position", () => {
-    expect(diffLines(["a", "b"], ["x", "y"], {})).toEqual([
+    expect(lineHunks(["a", "b"], ["x", "y"])).toEqual([
       {
         kind: "change",
         lines: [
@@ -203,7 +212,7 @@ describe("line diff", () => {
   });
 
   it("boundary: reports every line when one side is empty", () => {
-    expect(diffLines([], ["a", "b"], {})).toEqual([
+    expect(lineHunks([], ["a", "b"])).toEqual([
       {
         kind: "change",
         lines: [
@@ -214,23 +223,91 @@ describe("line diff", () => {
     ]);
   });
 
-  it("AC-R14-10: returns for a 200,000-line pair", () => {
+  it("AC-R14-10: keeps every sparse large-file change exact", () => {
     const left = Array.from({ length: 200_000 }, (_, index) => `line-${index}`);
     const right = left.map((line, index) =>
       index % 100 === 0 ? `changed-${index}` : line,
     );
 
-    const hunks = diffLines(left, right, {});
+    const result = diffLines(left, right, {});
+    const changes = result.hunks.filter((hunk) => hunk.kind === "change");
 
-    expect(hunks[0]).toMatchObject({ kind: "change" });
-    expect(rebuild(hunks, left, "left")).toEqual(left);
-    expect(rebuild(hunks, right, "right")).toEqual(right);
+    expect(changes).toHaveLength(2_000);
+    expect(changes.every((hunk) => hunk.lines.length === 1)).toBe(true);
+    expect(changes.every((hunk) => hunk.lines[0]?.kind === "modified")).toBe(
+      true,
+    );
+    expect(result.limited).toBe(false);
+    expect(rebuild(result.hunks, left, "left")).toEqual(left);
+    expect(rebuild(result.hunks, right, "right")).toEqual(right);
+  });
+
+  it("AC-R14-11: limits one oversized gap and keeps other gaps exact", () => {
+    const leftGap = Array.from({ length: 257 }, (_, index) => `left-${index}`);
+    const rightGap = Array.from(
+      { length: 257 },
+      (_, index) => `right-${index}`,
+    );
+    const left = ["before", ...leftGap, "anchor", "old", "after"];
+    const right = ["before", ...rightGap, "anchor", "new", "after"];
+
+    expect(diffLines(left, right, {})).toEqual({
+      hunks: [
+        { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
+        {
+          kind: "change",
+          lines: leftGap.map((line, index) => ({
+            kind: "modified",
+            leftLineNumber: index + 2,
+            rightLineNumber: index + 2,
+            left: line,
+            right: rightGap[index],
+          })),
+        },
+        {
+          kind: "unchanged",
+          leftStart: 259,
+          rightStart: 259,
+          lineCount: 1,
+        },
+        {
+          kind: "change",
+          lines: [
+            {
+              kind: "modified",
+              leftLineNumber: 260,
+              rightLineNumber: 260,
+              left: "old",
+              right: "new",
+            },
+          ],
+        },
+        {
+          kind: "unchanged",
+          leftStart: 261,
+          rightStart: 261,
+          lineCount: 1,
+        },
+      ],
+      limited: true,
+    });
+  });
+
+  it("AC-R14-11: limits work before the edit-distance bound", () => {
+    const left = Array.from({ length: 500_000 }, (_, index) =>
+      index % 2 === 0 ? "a" : "b",
+    );
+    const right = Array.from({ length: 500_000 }, (_, index) =>
+      index % 2 === 0 ? "b" : "a",
+    );
+
+    expect(diffLines(left, right, {}).limited).toBe(true);
   });
 
   it("property: 200 seeded random pairs rebuild both inputs exactly", () => {
     for (let seed = 1; seed <= 200; seed += 1) {
       const [left, right] = randomLines(seed);
-      const hunks = diffLines(left, right, {});
+      const { hunks } = diffLines(left, right, {});
 
       expect(rebuild(hunks, left, "left"), `left seed ${seed}`).toEqual(left);
       expect(rebuild(hunks, right, "right"), `right seed ${seed}`).toEqual(
