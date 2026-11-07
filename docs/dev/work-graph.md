@@ -34,10 +34,11 @@ Update a row when an item is queued, merged or sent back.
 | slice6-workspace-paths | 6 | src/shared/workspace/workspacePath.ts, test/unit/workspacePath.test.ts | main | dev (Vision) | merged (e1ee930) |
 | io-port-restart | 5 (bug) | src/main/io/ioWorker.ts, src/main/main.ts, src/preload/preload.ts, src/shared/ipc/io.ts, test/unit/{ioSupervisor,preload,ioContracts}.test.ts | 041 (stacked on candidate e47bb15) | dev (Vision) | candidate 88aff9b (contains 041 b9130c4, macOS-red; must merge 041 c0a3e96 before it can land) |
 | macos-e2e | 9 | test/e2e/commands.spec.ts, test/e2e/save-contracts.spec.ts, test/e2e/preview-perf.spec.ts, test/e2e/helpers.ts, .github/workflows/ci.yml | main | side (Edith) | queued |
-| slice8-word-completion | 8 | src/shared/text/wordCompletion.ts, test/unit/wordCompletion.test.ts | main | nim (Karen) | queued |
+| slice8-word-completion | 8 | src/shared/text/wordCompletion.ts, test/unit/wordCompletion.test.ts | main | nim (Karen) | candidate aad8ad9 |
+| merge-conflict-markers | 11 | src/shared/merge/conflictMarkers.ts, test/unit/conflictMarkers.test.ts | main | dev (Vision) | queued (brief slice-11-conflict-markers-module.md) |
 | slice6-tree-updates | 6 | src/shared/workspace/treeUpdates.ts, test/unit/workspaceTreeUpdates.test.ts | main (treeRows merged) | dev (Vision) | queued (dev) |
 | slice6-tree-store | 6 | src/renderer/features/workspace/treeStore.ts, test/unit/workspaceTreeStore.test.ts | main (treeRows merged) | dev (Vision) | queued |
-| slice7-encoding-module | 7 | src/shared/text/encoding.ts, test/unit/encoding.test.ts | main | nim (Karen) | queued |
+| slice7-encoding-module | 7 | src/shared/text/encoding.ts, test/unit/encoding.test.ts | main | nim (Karen) | candidate 7260be4 (reviewed merge); branch a9a88eb unmerged — needs a merge decision |
 | slice8-line-operations | 8 | src/shared/lines/lineOperations.ts, test/unit/lineOperations.test.ts | main | dev (Vision) | merged (f719ffd) |
 | slice8-column-editor | 8 | src/shared/lines/columnEditor.ts, test/unit/columnEditor.test.ts | main | dev (Vision) | merged (1cebe83) |
 | slice9-views-sync-scroll | 9 | src/renderer/features/views/**, sync-scroll/**, their tests; minimal registration files (brief slice-9-views-sync-scroll.md) | main | dev (Vision) | brief on main (44c27c5); waits for slice-13a (registry overlap) |
