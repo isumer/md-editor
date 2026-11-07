@@ -175,6 +175,7 @@ function runSeed(seed: number): SeedStats {
     scheduler,
     preview,
     showStatus: () => undefined,
+    showError: () => undefined,
     currentVersion: () => ({
       docId: DOC_ID,
       epoch: editor.epoch,

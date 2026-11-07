@@ -73,6 +73,9 @@ export class RenderWorkerHandler {
       case "fill-ready":
         this.fillReady(value);
         return;
+      case "ping":
+        this.postResponse({ op: "pong", id: value.id });
+        return;
     }
   }
 

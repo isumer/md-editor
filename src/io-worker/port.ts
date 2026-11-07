@@ -6,6 +6,7 @@ import {
   type IoReply,
   type IoOneWayMessage,
   type IoRequest,
+  type ListDraftsResponse,
   type ReadDocumentResponse,
   type SaveDocumentResponse,
 } from "../shared/ipc/io";
@@ -27,7 +28,10 @@ async function runRequest(
   request: IoRequest,
   windowId: number,
   service: IoFileService,
-): Promise<Result<ReadDocumentResponse | SaveDocumentResponse | Record<string, never>>> {
+): Promise<Result<
+  ReadDocumentResponse | SaveDocumentResponse | ListDraftsResponse |
+  Record<string, never>
+>> {
   try {
     if (request.op === "read") {
       return { ok: true, value: await service.read(windowId, request.grant) };
@@ -35,6 +39,13 @@ async function runRequest(
     if (request.op === "attach") {
       service.attach(windowId, request);
       return { ok: true, value: {} };
+    }
+    if (request.op === "draft") {
+      service.draft(windowId, request);
+      return { ok: true, value: {} };
+    }
+    if (request.op === "drafts") {
+      return { ok: true, value: service.listDrafts(windowId) };
     }
     return { ok: true, value: await service.save(windowId, request) };
   } catch (error) {
@@ -49,6 +60,8 @@ function runOneWay(
 ): void {
   if (message.op === "change") {
     service.change(windowId, message);
+  } else if (message.op === "clear-draft") {
+    service.clearDraft(windowId, message.docId);
   } else {
     service.detach(windowId, message.docId);
   }
@@ -97,7 +110,8 @@ export class IoPortRegistry {
 
   attach(windowId: number, port: IoWorkerPort): void {
     this.ports.get(windowId)?.close?.();
-    this.service.revokeWindow(windowId);
+    // A reattach (renderer reload after a crash) keeps drafts for recovery.
+    this.service.resetWindow(windowId);
     this.ports.set(windowId, port);
     attachIoPort(port, windowId, this.service);
   }
