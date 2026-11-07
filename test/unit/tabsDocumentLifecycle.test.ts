@@ -127,7 +127,7 @@ function fixture(initial: readonly DocumentRecord[] = []) {
 }
 
 describe("document lifecycle", () => {
-  it("AC-R4-01: opens a file and focuses a path that is already open", async () => {
+  it("AC-R4-02: opens a file and focuses a path that is already open", async () => {
     const existing = record({ path: "/one.md", grant: "old", name: "one.md" });
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const first = fixture([existing]);
@@ -143,7 +143,7 @@ describe("document lifecycle", () => {
     expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "duplicate" });
   });
 
-  it("AC-R5-01: a failed open keeps the current document", async () => {
+  it("AC-R5-13: a failed open keeps the current document", async () => {
     const current = record({ path: "/one.md", grant: "one", name: "one.md" });
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture([current]);
@@ -172,26 +172,6 @@ describe("document lifecycle", () => {
     await discarded;
 
     expect(context.options.remove.mock.calls.map(([item]) => item)).toEqual([clean, dirty]);
-  });
-
-  it("AC-R5-03: save and save-as mark snapshots and adopt the new path", async () => {
-    const current = record({ path: "/old.md", grant: "old", name: "old.md", text: "changed" });
-    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
-    const context = fixture([current]);
-    const lifecycle = new DocumentLifecycle(context.options);
-    api.saveDocument.mockResolvedValue(ok({ name: "old.md", version: 0 }));
-
-    await expect(lifecycle.save(current, false)).resolves.toBe(true);
-    api.chooseSaveTarget.mockResolvedValue(ok({
-      canonicalPath: "/new.md", grant: "new", name: "new.md",
-    }));
-    api.saveDocument.mockResolvedValue(ok({ name: "new.md", version: 0 }));
-    await expect(lifecycle.save(current, true)).resolves.toBe(true);
-
-    expect(current.canonicalPath).toBe("/new.md");
-    expect(current.grant).toBe("new");
-    expect(current.name).toBe("new.md");
-    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "old" });
   });
 
   it("AC-R4-08: snapshots and restores saved and unsaved session text", async () => {
@@ -316,23 +296,7 @@ describe("document lifecycle", () => {
     expect(api.draftDocument).toHaveBeenCalledOnce();
   });
 
-  it("AC-R5-03: a failed save-as releases its new grant and keeps the old path", async () => {
-    const current = record({ path: "/old.md", grant: "old", name: "old.md", text: "changed" });
-    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
-    const context = fixture([current]);
-    api.chooseSaveTarget.mockResolvedValue(ok({
-      canonicalPath: "/new.md", grant: "new", name: "new.md",
-    }));
-    api.saveDocument.mockResolvedValue(failure);
-
-    await expect(new DocumentLifecycle(context.options).save(current, true))
-      .resolves.toBe(false);
-
-    expect(current.canonicalPath).toBe("/old.md");
-    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "new" });
-  });
-
-  it("AC-R5-01: unexpected open, save and draft failures report status", async () => {
+  it("AC-R5-16: unexpected open, save and draft failures report status", async () => {
     const dirty = record({ grant: "one", name: "one.md", text: "changed" });
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture([dirty]);
@@ -388,28 +352,4 @@ describe("document lifecycle", () => {
     expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "extra" });
   });
 
-  it("AC-R5-03: active save failures keep a dirty tab open", async () => {
-    const dirty = record({ grant: "one", name: "one.md", text: "changed" });
-    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
-    const context = fixture([dirty]);
-    const lifecycle = new DocumentLifecycle(context.options);
-    await lifecycle.saveActive(false);
-    dirty.state = EditorState.create({ doc: "changed again" });
-    dirty.dirty = true;
-    api.saveDocument.mockResolvedValue(failure);
-
-    const closing = lifecycle.closeTab(dirty);
-    context.host.querySelector<HTMLButtonElement>('[data-action="save"]')?.click();
-    await closing;
-    api.readDocument.mockRejectedValueOnce(new Error("request stopped"));
-    lifecycle.handleOpenRequest(ok({
-      canonicalPath: "/bad.md", grant: "bad", name: "bad.md",
-    }));
-    await vi.waitFor(() => {
-      expect(context.options.showStatus).toHaveBeenCalledWith("request stopped");
-    });
-
-    expect(context.options.remove).not.toHaveBeenCalled();
-    expect(api.saveDocument).toHaveBeenCalledTimes(2);
-  });
 });

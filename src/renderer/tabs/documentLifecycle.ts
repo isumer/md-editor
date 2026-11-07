@@ -303,6 +303,12 @@ export class DocumentLifecycle {
     if (!target) {
       return false;
     }
+    const owner = this.options.registry.findByPath(target.canonicalPath);
+    if (owner && owner.id !== document.id) {
+      await this.releaseGrant(target.grant);
+      this.options.showStatus(formatMessage("file.alreadyOpen", { file: target.name }));
+      return false;
+    }
     const name = await this.saveSnapshot(document, snapshot, target.grant, target.name);
     if (!name) {
       await this.releaseGrant(target.grant);

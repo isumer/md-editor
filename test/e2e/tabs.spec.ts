@@ -11,6 +11,7 @@ import {
   launchSecondInstance,
   repositoryRoot,
   stubOpenDialog,
+  stubSaveDialog,
 } from "./helpers";
 
 const PRIMARY_MODIFIER = process.platform === "darwin" ? "Meta" : "Control";
@@ -219,6 +220,37 @@ test("opening a path that is already open focuses its tab without a duplicate", 
     await expect(page.getByTestId("tab")).toHaveCount(2);
     await expect(tab(page, "beta.md")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("editor")).toContainText("beta-line-01");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Save As refuses a path that another open tab owns", {
+  tag: "@AC-R4-02",
+  annotation: { type: "AC-R4-02" },
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const betaText = await fs.readFile(beta, "utf8");
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, page, beta);
+    await tab(page, "alpha.md").click();
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await editor.click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("SAVE-AS-COLLISION");
+    await stubSaveDialog(application, beta);
+
+    await clickMenuItem(application, "file-save-as");
+
+    await expect(page.getByTestId("status")).toHaveText(
+      "beta.md is open in another tab. Close it first or choose another name.",
+    );
+    expect(await fs.readFile(beta, "utf8")).toBe(betaText);
+    await tab(page, "beta.md").click();
+    await expect(editor).toContainText("Beta is the second of two tab fixtures");
+    await expect(editor).not.toContainText("SAVE-AS-COLLISION");
   } finally {
     await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });
