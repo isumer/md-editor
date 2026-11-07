@@ -51,7 +51,7 @@ Update a row when an item is queued, merged or sent back.
 | perf-open-long-task-2 | 4 (bug) | src/renderer/features/preview/{preview,renderScheduler}.ts, src/renderer/workers/render/{handler,incremental,chunks}.ts, src/renderer/main.ts and src/shared/workers/render.ts (only if the measurement names them), their unit tests, test/e2e/preview-perf.spec.ts (message and marks only) | main | dev (Vision) | sent back 2026-11-07 (review 953): `FILL_BATCH_SIZE` 4 doubles the 20 MB fill and times out AC-PERF-09's poll; no throttled 4x/6x measurement. Fix brief perf-open-long-task-3.md continues branch feature/perf-open-long-task-2; owns main's macOS AC-PERF-10 red |
 | slice8-user-bindings | 8 | src/shared/keymap/userBindings.ts, test/unit/userBindings.test.ts | main | nim (Karen) | queued (945; brief slice-8-user-bindings-module-nim.md) |
 | slice11-merge-chunks | 11 | src/shared/merge/mergeChunks.ts, test/unit/mergeChunks.test.ts | main | dev (Vision) | running (949; brief slice-11-merge-chunks-module.md) |
-| slice8-palette-match | 8 | src/shared/commands/paletteMatch.ts, test/unit/paletteMatch.test.ts | main | dev (Vision) | queued (brief slice-8-palette-match-module.md; dev reserve; AC-R13-06) |
+| slice8-palette-match | 8 | src/shared/commands/paletteMatch.ts, test/unit/paletteMatch.test.ts | main | dev (Vision) | candidate 6d95d84 (reviewed by Edith; merge decision with Friday or Jarvis; AC-R13-06 stays planned) |
 | slice10-line-diff-anchors | 10 | src/shared/diff/lineDiff.ts, test/unit/lineDiff.test.ts | slice10-line-diff | dev (Vision) | queued (brief slice-10-line-diff-anchors.md; exact AC-R14-10 diff at 1 % changes; limited flag for AC-R14-11) |
 
 ## Notes
