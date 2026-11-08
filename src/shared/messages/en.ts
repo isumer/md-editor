@@ -14,6 +14,7 @@ export type MessageKey =
   | "file.tooLarge"
   | "file.binary"
   | "file.alreadyOpen"
+  | "file.saveInFlight"
   | "file.unknown"
   | "menu.file"
   | "menu.open"
@@ -47,6 +48,7 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "file.tooLarge": "Could not access “{file}”: it is too large.",
   "file.binary": "Could not open “{file}”: it is a binary file.",
   "file.alreadyOpen": "{file} is open in another tab. Close it first or choose another name.",
+  "file.saveInFlight": "Could not save “{file}”: another tab is saving it. Try again.",
   "file.unknown": "Could not access “{file}”: {reason}.",
   "menu.file": "File",
   "menu.open": "Open",

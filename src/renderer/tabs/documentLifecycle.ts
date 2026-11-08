@@ -6,11 +6,7 @@ import type { Result } from "../../shared/ipc/result";
 import type { SessionCloseRequest } from "../../shared/ipc/session";
 import { formatMessage } from "../../shared/messages/en";
 import { resolveClosePrompt } from "../core/closePrompt";
-import {
-  markDocumentSaved,
-  messageParams,
-  type DocumentRecord,
-} from "../core/document";
+import { markDocumentSaved, messageParams, type DocumentRecord } from "../core/document";
 import type { DocumentRegistry } from "../core/documentRegistry";
 import type { DraftScheduler } from "../core/draftScheduler";
 import {
@@ -75,6 +71,8 @@ export function sessionSnapshot(documents: readonly DocumentRecord[]): {
 }
 
 export class DocumentLifecycle {
+  private readonly inFlightSavePaths = new Set<string>();
+
   constructor(private readonly options: DocumentLifecycleOptions) {}
 
   async open(): Promise<void> {
@@ -295,10 +293,7 @@ export class DocumentLifecycle {
     return true;
   }
 
-  private async saveNew(
-    document: DocumentRecord,
-    snapshot: SaveSnapshot,
-  ): Promise<boolean> {
+  private async saveNew(document: DocumentRecord, snapshot: SaveSnapshot): Promise<boolean> {
     const target = this.value(await chooseSaveTarget({ grant: document.grant }));
     if (!target) {
       return false;
@@ -309,16 +304,34 @@ export class DocumentLifecycle {
       this.options.showStatus(formatMessage("file.alreadyOpen", { file: target.name }));
       return false;
     }
-    const name = await this.saveSnapshot(document, snapshot, target.grant, target.name);
+    if (this.inFlightSavePaths.has(target.canonicalPath)) {
+      await this.releaseGrant(target.grant);
+      this.options.showStatus(formatMessage("file.saveInFlight", { file: target.name }));
+      return false;
+    }
+    this.inFlightSavePaths.add(target.canonicalPath);
+    let name: string | undefined;
+    try {
+      name = await this.saveSnapshot(document, snapshot, target.grant, target.name);
+    } catch (error) {
+      this.inFlightSavePaths.delete(target.canonicalPath);
+      await this.releaseGrant(target.grant);
+      throw error;
+    }
     if (!name) {
+      this.inFlightSavePaths.delete(target.canonicalPath);
       await this.releaseGrant(target.grant);
       return false;
     }
     const previousGrant = document.grant;
-    document.grant = target.grant;
-    document.name = name;
-    this.options.registry.adoptPath(document.id, target.canonicalPath);
-    this.options.syncDirty(document);
+    try {
+      document.grant = target.grant;
+      document.name = name;
+      this.options.registry.adoptPath(document.id, target.canonicalPath);
+      this.options.syncDirty(document);
+    } finally {
+      this.inFlightSavePaths.delete(target.canonicalPath);
+    }
     if (previousGrant) {
       await this.releaseGrant(previousGrant);
     }

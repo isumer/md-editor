@@ -54,6 +54,16 @@ function record(input: {
   });
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve = (_value: T): void => {
+    throw new Error("Deferred promise was not initialized");
+  };
+  const promise = new Promise<T>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
+}
+
 function fixture(initial: readonly DocumentRecord[]) {
   const registry = new DocumentRegistry();
   for (const item of initial) registry.add(item);
@@ -132,6 +142,81 @@ describe("document lifecycle saves", () => {
     expect(context.options.showStatus).toHaveBeenCalledWith(
       "second.md is open in another tab. Close it first or choose another name.",
     );
+  });
+
+  it("AC-R4-02: concurrent save-as calls reserve the target path", async () => {
+    const first = record({ path: "/first.md", grant: "first", name: "first.md" });
+    const second = record({ path: "/second.md", grant: "second", name: "second.md" });
+    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
+    const context = fixture([first, second]);
+    const lifecycle = new DocumentLifecycle(context.options);
+    const write = deferred<Awaited<ReturnType<Window["api"]["saveDocument"]>>>();
+    api.chooseSaveTarget
+      .mockResolvedValueOnce(ok({ canonicalPath: "/race.md", grant: "race-a", name: "race.md" }))
+      .mockResolvedValueOnce(ok({ canonicalPath: "/race.md", grant: "race-b", name: "race.md" }));
+    api.saveDocument.mockImplementationOnce(() => write.promise);
+
+    const firstSave = lifecycle.save(first, true);
+    await vi.waitFor(() => {
+      expect(api.saveDocument).toHaveBeenCalledOnce();
+    });
+    await expect(lifecycle.save(second, true)).resolves.toBe(false);
+
+    expect(api.saveDocument).toHaveBeenCalledOnce();
+    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "race-b" });
+    expect(second).toMatchObject({
+      canonicalPath: "/second.md", grant: "second", name: "second.md",
+    });
+    expect(context.options.showStatus).toHaveBeenCalledWith(
+      "Could not save “race.md”: another tab is saving it. Try again.",
+    );
+    write.resolve(ok({ name: "race.md", version: 0 }));
+    await expect(firstSave).resolves.toBe(true);
+    expect(context.registry.findByPath("/race.md")).toBe(first);
+    expect(context.registry.findByPath("/first.md")).toBeUndefined();
+    expect(context.registry.findByPath("/second.md")).toBe(second);
+  });
+
+  it("AC-R4-02: a failed save-as releases its target path reservation", async () => {
+    const first = record({ path: "/first.md", grant: "first", name: "first.md" });
+    const second = record({ path: "/second.md", grant: "second", name: "second.md" });
+    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
+    const context = fixture([first, second]);
+    const lifecycle = new DocumentLifecycle(context.options);
+    api.chooseSaveTarget
+      .mockResolvedValueOnce(ok({ canonicalPath: "/race.md", grant: "race-a", name: "race.md" }))
+      .mockResolvedValueOnce(ok({ canonicalPath: "/race.md", grant: "race-b", name: "race.md" }));
+    api.saveDocument
+      .mockResolvedValueOnce(failure)
+      .mockResolvedValueOnce(ok({ name: "race.md", version: 0 }));
+
+    await expect(lifecycle.save(first, true)).resolves.toBe(false);
+    await expect(lifecycle.save(second, true)).resolves.toBe(true);
+
+    expect(api.saveDocument).toHaveBeenCalledTimes(2);
+    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "race-a" });
+    expect(context.registry.findByPath("/race.md")).toBe(second);
+  });
+
+  it("AC-R4-02: a rejected save-as releases its target path reservation", async () => {
+    const first = record({ path: "/first.md", grant: "first", name: "first.md" });
+    const second = record({ path: "/second.md", grant: "second", name: "second.md" });
+    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
+    const context = fixture([first, second]);
+    const lifecycle = new DocumentLifecycle(context.options);
+    api.chooseSaveTarget
+      .mockResolvedValueOnce(ok({ canonicalPath: "/race.md", grant: "race-a", name: "race.md" }))
+      .mockResolvedValueOnce(ok({ canonicalPath: "/race.md", grant: "race-b", name: "race.md" }));
+    api.saveDocument
+      .mockRejectedValueOnce(new Error("save stopped"))
+      .mockResolvedValueOnce(ok({ name: "race.md", version: 0 }));
+
+    await expect(lifecycle.save(first, true)).resolves.toBe(false);
+    await expect(lifecycle.save(second, true)).resolves.toBe(true);
+
+    expect(api.saveDocument).toHaveBeenCalledTimes(2);
+    expect(api.releaseDocument).toHaveBeenCalledWith({ grant: "race-a" });
+    expect(context.registry.findByPath("/race.md")).toBe(second);
   });
 
   it("AC-R5-10: save-as permits the current document's own path", async () => {
