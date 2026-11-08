@@ -46,6 +46,7 @@ const BLOCK_CLASS = "preview-block";
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
+const APPEND_TASK_BLOCK_LIMIT = 4;
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -291,8 +292,58 @@ export function wireRenderWorker(
   // version has actually been shown; comparing against the live editor version
   // would discard a delta the preview still needs.
   let shown: { docId: string; epoch: number; version: number } | null = null;
+  let pendingAppend: {
+    response: RenderResult & { ok: true; mode: "append" };
+    timer: number;
+  } | null = null;
+
+  const applyAccepted = (
+    response: RenderResult,
+    requestFill: boolean,
+  ): boolean => {
+    performance.mark("preview-apply-start");
+    const documentPreview = previews.getOrCreate(response.docId, response.epoch);
+    const documentWiring = { ...wiring, preview: documentPreview.container };
+    const applied = applyRenderResult(
+      response,
+      documentPreview.shifts,
+      documentWiring,
+      documentPreview.elements,
+      documentPreview.layout,
+    );
+    performance.mark("preview-apply-end");
+    if (applied && response.ok) {
+      documentPreview.version = response.version;
+      previews.display(documentPreview);
+      shown = {
+        docId: response.docId,
+        epoch: response.epoch,
+        version: response.version,
+      };
+      if (requestFill && response.mode === "append") {
+        requestNextFill(renderWorker, response);
+      }
+    }
+    return applied;
+  };
+
+  const flushAppend = (): void => {
+    const pending = pendingAppend;
+    if (pending === null) {
+      return;
+    }
+    window.clearTimeout(pending.timer);
+    pendingAppend = null;
+    const current = wiring.currentVersion();
+    if (pending.response.docId !== current.docId ||
+      pending.response.epoch !== current.epoch) {
+      return;
+    }
+    applyAccepted(pending.response, true);
+  };
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
+    flushAppend();
     const response = event.data;
     const current = wiring.currentVersion();
     if ("op" in response) {
@@ -312,27 +363,27 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    const documentPreview = previews.getOrCreate(response.docId, response.epoch);
-    const documentWiring = { ...wiring, preview: documentPreview.container };
-    const applied = applyRenderResult(
-      response,
-      documentPreview.shifts,
-      documentWiring,
-      documentPreview.elements,
-      documentPreview.layout,
-    );
-    if (applied && response.ok) {
-      documentPreview.version = response.version;
-      previews.display(documentPreview);
-      shown = {
-        docId: response.docId,
-        epoch: response.epoch,
-        version: response.version,
+    if (response.ok && response.mode === "append" &&
+      response.blocks.length > APPEND_TASK_BLOCK_LIMIT) {
+      const first = {
+        ...response,
+        blocks: response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
+        complete: false,
       };
-      if (response.mode === "append") {
-        requestNextFill(renderWorker, response);
+      if (!applyAccepted(first, false)) {
+        return;
       }
+      const remainder = {
+        ...response,
+        blocks: response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
+      };
+      pendingAppend = {
+        response: remainder,
+        timer: window.setTimeout(flushAppend, 0),
+      };
+      return;
     }
+    applyAccepted(response, true);
   };
 
   renderWorker.onerror = (event) => {
