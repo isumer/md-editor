@@ -21,7 +21,7 @@ AC-R13-05 stays `planned`. Do not add wiring, IPC or dependencies.
    rejects only the space, tab, newline and carriage return characters.
    Chord rule 2 says the key must not be whitespace. Other whitespace
    passes: `Mod-\v` (vertical tab), `Mod-\f` (form feed) and
-   `Mod- ` (no-break space) all bind. The gate proved it: a
+   `Mod-` plus a no-break space (U+00A0) all bind. The gate proved it: a
    temporary assertion returned `"Mod-\v"`.
 3. Major - `src/shared/keymap/userBindings.ts:83`. The table check
    accepts every value that is not `null` and not an array. `new
@@ -70,9 +70,9 @@ Add three tests. Each `it` title starts `AC-R13-05:`. Use exact
      `{ "Alt-Shift-q": "cmd" }` and no problems.
 2. `AC-R13-05: rejects every whitespace key`.
    `normalizeChord("Mod-\v", "linux")`, `normalizeChord("Mod-\f",
-   "linux")` and `normalizeChord("Mod- ", "linux")` each return
-   `null`. `resolveUserBindings({}, { "Mod-\v": "cmd" }, "linux")`
-   gives bindings `{}` and problems
+   "linux")` and `normalizeChord("Mod-" + String.fromCharCode(0xa0),
+   "linux")` each return `null`. `resolveUserBindings({}, { "Mod-\v":
+   "cmd" }, "linux")` gives bindings `{}` and problems
    `[{ chord: "Mod-\v", reason: "invalid-chord" }]`.
 3. `AC-R13-05: rejects tables that are not plain objects`.
    `new Date(0)`, `new Map()` and `new (class Table {})()` each give
