@@ -10,6 +10,7 @@
     <title>Untitled</title>
   </head>
   <body>
+    <div id="tabs" data-testid="tabs" role="tablist" aria-label="Open documents"></div>
     <main id="workspace">
       <section id="editor" data-testid="editor" aria-label="Markdown editor"></section>
       <div
@@ -20,7 +21,18 @@
         aria-orientation="vertical"
       ></div>
       <section id="preview" data-testid="preview" aria-label="Markdown preview"></section>
+      <div id="preview-error" data-testid="preview-error" role="alert" hidden></div>
     </main>
+    <div id="close-prompt" data-testid="close-prompt" role="dialog" aria-modal="true" hidden>
+      <div class="close-prompt-panel">
+        <p id="close-prompt-message"></p>
+        <div class="close-prompt-actions">
+          <button type="button" data-action="cancel"></button>
+          <button type="button" data-action="discard"></button>
+          <button type="button" data-action="save"></button>
+        </div>
+      </div>
+    </div>
     <footer id="status" data-testid="status" role="status" aria-live="polite"></footer>
     <script type="module" src="/main.ts"></script>
   </body>

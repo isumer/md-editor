@@ -8,16 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Several files can be open at once, each in its own tab with its own text, undo history, cursor, scroll and preview. Opening a file that is already open focuses its tab. A dot marks each tab with unsaved changes. Dropping a file onto the window opens it in a tab.
+- Closing a tab or quitting with unsaved changes asks first: Cancel, Discard or Save. Reopening the app restores the files you had open, with their unsaved changes.
+- Unsaved typing is drafted every few seconds. If the window crashes, the app reopens it and restores the drafts. A stuck preview restarts on its own and the editor stays responsive.
 - Opening a binary file now shows "it is a binary file" and keeps your current document. Files with a UTF-8 or UTF-16 byte order mark still open as text.
 - Images next to a document now show in the preview: relative image paths load from the document's own folder (and its subfolders) and nowhere else; paths that try to escape the folder are refused.
 - A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
+- Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 
 ### Changed
 
 - Typing in a large document now updates only the preview blocks you changed. Other blocks stay as they are.
 - The preview keeps up with typing on 50 KB and 500 KB documents. The scroll stays smooth.
 - Opening a 20 MB document shows the first screen quickly. The rest of the preview fills in without freezing the editor.
+- Opening and scrolling a very large document no longer causes short freezes on slower computers. The preview fills in one step per screen frame.
 - Keyboard shortcuts now come from one place in the editor: Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y (Cmd on macOS) open, save, undo and redo, and also work with a non-Latin keyboard layout such as Russian. The File menu still shows these shortcuts. On Windows, AltGr letters (Ctrl+Alt) are always typed, never taken as shortcuts.
 - The menu now has Edit (Cut, Copy, Paste, Select All), Window and Help menus; on macOS it has the standard application menu.
 - The app now loads from its own private address instead of a local file, serves only its own files, and no longer lets the page load images from local file paths.
@@ -31,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
+- When two tabs save under the same new file name at the same moment, the second save now refuses with a message instead of overwriting the first save's content.
+- Opening a file, or restoring a draft, while another tab is still saving that same file now shows a message and does not open a second tab for that file.
 
 ### Security
 

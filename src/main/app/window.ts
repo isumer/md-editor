@@ -50,6 +50,7 @@ interface WindowDependencies {
   openExternalBackstop(url: string): void;
   attachIoPort(window: BrowserWindow): Promise<void>;
   closeWindow(windowId: number): Promise<void>;
+  requestClose(window: BrowserWindow): Promise<boolean>;
 }
 
 function wireWindowSecurity(
@@ -59,6 +60,10 @@ function wireWindowSecurity(
 ): void {
   window.webContents.on("render-process-gone", (_event, details) => {
     logProcessEvent("render-process-gone", details.reason);
+    // Drafts in the io-worker outlive the renderer; reloading restores them.
+    if (details.reason !== "clean-exit" && !window.isDestroyed()) {
+      window.webContents.reload();
+    }
   });
   window.webContents.on("will-navigate", (event, url) => {
     if (url === APP_ENTRY_URL) {
@@ -109,6 +114,25 @@ export function createWindow(
     if (!window.isDestroyed()) {
       window.show();
     }
+  });
+  let closeAllowed = false;
+  window.on("close", (event) => {
+    if (closeAllowed) {
+      return;
+    }
+    event.preventDefault();
+    void dependencies.requestClose(window).then((allow) => {
+      if (allow && !window.isDestroyed()) {
+        closeAllowed = true;
+        window.close();
+      }
+    }).catch((error: unknown) => {
+      dependencies.logProcessEvent("close-request", error);
+      if (!window.isDestroyed()) {
+        closeAllowed = true;
+        window.close();
+      }
+    });
   });
   window.on("closed", () => {
     unregisterTrustedWindow(window);
