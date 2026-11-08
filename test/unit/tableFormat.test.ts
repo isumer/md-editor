@@ -47,6 +47,23 @@ describe("AC-R13-07: table formatter", () => {
     ]);
   });
 
+  it("AC-R13-07: treats a pipe after an even backslash run as a separator", () => {
+    expect(
+      formatTable(["| a \\\\| b | c |", "| - | - | - |", "| x | y | z |"]),
+    ).toEqual([
+      "| a \\\\ | b   | c   |",
+      "| ---- | --- | --- |",
+      "| x    | y   | z   |",
+    ]);
+  });
+
+  it("AC-R13-07: keeps an escaped pipe at the end of a row", () => {
+    expect(formatTable(["x | a \\|", "- | -"])).toEqual([
+      "| x   | a \\| |",
+      "| --- | ---- |",
+    ]);
+  });
+
   it("AC-R13-07: accepts rows without outer pipes", () => {
     expect(formatTable(["| long | b |", "--- | ---", "a | b"])).toEqual([
       "| long | b   |",
