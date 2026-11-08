@@ -47,13 +47,14 @@ describe("render worker heartbeat", () => {
 
     monitor.start();
     expect(onPing).toHaveBeenCalledWith(1);
-    expect([...timers.values()][0]?.milliseconds).toBe(500);
+    expect([...timers.values()][0]?.milliseconds).toBe(250);
 
-    advance(500);
-    advance(500);
+    for (let tick = 0; tick < 5; tick += 1) {
+      advance(250);
+    }
     expect(onStuck).not.toHaveBeenCalled();
 
-    advance(500);
+    advance(250);
     expect(onStuck).toHaveBeenCalledTimes(1);
     expect(timers.size).toBe(0);
   });
@@ -63,7 +64,7 @@ describe("render worker heartbeat", () => {
 
     monitor.start();
     monitor.pong(1);
-    advance(500);
+    advance(250);
 
     expect(onStuck).not.toHaveBeenCalled();
     expect(onPing).toHaveBeenLastCalledWith(2);

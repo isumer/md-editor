@@ -278,18 +278,27 @@ test("a stuck render worker is restarted within 2.5 s and typing stays responsiv
     expect(renderWorker).toBeDefined();
 
     // Start the bounded wait before the worker blocks, so the 2.5 s budget
-    // covers the heartbeat miss and the restart. The badge is cleared as soon
-    // as the new worker renders, so a mutation observer records that it showed.
+    // covers the heartbeat miss and the restart. Times come from the page
+    // clock: Node round-trips and poll intervals must not count as latency.
+    // The badge is cleared as soon as the new worker renders, so a mutation
+    // observer records that it showed.
     await page.evaluate(() => {
       const badge = document.querySelector<HTMLElement>("#preview-error");
       if (!badge) {
         throw new Error("missing preview error");
       }
-      const probe = window as Window & { previewBadgeShown?: boolean };
+      const probe = window as Window & {
+        previewBadgeShown?: boolean;
+        watchdogStartedAt?: number;
+        watchdogBadgeAt?: number;
+      };
       probe.previewBadgeShown = false;
+      probe.watchdogBadgeAt = undefined;
+      probe.watchdogStartedAt = performance.now();
       new MutationObserver(() => {
         if (!badge.hidden) {
           probe.previewBadgeShown = true;
+          probe.watchdogBadgeAt ??= performance.now();
         }
       }).observe(badge, {
         attributes: true,
@@ -299,7 +308,6 @@ test("a stuck render worker is restarted within 2.5 s and typing stays responsiv
         subtree: true,
       });
     });
-    const started = Date.now();
     void renderWorker?.evaluate(() => {
       while (true) {
         // Occupy the worker so it cannot answer heartbeats.
@@ -318,7 +326,15 @@ test("a stuck render worker is restarted within 2.5 s and typing stays responsiv
       )),
       { timeout: 10_000 },
     ).toBe(true);
-    expect(Date.now() - started).toBeLessThan(2_500);
+    const badgeMilliseconds = await page.evaluate(() => {
+      const probe = window as Window & {
+        watchdogStartedAt?: number;
+        watchdogBadgeAt?: number;
+      };
+      return (probe.watchdogBadgeAt ?? Number.POSITIVE_INFINITY) -
+        (probe.watchdogStartedAt ?? 0);
+    });
+    expect(badgeMilliseconds).toBeLessThan(2_500);
     await expect(page.getByTestId("preview-error")).toBeHidden({ timeout: 10_000 });
     await expect(page.getByTestId("preview")).toContainText("WATCHDOG", { timeout: 10_000 });
   } finally {

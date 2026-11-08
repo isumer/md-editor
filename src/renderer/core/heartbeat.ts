@@ -11,7 +11,8 @@ export interface HeartbeatOptions {
 }
 
 // A ping unanswered for longer than the timeout means the worker stopped
-// responding. Detection and restart happen well inside the 2.5 s budget.
+// responding. The 250 ms interval bounds the wait for the next ping, so
+// detection stays well inside the 2.5 s budget.
 export class WorkerHeartbeat {
   private readonly onPing: (id: number) => void;
   private readonly onStuck: () => void;
@@ -34,7 +35,7 @@ export class WorkerHeartbeat {
       ((callback, milliseconds) => setTimeout(callback, milliseconds));
     this.clearTimer = options.clearTimer ??
       ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
-    this.intervalMilliseconds = options.intervalMilliseconds ?? 500;
+    this.intervalMilliseconds = options.intervalMilliseconds ?? 250;
     this.timeoutMilliseconds = options.timeoutMilliseconds ?? 1_500;
   }
 

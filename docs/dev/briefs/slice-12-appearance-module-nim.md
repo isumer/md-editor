@@ -71,9 +71,11 @@ Every title starts `AC-R7-03:` or `AC-R7-04:`. Use exact expected values.
   21, one colour against itself is 1, and `#767676` against white is
   about 4.542.
 - `AC-R7-04: picks the readable text colour` — `#ffffff` on `#000080`,
-  `#000000` on `#808080` and `#ffffff` on `#767676`, whose contrast with
-  white is above 4.5.
-- `does not mutate its input` — freeze the colour objects.
+  `#000000` on `#808080` and `#000000` on `#767676`. White is above 4.5 on
+  `#767676`, but rule 5 picks the higher-contrast colour. Black (about
+  4.623) beats white (about 4.542).
+- `AC-R7-03: does not mutate its input` and `AC-R7-04: does not mutate
+  its input` — freeze the colour objects.
 
 Red evidence: break rule 1's `#rgb` expansion, rule 3's `0.03928`
 threshold and rule 6's fallback once each, confirm a test goes red, and

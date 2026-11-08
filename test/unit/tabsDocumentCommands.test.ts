@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("document commands", () => {
-  it("AC-R5-20: publishes the fixed menu ids and dispatches each command", async () => {
+  it("AC-R5-08 AC-R5-15: publishes fixed menu ids and dispatches each command", async () => {
     const { DocumentCommands } = await import(
       "../../src/renderer/tabs/documentCommands"
     );
