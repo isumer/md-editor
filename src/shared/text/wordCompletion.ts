@@ -9,21 +9,57 @@ function isWordChar(ch: string | undefined): boolean {
   return ch !== undefined && WORD_REGEX.test(ch);
 }
 
+function isSurrogatePairAt(text: string, offset: number): boolean {
+  const before = text.charCodeAt(offset - 1);
+  const after = text.charCodeAt(offset);
+  return (
+    before >= 0xd800 &&
+    before <= 0xdbff &&
+    after >= 0xdc00 &&
+    after <= 0xdfff
+  );
+}
+
+function codePointAt(text: string, offset: number): string | undefined {
+  const firstCodeUnit = text[offset];
+  if (firstCodeUnit === undefined) {
+    return undefined;
+  }
+  return isSurrogatePairAt(text, offset + 1)
+    ? text.slice(offset, offset + 2)
+    : firstCodeUnit;
+}
+
+function previousCodePointStart(text: string, offset: number): number {
+  const previous = offset - 1;
+  return previous > 0 && isSurrogatePairAt(text, previous)
+    ? previous - 1
+    : previous;
+}
+
 export function wordAt(text: string, cursorOffset: number): WordAtCursor {
-  const clampedOffset = Math.max(0, Math.min(cursorOffset, text.length));
+  let clampedOffset = Math.max(0, Math.min(cursorOffset, text.length));
+
+  if (isSurrogatePairAt(text, clampedOffset)) {
+    clampedOffset--;
+  }
 
   if (clampedOffset === 0) {
     return { prefix: '', start: 0 };
   }
 
-  const charBefore = text[clampedOffset - 1];
+  let start = previousCodePointStart(text, clampedOffset);
+  const charBefore = text.slice(start, clampedOffset);
   if (!isWordChar(charBefore)) {
     return { prefix: '', start: clampedOffset };
   }
 
-  let start = clampedOffset - 1;
-  while (start > 0 && isWordChar(text[start - 1])) {
-    start--;
+  while (start > 0) {
+    const previous = previousCodePointStart(text, start);
+    if (!isWordChar(text.slice(previous, start))) {
+      break;
+    }
+    start = previous;
   }
 
   return {
@@ -55,14 +91,17 @@ export function completeWord(
   const len = text.length;
 
   while (i < len) {
-    if (!isWordChar(text[i])) {
-      i++;
+    const codePoint = codePointAt(text, i);
+    if (!isWordChar(codePoint)) {
+      i += codePoint?.length ?? 1;
       continue;
     }
 
     const wordStart = i;
-    while (i < len && isWordChar(text[i])) {
-      i++;
+    let wordCodePoint: string | undefined = codePoint;
+    while (isWordChar(wordCodePoint)) {
+      i += wordCodePoint?.length ?? 1;
+      wordCodePoint = codePointAt(text, i);
     }
     const wordEnd = i;
 

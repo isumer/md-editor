@@ -5,6 +5,7 @@ describe('AC-R13-04: word completion', () => {
   describe('wordAt', () => {
     it('AC-R13-04: finds the word before the cursor', () => {
       const text = 'hello world';
+      expect(wordAt(text, 1)).toEqual({ prefix: 'h', start: 0 });
       expect(wordAt(text, 5)).toEqual({ prefix: 'hello', start: 0 });
       expect(wordAt(text, 3)).toEqual({ prefix: 'hel', start: 0 });
       expect(wordAt(text, 11)).toEqual({ prefix: 'world', start: 6 });
@@ -23,6 +24,12 @@ describe('AC-R13-04: word completion', () => {
       expect(wordAt(text, -10)).toEqual({ prefix: '', start: 0 });
       expect(wordAt(text, 5)).toEqual({ prefix: 'hello', start: 0 });
       expect(wordAt(text, 10)).toEqual({ prefix: 'hello', start: 0 });
+    });
+
+    it('AC-R13-04: handles non-BMP letters', () => {
+      expect(wordAt('a𐐀b', 3)).toEqual({ prefix: 'a𐐀', start: 0 });
+      expect(wordAt('𐐀b', 1)).toEqual({ prefix: '', start: 0 });
+      expect(completeWord('𐐀𐐨x 𐐀𐐨xyz', 5)).toEqual(['𐐀𐐨xyz']);
     });
   });
 
@@ -50,6 +57,14 @@ describe('AC-R13-04: word completion', () => {
       const text = 'apple applet application banana';
       // cursor at offset 3 in "apple", prefix "app"
       expect(completeWord(text, 3, 2)).toEqual(['applet', 'application']);
+    });
+
+    it('AC-R13-04: defaults to at most 20 words', () => {
+      const text = `ite ${Array.from({ length: 21 }, (_, index) => `item${index}`).join(' ')}`;
+      const results = completeWord(text, 3);
+      expect(results).toHaveLength(20);
+      expect(results.at(-1)).toBe('item19');
+      expect(results).not.toContain('item20');
     });
 
     it('AC-R13-04: ignores the word at the cursor', () => {
