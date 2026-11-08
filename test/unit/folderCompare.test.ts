@@ -50,6 +50,7 @@ describe("folder compare", () => {
     const right: readonly FolderEntry[] = [
       { path: "left-error.md", kind: "file", textKey: "right" },
       { path: "right-error.md", kind: "file", error: "denied" },
+      { path: "right-single-error.md", kind: "file", error: "denied" },
     ];
 
     const rows = compareFolders(left, right, { mode: "contents" });
@@ -57,6 +58,7 @@ describe("folder compare", () => {
     expect(statuses(rows)).toEqual({
       "left-error.md": "error",
       "right-error.md": "error",
+      "right-single-error.md": "error",
       "single-error.md": "error",
     });
   });
