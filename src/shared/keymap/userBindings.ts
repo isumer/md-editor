@@ -22,9 +22,17 @@ const NAMED_KEYS = new Set([
 
 function isValidKey(key: string): boolean {
   if (key.length === 1) {
-    return key !== "-" && key !== " " && key !== "\t" && key !== "\n" && key !== "\r";
+    return key !== "-" && !/\s/.test(key);
   }
   return NAMED_KEYS.has(key);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 export function normalizeChord(chord: string, platform: string): string | null {
@@ -80,26 +88,27 @@ export function resolveUserBindings(
   const bindings: Record<string, string | undefined> = { ...defaults };
   const problems: BindingProblem[] = [];
 
-  if (user === null || Array.isArray(user) || typeof user !== "object") {
+  if (!isPlainObject(user)) {
     return {
       bindings: Object.freeze(bindings),
       problems: Object.freeze([{ chord: "", reason: "invalid-table" }]),
     };
   }
 
-  const userObj = user as Record<string, unknown>;
   const seenNormalized = new Set<string>();
 
-  for (const [chord, value] of Object.entries(userObj)) {
+  for (const [chord, value] of Object.entries(user)) {
     const normalized = normalizeChord(chord, platform);
     if (normalized === null) {
       problems.push({ chord, reason: "invalid-chord" });
       continue;
     }
 
-    if (platform === "win32" && normalized.startsWith("Mod-Alt-")) {
-      const keyPart = normalized.slice("Mod-Alt-".length);
-      if (keyPart.length === 1) {
+    if (platform === "win32") {
+      const parts = normalized.split("-");
+      const keyPart = parts[parts.length - 1];
+      const modifiers = new Set(parts.slice(0, -1));
+      if (modifiers.has("Mod") && modifiers.has("Alt") && keyPart?.length === 1) {
         problems.push({ chord, reason: "unreachable-chord" });
         continue;
       }

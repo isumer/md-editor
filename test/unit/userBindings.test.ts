@@ -87,6 +87,35 @@ describe("AC-R13-05: userBindings", () => {
       expect(resultWinF5.problems).toEqual([]);
     });
 
+    it("AC-R13-05: reports one-character AltGr chords with any modifiers", () => {
+      expect(resolveUserBindings({}, { "Mod-Alt-Shift-q": "cmd" }, "win32")).toEqual({
+        bindings: {},
+        problems: [{ chord: "Mod-Alt-Shift-q", reason: "unreachable-chord" }],
+      });
+      expect(resolveUserBindings({}, { "Shift-Mod-Alt-Q": "cmd" }, "win32")).toEqual({
+        bindings: {},
+        problems: [{ chord: "Shift-Mod-Alt-Q", reason: "unreachable-chord" }],
+      });
+      expect(resolveUserBindings({}, { "Mod-Meta-Alt-q": "cmd" }, "win32")).toEqual({
+        bindings: {},
+        problems: [{ chord: "Mod-Meta-Alt-q", reason: "unreachable-chord" }],
+      });
+      expect(resolveUserBindings({}, { "Alt-Shift-q": "cmd" }, "win32")).toEqual({
+        bindings: { "Alt-Shift-q": "cmd" },
+        problems: [],
+      });
+    });
+
+    it("AC-R13-05: rejects every whitespace key", () => {
+      expect(normalizeChord("Mod-\v", "linux")).toEqual(null);
+      expect(normalizeChord("Mod-\f", "linux")).toEqual(null);
+      expect(normalizeChord("Mod-" + String.fromCharCode(0xa0), "linux")).toEqual(null);
+      expect(resolveUserBindings({}, { "Mod-\v": "cmd" }, "linux")).toEqual({
+        bindings: {},
+        problems: [{ chord: "Mod-\v", reason: "invalid-chord" }],
+      });
+    });
+
     it("rejects a table that is not a plain object", () => {
       const defaults: Bindings = Object.freeze({ "Mod-s": "file.save" });
       for (const user of [null, [], "x", 42]) {
@@ -94,6 +123,22 @@ describe("AC-R13-05: userBindings", () => {
         expect(result.bindings).toEqual({ "Mod-s": "file.save" });
         expect(result.problems).toEqual([{ chord: "", reason: "invalid-table" }]);
       }
+    });
+
+    it("AC-R13-05: rejects tables that are not plain objects", () => {
+      const defaults: Bindings = Object.freeze({ "Mod-s": "file.save" });
+      for (const user of [new Date(0), new Map(), new (class Table {})()]) {
+        expect(resolveUserBindings(defaults, user, "linux")).toEqual({
+          bindings: { "Mod-s": "file.save" },
+          problems: [{ chord: "", reason: "invalid-table" }],
+        });
+      }
+
+      const user = Object.assign(Object.create(null), { "Mod-k": "cmd" });
+      expect(resolveUserBindings({}, user, "linux")).toEqual({
+        bindings: { "Mod-k": "cmd" },
+        problems: [],
+      });
     });
 
     it("ignores a __proto__ key", () => {
