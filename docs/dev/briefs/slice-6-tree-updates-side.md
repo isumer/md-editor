@@ -9,8 +9,10 @@ AC-R11-05 in `docs/acceptance/R11-workspace-sidebar.md` is planned; do
 not edit it. No new dependencies.
 
 ## The module
-New file `src/shared/workspace/treeUpdates.ts`. Import the node type only:
-`import type { WorkspaceNode } from './treeRows';`. A node has `name`,
+New file `src/shared/workspace/treeUpdates.ts`. `src/shared` modules have
+no imports (dependency-cruiser `shared-no-dependencies`), so mirror the
+node shape locally: `{ readonly name: string; readonly kind: 'folder' |
+'file'; readonly children?: readonly WorkspaceNode[] }`. A node has `name`,
 `kind` and optional `children`; it has no `path` field. Derive a node's
 path by joining its ancestor names with `/`. Exports exactly:
 - `export type WorkspaceChange = { readonly kind: 'created'; readonly path: string; readonly entryKind: 'folder' | 'file' } | { readonly kind: 'deleted'; readonly path: string };`
