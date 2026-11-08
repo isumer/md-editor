@@ -90,7 +90,7 @@ export function buildAcceptanceReport(
     const applies = criterion.platforms === null || criterion.platforms.includes(platform);
     // Temporary owner order 2026-11-08: the perf e2e tests are filtered out, so their criteria cannot pass.
     const perfSkipped = skipPerf && criterion.id.startsWith("AC-PERF-");
-    const required = criterion.status === "implemented" && applies && !perfSkipped;
+    const required = criterion.status === "implemented" && applies;
     const result = !applies
       ? `not applicable on ${platform}`
       : perfSkipped
