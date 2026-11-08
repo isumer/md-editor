@@ -35,3 +35,4 @@ export function buildAcceptanceReport(
   platform?: string,
   skipPerf?: boolean,
 ): AcceptanceReport;
+export function runAcceptanceCheck(repositoryRoot?: string): Promise<AcceptanceReport>;

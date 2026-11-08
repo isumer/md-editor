@@ -1,9 +1,14 @@
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -112,5 +117,36 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-R1-01"]);
+  });
+
+  it("accepts a missing implemented perf result only when the skip is on", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-acceptance-"));
+    const previousSkip = process.env.MDEDITOR_SKIP_PERF;
+    const previousSummary = process.env.GITHUB_STEP_SUMMARY;
+
+    try {
+      await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await fs.mkdir(path.join(root, "reports"));
+      await fs.writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+      );
+      delete process.env.GITHUB_STEP_SUMMARY;
+      process.env.MDEDITOR_SKIP_PERF = "1";
+
+      const skipped = await runAcceptanceCheck(root);
+      delete process.env.MDEDITOR_SKIP_PERF;
+      const enforced = await runAcceptanceCheck(root);
+
+      expect(skipped.ok).toBe(true);
+      expect(enforced.ok).toBe(false);
+      expect(enforced.missing).toEqual(["AC-PERF-02"]);
+    } finally {
+      if (previousSkip === undefined) delete process.env.MDEDITOR_SKIP_PERF;
+      else process.env.MDEDITOR_SKIP_PERF = previousSkip;
+      if (previousSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = previousSummary;
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
