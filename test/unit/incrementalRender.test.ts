@@ -564,4 +564,55 @@ describe("render worker cache lifecycle", () => {
     expect(scope.results()[0]).toMatchObject({ mode: "replace", blocks: [] });
     expect(scope.results()[1]).toMatchObject({ mode: "patch", blocks: [] });
   });
+
+  it("AC-R1-12: answers a worker ping", () => {
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+
+    handler.handle({ op: "ping", id: 7 });
+
+    expect(scope.responses).toEqual([{ op: "pong", id: 7 }]);
+  });
+
+  it("AC-PERF-11: ignores a mismatched fill acknowledgement and a pending timer", () => {
+    vi.stubGlobal("setTimeout", () => 0);
+    vi.stubGlobal("clearTimeout", () => undefined);
+    try {
+      const scope = new FakeScope();
+      const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+      const document = Array.from(
+        { length: 120 },
+        (_, index) => `paragraph ${String(index)} ${"x".repeat(20_000)}`,
+      ).join("\n\n");
+      handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: document });
+      handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+
+      handler.handle({
+        op: "fill-ready",
+        docId: "doc",
+        epoch: 1,
+        version: 0,
+        token: 999,
+      });
+      handler.handle({
+        op: "fill-ready",
+        docId: "doc",
+        epoch: 1,
+        version: 0,
+        token: 1,
+      });
+      handler.handle({
+        op: "fill-ready",
+        docId: "missing",
+        epoch: 1,
+        version: 0,
+        token: 1,
+      });
+
+      expect(scope.results().filter((result) =>
+        result.ok && result.mode === "append")).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

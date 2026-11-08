@@ -11,9 +11,20 @@ import {
   isIoControlRequest,
   isRegisterGrantReply,
   isResolveAssetReply,
+  isSessionReadReply,
+  isSessionWriteReply,
+  isStoredSession,
+  parseStoredSession,
   controlRequestId,
   MAX_ASSET_RELATIVE_PATH_LENGTH,
 } from "../../src/shared/ipc/ioControl";
+import {
+  isChooseSaveTargetRequest,
+  isOpenFileRequest,
+  isOpenPathRequest,
+  isOpenRequestsReadyRequest,
+  isReleaseDocumentRequest,
+} from "../../src/shared/ipc/file";
 
 function withOwnProto<T extends object>(value: T): T {
   Object.defineProperty(value, "__proto__", {
@@ -43,12 +54,31 @@ describe("io-worker contracts", () => {
       epoch: 1,
       version: 2,
     })).toBe(true);
+    expect(isIoRequest({
+      id: "4",
+      op: "draft",
+      grant: "grant",
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+    })).toBe(true);
+    expect(isIoRequest({ id: "5", op: "drafts" })).toBe(true);
 
     expect(isIoRequest({ id: "1", op: "read", grant: "grant", extra: true }))
       .toBe(false);
     expect(isIoRequest({ id: 1, op: "read", grant: "grant" })).toBe(false);
     expect(isIoRequest({ id: "1", op: "save", grant: "grant", text: "forbidden" }))
       .toBe(false);
+    expect(isIoRequest({
+      id: "4",
+      op: "draft",
+      grant: "grant",
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+      text: "forbidden",
+    })).toBe(false);
+    expect(isIoRequest({ id: "5", op: "drafts", extra: true })).toBe(false);
     expect(isIoRequest(withOwnProto({ id: "1", op: "read", grant: "grant" })))
       .toBe(false);
   });
@@ -67,6 +97,37 @@ describe("io-worker contracts", () => {
       epoch: 0,
       version: 0,
       text: oversizedText,
+    })).toBe(false);
+  });
+
+  it("AC-SEC-13: rejects a change whose inserted text exceeds the text limit", () => {
+    const oversizedText = "x".repeat(257 * 1024 * 1024);
+    const change = {
+      op: "change",
+      docId: "doc",
+      epoch: 0,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [0, [0, oversizedText]],
+    };
+
+    expect(isIoOneWayMessage(change)).toBe(false);
+  });
+
+  it("AC-SEC-13: rejects a change list without an own length data property", () => {
+    const hiddenLength = new Proxy([0, [0, "text"]], {
+      getOwnPropertyDescriptor: (target, key) => key === "length"
+        ? { configurable: false, enumerable: false, value: "2", writable: true }
+        : Reflect.getOwnPropertyDescriptor(target, key),
+    });
+
+    expect(isIoOneWayMessage({
+      op: "change",
+      docId: "doc",
+      epoch: 0,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: hiddenLength,
     })).toBe(false);
   });
 
@@ -93,6 +154,9 @@ describe("io-worker contracts", () => {
     };
     expect(isIoOneWayMessage(change)).toBe(true);
     expect(isIoOneWayMessage({ op: "detach", docId: "doc" })).toBe(true);
+    expect(isIoOneWayMessage({ op: "clear-draft", docId: "doc" })).toBe(true);
+    expect(isIoOneWayMessage({ op: "clear-draft", docId: "doc", extra: true }))
+      .toBe(false);
 
     expect(isIoOneWayMessage({ ...change, extra: true })).toBe(false);
     expect(isIoOneWayMessage({ ...change, toVersion: 6 })).toBe(false);
@@ -141,12 +205,39 @@ describe("io-worker contracts", () => {
   it("AC-SEC-12: accepts only exact typed replies", () => {
     expect(isIoReply({
       id: "1",
-      result: { ok: true, value: { name: "note.md", text: "text" } },
+      result: {
+        ok: true,
+        value: { canonicalPath: "/tmp/note.md", name: "note.md", text: "text" },
+      },
     })).toBe(true);
+    expect(isIoReply({
+      id: "1",
+      result: { ok: true, value: { name: "note.md", text: "text" } },
+    })).toBe(false);
     expect(isIoReply({
       id: "2",
       result: { ok: true, value: { name: "note.md", version: 2 } },
     })).toBe(true);
+    expect(isIoReply({
+      id: "drafts",
+      result: {
+        ok: true,
+        value: {
+          drafts: [{ docId: "doc", grant: "grant", text: "draft" }],
+        },
+      },
+    })).toBe(true);
+    expect(isIoReply({
+      id: "drafts",
+      result: {
+        ok: true,
+        value: { drafts: [{ docId: "doc", grant: null, text: "draft" }] },
+      },
+    })).toBe(true);
+    expect(isIoReply({
+      id: "drafts",
+      result: { ok: true, value: { drafts: [{ grant: "grant" }] } },
+    })).toBe(false);
     expect(isIoReply({
       id: "attach",
       result: { ok: true, value: {} },
@@ -365,5 +456,82 @@ describe("boundary validators", () => {
     expect(isIoControlRequest(accessor)).toBe(false);
     expect(isIoControlRequest([{ type: "revokeWindow", windowId: 7 }])).toBe(false);
     expect(isIoRequest([{ id: "1", op: "read", grant: "grant" }])).toBe(false);
+  });
+});
+
+describe("session control contracts", () => {
+  it("AC-R4-08: validates read and write replies", () => {
+    expect(isSessionReadReply({
+      id: "read",
+      result: { ok: true, value: { version: 1, documents: [] } },
+    })).toBe(true);
+    expect(isSessionWriteReply({
+      id: "write",
+      result: { ok: true, value: {} },
+    })).toBe(true);
+    expect(isSessionWriteReply({
+      id: "write",
+      result: { ok: true, value: { extra: true } },
+    })).toBe(false);
+    expect(isSessionReadReply(withOwnProto({
+      id: "read",
+      result: { ok: true, value: { version: 1, documents: [] } },
+    }))).toBe(false);
+  });
+
+  it("AC-R4-08: parses a stored session and drops invalid entries", () => {
+    const document = {
+      name: "note.md",
+      path: "/docs/note.md",
+      savedText: "old",
+      text: "new",
+    };
+
+    expect(parseStoredSession(undefined)).toEqual({ version: 1, documents: [] });
+    expect(parseStoredSession({ version: 2, documents: [document] }))
+      .toEqual({ version: 1, documents: [] });
+    expect(parseStoredSession({ version: 1, documents: "bad" }))
+      .toEqual({ version: 1, documents: [] });
+    expect(parseStoredSession({
+      version: 1,
+      documents: [null, 7, { ...document, path: "" }, document],
+    })).toEqual({ version: 1, documents: [document] });
+
+    const extraKey = [document] as unknown[] & { extra?: boolean };
+    extraKey.extra = true;
+    expect(isStoredSession({ version: 1, documents: extraKey })).toBe(false);
+    const accessorIndex = [document];
+    Object.defineProperty(accessorIndex, "0", {
+      enumerable: true,
+      get: () => document,
+    });
+    expect(isStoredSession({ version: 1, documents: accessorIndex })).toBe(false);
+    const hostile = new Proxy([document], {
+      ownKeys: () => { throw new Error("hostile array"); },
+    });
+    expect(isStoredSession({ version: 1, documents: hostile })).toBe(false);
+    const badLength = new Proxy([document], {
+      getOwnPropertyDescriptor: (target, key) => key === "length"
+        ? { configurable: false, enumerable: false, value: 1.5, writable: true }
+        : Reflect.getOwnPropertyDescriptor(target, key),
+    });
+    expect(isStoredSession({ version: 1, documents: badLength })).toBe(false);
+    expect(isStoredSession({ version: 1, documents: "bad" })).toBe(false);
+  });
+
+  it("AC-SEC-07: file request validators accept only their exact shapes", () => {
+    expect(isOpenFileRequest({})).toBe(true);
+    expect(isOpenRequestsReadyRequest({})).toBe(true);
+    expect(isOpenPathRequest({ path: "/docs/note.md" })).toBe(true);
+    expect(isChooseSaveTargetRequest({ grant: "grant" })).toBe(true);
+    expect(isReleaseDocumentRequest({ grant: "grant" })).toBe(true);
+
+    for (const value of [null, [], 7, { path: "" }, { path: 7 },
+      { path: "/docs/note.md", extra: true }, withOwnProto({ path: "/docs/note.md" })]) {
+      expect(isOpenPathRequest(value)).toBe(false);
+    }
+    expect(isOpenFileRequest([])).toBe(false);
+    expect(isChooseSaveTargetRequest({ grant: "" })).toBe(false);
+    expect(isReleaseDocumentRequest({ grant: 7 })).toBe(false);
   });
 });
