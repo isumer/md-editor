@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { launchEditor } from "./helpers";
+import { closeEditor, launchEditor } from "./helpers";
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -55,7 +55,7 @@ test("relative preview images load through the document asset protocol", {
     }, outsideSource);
     expect(response).toEqual({ ok: false, status: 404, body: "" });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(path.dirname(documents), { recursive: true, force: true });
   }
 });
@@ -112,7 +112,7 @@ test("the document asset protocol enforces the window and grant", {
     }, source);
     expect(revoked).toEqual({ ok: false, status: 404, body: "" });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(path.dirname(documents), { recursive: true, force: true });
   }
 });

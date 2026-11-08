@@ -1,5 +1,6 @@
 export const FILE_CHANNELS = {
   openFile: "file:open",
+  openPath: "file:open-path",
   chooseSaveTarget: "file:choose-save-target",
   releaseDocument: "file:release-document",
   openRequestsReady: "file:open-requests-ready",
@@ -7,6 +8,10 @@ export const FILE_CHANNELS = {
 } as const;
 
 export interface OpenFileRequest {}
+
+export interface OpenPathRequest {
+  path: string;
+}
 
 export interface ChooseSaveTargetRequest {
   grant: string | null;
@@ -19,6 +24,7 @@ export interface ReleaseDocumentRequest {
 export interface OpenRequestsReadyRequest {}
 
 export interface DocumentReference {
+  canonicalPath: string;
   grant: string;
   name: string;
 }
@@ -69,6 +75,13 @@ export function isOpenFileRequest(value: unknown): value is OpenFileRequest {
   return exactData(value, []) !== null;
 }
 
+export function isOpenPathRequest(value: unknown): value is OpenPathRequest {
+  const request = exactData(value, ["path"]);
+  return request !== null && typeof request["path"] === "string" &&
+    request["path"].length > 0 && request["path"].length <= 32 * 1024 &&
+    !request["path"].includes("\u0000");
+}
+
 export function isChooseSaveTargetRequest(
   value: unknown,
 ): value is ChooseSaveTargetRequest {
@@ -91,6 +104,7 @@ export function isOpenRequestsReadyRequest(
 
 export const fileContracts = {
   openFile: { channel: FILE_CHANNELS.openFile, validate: isOpenFileRequest },
+  openPath: { channel: FILE_CHANNELS.openPath, validate: isOpenPathRequest },
   chooseSaveTarget: {
     channel: FILE_CHANNELS.chooseSaveTarget,
     validate: isChooseSaveTargetRequest,
