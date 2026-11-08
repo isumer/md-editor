@@ -83,9 +83,8 @@ current file.
    `4 passed`. Delete it and paste `git status --short`.
 3. `node -e` loop over the JSON files that prints each parse result.
 4. `ls -l test/fixtures/update` and the first line of each file.
-5. `git diff --stat origin/main...HEAD` names exactly the nine fixture
-   files from the base item; the JSON files show no change since the
-   candidate commit.
+5. Paste `git diff --stat origin/main...HEAD` (nine fixture files) and
+   `git diff --stat 3a68ea1..HEAD` (only the two allowed files).
 
 ## Done means
 - The README states `v1.4.2` and `v1.4.2-beta.1`; `checksums.sha256` is
