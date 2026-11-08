@@ -14,9 +14,20 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
+export interface LaunchEditorOptions {
+  // Runs after the first window exists and before the argv document is applied.
+  onPage?: (editor: { application: ElectronApplication; page: Page }) => void;
+  // Test-only override; the real bound is ARGV_TITLE_TIMEOUT_MS.
+  titleTimeoutMs?: number;
+}
+
+// Bound by the 15_000 ms test timeout (the 2_000 ms expect timeout is separate):
+// 10_000 ms leaves the cold-Windows margin that the old 2_000 ms setup wait lost.
+const ARGV_TITLE_TIMEOUT_MS = 10_000;
+
 export async function launchEditor(
   filePath?: string,
-  onPage?: (page: Page) => void,
+  options: LaunchEditorOptions = {},
 ): Promise<{
   application: ElectronApplication;
   page: Page;
@@ -32,19 +43,32 @@ export async function launchEditor(
     cwd: repositoryRoot,
     env: environment,
   });
-  const page = await application.firstWindow();
-  // Runs before the argv document is applied, so startup traffic is observable.
-  onPage?.(page);
-  if (filePath) {
-    await expect.poll(
-      () => page.title(),
-      {
-        message: `argv document did not open: ${path.basename(filePath)}`,
-        timeout: 10_000,
-      },
-    ).toContain(path.basename(filePath));
+  try {
+    const page = await application.firstWindow();
+    // Runs before the argv document is applied, so startup traffic is observable.
+    options.onPage?.({ application, page });
+    if (filePath) {
+      const waitStarted = Date.now();
+      await expect.poll(
+        () => page.title(),
+        {
+          message: `argv document did not open: ${path.basename(filePath)}`,
+          timeout: options.titleTimeoutMs ?? ARGV_TITLE_TIMEOUT_MS,
+        },
+      ).toContain(path.basename(filePath));
+      console.log(
+        `argv title wait: ${String(Date.now() - waitStarted)} ms (${path.basename(filePath)})`,
+      );
+    }
+    return { application, page };
+  } catch (error) {
+    try {
+      await application.close();
+    } catch {
+      // Best effort: the original failure is the one the caller must see.
+    }
+    throw error;
   }
-  return { application, page };
 }
 
 export async function launchSecondInstance(
