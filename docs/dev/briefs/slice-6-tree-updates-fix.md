@@ -96,9 +96,18 @@ must fail and every other test in the file must pass. Paste all runs.
 version only). Nothing else. `src/shared/workspace/treeUpdates.ts`
 must not change.
 
+This branch continues the unmerged PR feature/slice-6-tree-updates.
+A three-dot diff against main therefore names the PR's own module,
+`src/shared/workspace/treeUpdates.ts`. That file is PR content, not
+a change of this fix. Judge this brief's scope on the fix commit,
+not on the whole PR diff. A reviewer may remove dead branches from
+the module to meet the coverage ratchet, and records that change in
+the merge message.
+
 ## Done means
-- `git diff --stat origin/main...HEAD` names only the two files
-  above, and `git diff origin/main...HEAD -- docs/dev/briefs/slice-6-tree-updates-side.md`
+- `git diff --stat HEAD^ HEAD` (the fix commit) names only
+  `test/unit/workspaceTreeUpdates.test.ts`, and
+  `git diff origin/main...HEAD -- docs/dev/briefs/slice-6-tree-updates-side.md`
   is empty.
 - `npm run typecheck`, `npm run check:deps`, `npm run test:unit`
   exit 0; paste their summary lines.
