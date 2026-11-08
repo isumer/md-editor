@@ -7,31 +7,40 @@ import {
   relativeLuminance,
   resolveBackground,
   textColorFor,
+  type Rgb,
 } from "../../src/shared/settings/appearance";
+
+function mustParse(value: string): Rgb {
+  const color = parseHexColor(value);
+  if (color === null) {
+    throw new Error(`expected ${value} to parse`);
+  }
+  return color;
+}
 
 describe("AC-R7-03: parses both hex forms and lower-cases the result", () => {
   it("parses #abc and doubles each digit", () => {
     const parsed = parseHexColor("#abc");
     expect(parsed).toEqual({ r: 170, g: 187, b: 204 });
-    expect(formatHexColor(parsed!)).toBe("#aabbcc");
+    expect(formatHexColor(mustParse("#abc"))).toBe("#aabbcc");
   });
 
   it("parses #rrggbb and preserves values", () => {
     const parsed = parseHexColor("#aabbcc");
     expect(parsed).toEqual({ r: 170, g: 187, b: 204 });
-    expect(formatHexColor(parsed!)).toBe("#aabbcc");
+    expect(formatHexColor(mustParse("#aabbcc"))).toBe("#aabbcc");
   });
 
   it("parses uppercase hex and lower-cases output", () => {
     const parsed = parseHexColor("#ABC");
     expect(parsed).toEqual({ r: 170, g: 187, b: 204 });
-    expect(formatHexColor(parsed!)).toBe("#aabbcc");
+    expect(formatHexColor(mustParse("#ABC"))).toBe("#aabbcc");
   });
 
   it("parses mixed case hex and lower-cases output", () => {
     const parsed = parseHexColor("#AaBbCc");
     expect(parsed).toEqual({ r: 170, g: 187, b: 204 });
-    expect(formatHexColor(parsed!)).toBe("#aabbcc");
+    expect(formatHexColor(mustParse("#AaBbCc"))).toBe("#aabbcc");
   });
 });
 
@@ -95,8 +104,23 @@ describe("AC-R7-03: falls back to the theme default", () => {
 
 describe("AC-R7-04: computes the WCAG luminance boundary", () => {
   it("relativeLuminance of #808080 is about 0.216", () => {
-    const color = parseHexColor("#808080")!;
+    const color = mustParse("#808080");
     expect(relativeLuminance(color)).toBeCloseTo(0.216, 3);
+  });
+
+  it("AC-R7-04: uses the linear branch at the 0.03928 boundary", () => {
+    expect.soft(relativeLuminance({ r: 1, g: 1, b: 1 })).toBeCloseTo(
+      0.0003035269835488375,
+      8,
+    );
+    expect.soft(relativeLuminance({ r: 10, g: 10, b: 10 })).toBeCloseTo(
+      0.003035269835488375,
+      8,
+    );
+    expect.soft(relativeLuminance({ r: 11, g: 11, b: 11 })).toBeCloseTo(
+      0.003346535763899161,
+      8,
+    );
   });
 });
 
@@ -136,7 +160,7 @@ describe("AC-R7-04: picks the readable text colour", () => {
   });
 });
 
-describe("does not mutate its input", () => {
+describe("AC-R7-03: does not mutate its input", () => {
   it("parseHexColor does not mutate input", () => {
     const input = "#abc";
     parseHexColor(input);
@@ -149,6 +173,14 @@ describe("does not mutate its input", () => {
     expect(color).toEqual({ r: 170, g: 187, b: 204 });
   });
 
+  it("resolveBackground does not mutate input", () => {
+    const input = "#abc";
+    resolveBackground(input, "#123456");
+    expect(input).toBe("#abc");
+  });
+});
+
+describe("AC-R7-04: does not mutate its input", () => {
   it("relativeLuminance does not mutate input", () => {
     const color = Object.freeze({ r: 128, g: 128, b: 128 });
     relativeLuminance(color);
@@ -167,11 +199,5 @@ describe("does not mutate its input", () => {
     const color = Object.freeze({ r: 118, g: 118, b: 118 });
     textColorFor(color);
     expect(color).toEqual({ r: 118, g: 118, b: 118 });
-  });
-
-  it("resolveBackground does not mutate input", () => {
-    const input = "#abc";
-    resolveBackground(input, "#123456");
-    expect(input).toBe("#abc");
   });
 });
