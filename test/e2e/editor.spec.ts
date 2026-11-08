@@ -67,25 +67,40 @@ test("a throwing page callback closes the application and keeps the error", {
   tag: "@AC-R5-01",
   annotation: { type: "AC-R5-01" },
 }, async () => {
+  const callbackFailure = new Error("onPage failed");
   let launched: ElectronApplication | undefined;
   let launchedProcess: ReturnType<ElectronApplication["process"]> | undefined;
+  let profileDirectory: string | undefined;
   try {
     await expect(
       launchEditor(fixturePath, {
         onPage: ({ application }) => {
           launched = application;
           launchedProcess = application.process();
-          throw new Error("onPage failed");
+          const profileArgument = launchedProcess.spawnargs.find((argument) =>
+            argument.startsWith("--user-data-dir="));
+          profileDirectory = profileArgument?.slice("--user-data-dir=".length);
+          throw callbackFailure;
         },
       }),
-    ).rejects.toThrow("onPage failed");
+    ).rejects.toBe(callbackFailure);
     await expect.poll(
       () => launchedProcess?.exitCode ?? null,
       { timeout: 5_000 },
     ).not.toBeNull();
+    expect(profileDirectory).toBeDefined();
+    await expect.poll(() => fs.stat(profileDirectory ?? "").then(
+      () => "exists",
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT"
+        ? "removed"
+        : Promise.reject(error),
+    )).toBe("removed");
   } finally {
     if (launched) {
       await launched.close().catch(() => undefined);
+    }
+    if (profileDirectory) {
+      await fs.rm(profileDirectory, { recursive: true, force: true });
     }
   }
 });
