@@ -80,6 +80,36 @@ async function controller(current: () => DocumentRecord | null) {
 }
 
 describe("render controller", () => {
+  it("AC-PERF-11: attach reuses the text the caller supplies", async () => {
+    const document = item();
+    const { instance } = await controller(() => document);
+
+    instance.attach(document, "serialized once");
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "attach",
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      text: "serialized once",
+    });
+  });
+
+  it("AC-R1-07: attach without supplied text sends the document text", async () => {
+    const document = item();
+    const { instance } = await controller(() => document);
+
+    instance.attach(document);
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "attach",
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      text: "note",
+    });
+  });
+
   it("AC-R1-12: heartbeat pongs continue pinging and a timeout restarts the worker", async () => {
     const document = item();
     const { instance, preview, showError } = await controller(() => document);

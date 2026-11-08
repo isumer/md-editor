@@ -226,7 +226,7 @@ function newDocument(input: {
   registry.add(document);
   const version = replication.current();
   const text = document.state.doc.toString();
-  renderController.attach(document);
+  renderController.attach(document, text);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);
   }).catch(showUnexpectedError);
