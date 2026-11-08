@@ -199,6 +199,52 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
+  it("AC-PERF-10: records the apply boundary marker names", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      fillToken: 4,
+      complete: false,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
+  it("AC-PERF-10: clears the previous apply boundary marks", () => {
+    const clearMarks = vi.spyOn(performance, "clearMarks");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      fillToken: 4,
+      complete: false,
+    });
+
+    expect(clearMarks.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+    ]);
+    clearMarks.mockRestore();
+  });
+
   it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
