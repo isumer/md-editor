@@ -9,10 +9,7 @@ import { resolveClosePrompt } from "../core/closePrompt";
 import { markDocumentSaved, messageParams, type DocumentRecord } from "../core/document";
 import type { DocumentRegistry } from "../core/documentRegistry";
 import type { DraftScheduler } from "../core/draftScheduler";
-import {
-  saveReplicatedDocument,
-  type ReplicatedVersion,
-} from "../core/replication";
+import { saveReplicatedDocument, type ReplicatedVersion } from "../core/replication";
 import {
   attachDocument,
   chooseSaveTarget,
