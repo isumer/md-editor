@@ -54,9 +54,12 @@ describe('AC-R13-04: word completion', () => {
     });
 
     it('AC-R13-04: keeps document order and the limit', () => {
-      const text = 'apple applet application banana';
-      // cursor at offset 3 in "apple", prefix "app"
-      expect(completeWord(text, 3, 2)).toEqual(['applet', 'application']);
+      const text = 'apple applet application apricot approach append banana';
+      expect(completeWord(text, 3, 3)).toEqual([
+        'applet',
+        'application',
+        'apricot',
+      ]);
     });
 
     it('AC-R13-04: defaults to at most 20 words', () => {
