@@ -4,7 +4,8 @@ import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { readTextOrNull,
+import {
+  readTextOrNull,
   DOCUMENT_END,
   PRIMARY_MODIFIER,
   clickMenuItem,
