@@ -216,11 +216,20 @@ function focusMainWindow(): void {
   mainWindow.focus();
 }
 
+export interface ApplicationEvents {
+  // A close prompt that the user cancels ends the pending quit.
+  cancelQuit(): void;
+}
+
 export function registerApplicationEvents(
   createApplicationWindow: () => void,
   logProcessEvent: (event: string, value: unknown) => void,
   openRequests: OpenRequests,
-): void {
+): ApplicationEvents {
+  let quitRequested = false;
+  app.on("before-quit", () => {
+    quitRequested = true;
+  });
   app.on("second-instance", (_event, argv, cwd) => {
     reportAsync(
       "second-instance",
@@ -239,10 +248,17 @@ export function registerApplicationEvents(
     }
   });
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    // A deferred window close aborts app.quit(); resume it once the last
+    // window is gone. Darwin keeps a plain window close alive.
+    if (quitRequested || process.platform !== "darwin") {
       app.quit();
     }
   });
+  return {
+    cancelQuit() {
+      quitRequested = false;
+    },
+  };
 }
 
 export async function initializeApplication(

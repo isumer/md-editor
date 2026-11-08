@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, test, type ElectronApplication } from "@playwright/test";
 
 import { readTextOrNull,
+  closeEditor,
   fixturePath,
   launchEditor,
   launchSecondInstance,
@@ -23,7 +24,7 @@ test("opens an argv file and renders its heading", {
       { timeout: 2_000 },
     );
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -93,7 +94,7 @@ test("shows the window after it is ready", {
   tag: "@AC-PERF-01",
   annotation: { type: "AC-PERF-01" },
 }, async () => {
-  const { application } = await launchEditor(fixturePath);
+  const { application, page } = await launchEditor(fixturePath);
   try {
     await expect.poll(
       () => application.evaluate(({ BrowserWindow }) =>
@@ -102,7 +103,7 @@ test("shows the window after it is ready", {
       { timeout: 2_000 },
     ).toBe(true);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -123,7 +124,7 @@ test("shows the editor to the left of the preview", {
     expect(previewBox).not.toBeNull();
     expect(editorBox!.x + editorBox!.width).toBeLessThanOrEqual(previewBox!.x);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -131,7 +132,7 @@ test("exposes stable File menu items with their accelerators", {
   tag: "@AC-R5-08",
   annotation: { type: "AC-R5-08" },
 }, async () => {
-  const { application } = await launchEditor(fixturePath);
+  const { application, page } = await launchEditor(fixturePath);
   try {
     await expect.poll(() => application.evaluate(({ Menu }) => {
       const menu = Menu.getApplicationMenu();
@@ -145,7 +146,7 @@ test("exposes stable File menu items with their accelerators", {
       { id: "file-save-as", accelerator: "CmdOrCtrl+Shift+S" },
     ]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -165,7 +166,7 @@ test("typing quickly shows the final text in the preview", {
       timeout: 1_000,
     });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -194,7 +195,7 @@ test("saves edits atomically and clears the dirty marker", {
     await expect.poll(() => readTextOrNull(copiedFile)).toContain("saved text");
     await expect(page).not.toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -214,12 +215,12 @@ test("a second instance opens its file in the existing window", {
     await expect(page.getByTestId("editor")).toContainText("Opened by the second instance");
     await expect.poll(() => application.windows().length).toBe(1);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
 
-test("an open request asks before discarding dirty changes", {
+test("an open request keeps dirty changes in their own tab", {
   tag: "@AC-R5-09",
   annotation: { type: "AC-R5-09" },
 }, async () => {
@@ -233,25 +234,19 @@ test("an open request asks before discarding dirty changes", {
     await expect(editor).toContainText("Sample document");
     await editor.click();
     await page.keyboard.type("dirty change");
-    const dialogHandled = new Promise<void>((resolve, reject) => {
-      page.once("dialog", async (dialog) => {
-        try {
-          expect(dialog.message()).toBe("Discard unsaved changes?");
-          await dialog.dismiss();
-          resolve();
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      });
-    });
 
     await launchSecondInstance(application, secondFile);
-    await dialogHandled;
 
+    await expect(page.getByTestId("tab")).toHaveCount(2);
+    await expect(editor).toContainText("Replacement document");
+    await expect(page.getByTestId("close-prompt")).toBeHidden();
+    const firstTab = page.locator('[data-testid="tab"][data-name="sample.md"]');
+    await expect(firstTab.getByTestId("tab-dirty")).toBeVisible();
+    await firstTab.click();
     await expect(editor).toContainText("dirty change");
     await expect(page).toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -285,7 +280,7 @@ test("opens external preview links outside the editor", {
     expect(page.url()).toBe(originalWindowUrl);
     await expect(editor).toHaveText(originalEditorText ?? "");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -327,7 +322,7 @@ test("blocks javascript preview links without opening or navigating", {
       ),
     ).toEqual([]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -345,7 +340,7 @@ test("scrolls preview anchors without navigating the window", {
     await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     expect(page.url()).toBe(originalWindowUrl);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -363,6 +358,6 @@ test("sanitises active and document-level raw HTML", {
     await expect(preview.getByText("DOM clobbering guard")).not.toHaveAttribute("id");
     await expect(page.getByTestId("editor")).toBeVisible();
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });

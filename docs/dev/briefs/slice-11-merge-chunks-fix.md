@@ -17,7 +17,7 @@ test/unit/mergeChunks.test.ts.
 
 Nothing else. A temporary edit to `src/shared/merge/mergeChunks.ts` is
 allowed only for the red evidence below. Restore it before you commit:
-the final diff must contain the test file only.
+the commit must contain the test file only.
 
 ## The test
 Add one test to `test/unit/mergeChunks.test.ts`, in the same style as
@@ -39,8 +39,11 @@ its neighbours:
 Paste both runs.
 
 ## Done means
-- `git diff --stat origin/main...HEAD` names only
-  `test/unit/mergeChunks.test.ts` (plus the commit itself).
+- The new commit names only `test/unit/mergeChunks.test.ts`:
+  `git show --stat HEAD` shows that one file.
+- The PR branch diff against main names
+  `src/shared/merge/mergeChunks.ts` as well. That file is part 1 of
+  this PR and main does not hold it yet, so this is correct.
 - `npm run typecheck`, `npm run test:unit`, `npm run check:acceptance`
   exit 0; paste their summary lines. Run the full `npm run verify` if
   the Electron lock is free; do not wait more than 10 minutes for it.
