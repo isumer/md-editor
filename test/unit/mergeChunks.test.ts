@@ -209,6 +209,14 @@ describe('merge chunks', () => {
     ).toThrow(RangeError);
   });
 
+  it('AC-R15-04: rejects a reversed range', () => {
+    expect(() =>
+      createMergeState([
+        { kind: 'change', start: 4, end: 2, left: '', right: '' },
+      ]),
+    ).toThrow(RangeError);
+  });
+
   it('AC-R15-04: rejects an index out of range', () => {
     const state = createMergeState([
       { kind: 'change', start: 0, end: 1, left: 'a', right: 'a' },
