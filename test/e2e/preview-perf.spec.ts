@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { repositoryRoot, launchEditor, stubOpenDialog } from "./helpers";
+import { closeEditor, repositoryRoot, launchEditor, stubOpenDialog } from "./helpers";
 
 const run = promisify(execFile);
 const SAMPLES = 30;
@@ -179,7 +179,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
       `AC-PERF-10 open task failed. ${diagnostics}`,
     ).toEqual([]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -235,7 +235,7 @@ test("AC-PERF-02: 50 KB document keystroke latency p95 stays under 50 ms", {
     expect(samples).toHaveLength(SAMPLES);
     expect(percentile(samples, 0.95)).toBeLessThan(50);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -252,7 +252,7 @@ test("AC-PERF-07: 500 KB document keystroke latency p95 stays under 150 ms", {
     expect(samples).toHaveLength(SAMPLES);
     expect(percentile(samples, 0.95)).toBeLessThan(150);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -269,7 +269,7 @@ test("AC-PERF-10: 20 MB document keystroke latency p95 stays under 100 ms", {
     expect(samples).toHaveLength(SAMPLES);
     expect(percentile(samples, 0.95)).toBeLessThan(100);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -296,7 +296,7 @@ test("AC-PERF-08: one keystroke patches only the changed block under 8 ms p95", 
     expect(percentile(samples, 0.95)).toBeLessThan(8);
     expect(changed.filter((unchanged) => !unchanged)).toHaveLength(1);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -405,7 +405,7 @@ test("AC-PERF-09: fling-scrolling the 500 KB preview has no frame over 32 ms", {
     ), { timeout: 30_000 }).toBe("true");
     await expectSmoothScroll(page, "AC-PERF-09 500KB scroll");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -426,7 +426,7 @@ test("AC-PERF-09: fling-scrolling the 20 MB preview has no frame over 32 ms", {
     console.log(`AC-PERF-09 20MB render complete after ${String(Date.now() - started)}ms`);
     await expectSmoothScroll(page, "AC-PERF-09 20MB scroll");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -468,6 +468,6 @@ test("AC-PERF-11: a 20 MB document is editable and shows its first screen in tim
     expect(editableAfter).toBeLessThan(1_500);
     expect(previewAfter).toBeLessThan(1_000);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });

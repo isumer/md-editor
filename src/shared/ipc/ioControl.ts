@@ -1,5 +1,20 @@
 export const MAX_CONTROL_PATH_LENGTH = 32 * 1024;
 export const MAX_ASSET_RELATIVE_PATH_LENGTH = 32 * 1024;
+export const MAX_SESSION_PATH_LENGTH = 32 * 1024;
+export const MAX_SESSION_TEXT_LENGTH = 256 * 1024 * 1024;
+export const STORED_SESSION_VERSION = 1;
+
+export interface StoredDocument {
+  name: string;
+  path: string;
+  savedText: string;
+  text: string;
+}
+
+export interface StoredSession {
+  documents: StoredDocument[];
+  version: typeof STORED_SESSION_VERSION;
+}
 
 export interface RegisterGrantRequest {
   type: "registerGrant";
@@ -34,12 +49,27 @@ export interface ResolveAssetRequest {
   relativePath: string;
 }
 
+export interface ReadSessionRequest {
+  type: "readSession";
+  id: string;
+  path: string;
+}
+
+export interface WriteSessionRequest {
+  type: "writeSession";
+  id: string;
+  path: string;
+  session: StoredSession;
+}
+
 export type IoControlRequest =
   | RegisterGrantRequest
   | RevokeGrantRequest
   | RevokeWindowRequest
   | AttachPortRequest
-  | ResolveAssetRequest;
+  | ResolveAssetRequest
+  | ReadSessionRequest
+  | WriteSessionRequest;
 
 export interface RegisteredGrant {
   canonicalPath: string;
@@ -68,6 +98,20 @@ export interface ResolveAssetReply {
   id: string;
   result:
     | { ok: true; value: ResolvedAsset }
+    | { ok: false; error: ControlError };
+}
+
+export interface SessionReadReply {
+  id: string;
+  result:
+    | { ok: true; value: StoredSession }
+    | { ok: false; error: ControlError };
+}
+
+export interface SessionWriteReply {
+  id: string;
+  result:
+    | { ok: true; value: Record<string, never> }
     | { ok: false; error: ControlError };
 }
 
@@ -150,10 +194,106 @@ function isResolveAsset(value: unknown): value is ResolveAssetRequest {
     request["relativePath"].length <= MAX_ASSET_RELATIVE_PATH_LENGTH;
 }
 
+function validSessionPath(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 &&
+    value.length <= MAX_SESSION_PATH_LENGTH;
+}
+
+function arrayValues(value: unknown): readonly unknown[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  try {
+    const length = Object.getOwnPropertyDescriptor(value, "length")?.value;
+    if (typeof length !== "number" || !Number.isSafeInteger(length)) {
+      return null;
+    }
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== length + 1 ||
+      keys.some((key) => typeof key !== "string" ||
+        (key !== "length" && !Number.isSafeInteger(Number(key))))) {
+      return null;
+    }
+    const values: unknown[] = [];
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor)) {
+        return null;
+      }
+      values.push(descriptor.value);
+    }
+    return values;
+  } catch {
+    return null;
+  }
+}
+
+function validStoredText(value: unknown): value is string {
+  return typeof value === "string" && value.length <= MAX_SESSION_TEXT_LENGTH;
+}
+
+export function emptyStoredSession(): StoredSession {
+  return { documents: [], version: STORED_SESSION_VERSION };
+}
+
+export function parseStoredSession(value: unknown): StoredSession {
+  if (typeof value !== "object" || value === null) {
+    return emptyStoredSession();
+  }
+  const record = value as Record<string, unknown>;
+  if (record["version"] !== STORED_SESSION_VERSION ||
+    !Array.isArray(record["documents"])) {
+    return emptyStoredSession();
+  }
+  return {
+    documents: record["documents"].filter((document): document is StoredDocument => {
+      if (typeof document !== "object" || document === null) {
+        return false;
+      }
+      const entry = document as Record<string, unknown>;
+      return typeof entry["name"] === "string" &&
+        typeof entry["path"] === "string" && entry["path"].length > 0 &&
+        entry["path"].length <= MAX_SESSION_PATH_LENGTH &&
+        validStoredText(entry["savedText"]) && validStoredText(entry["text"]);
+    }),
+    version: STORED_SESSION_VERSION,
+  };
+}
+
+function isStoredDocument(value: unknown): value is StoredDocument {
+  const document = exactData(value, ["name", "path", "savedText", "text"]);
+  return document !== null && typeof document["name"] === "string" &&
+    validSessionPath(document["path"]) &&
+    validStoredText(document["savedText"]) && validStoredText(document["text"]);
+}
+
+export function isStoredSession(value: unknown): value is StoredSession {
+  const session = exactData(value, ["documents", "version"]);
+  if (session === null || session["version"] !== STORED_SESSION_VERSION) {
+    return false;
+  }
+  const documents = arrayValues(session["documents"]);
+  return documents !== null && documents.length <= 512 &&
+    documents.every(isStoredDocument);
+}
+
+function isReadSession(value: unknown): value is ReadSessionRequest {
+  const request = exactData(value, ["type", "id", "path"]);
+  return request !== null && request["type"] === "readSession" &&
+    validId(request["id"]) && validSessionPath(request["path"]);
+}
+
+function isWriteSession(value: unknown): value is WriteSessionRequest {
+  const request = exactData(value, ["type", "id", "path", "session"]);
+  return request !== null && request["type"] === "writeSession" &&
+    validId(request["id"]) && validSessionPath(request["path"]) &&
+    isStoredSession(request["session"]);
+}
+
 export function isIoControlRequest(value: unknown): value is IoControlRequest {
   return isRegister(value) || isRevokeGrant(value) ||
     isWindowMessage(value, "revokeWindow") || isWindowMessage(value, "attachPort") ||
-    isResolveAsset(value);
+    isResolveAsset(value) || isReadSession(value) || isWriteSession(value);
 }
 
 export function controlRequestId(value: unknown): string | null {
@@ -228,4 +368,16 @@ export function isResolveAssetReply(value: unknown): value is ResolveAssetReply 
   const reply = exactData(value, ["id", "result"]);
   return reply !== null && validId(reply["id"]) &&
     validResult(reply["result"], validResolvedAsset);
+}
+
+export function isSessionReadReply(value: unknown): value is SessionReadReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], isStoredSession);
+}
+
+export function isSessionWriteReply(value: unknown): value is SessionWriteReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], (candidate) => exactData(candidate, []) !== null);
 }

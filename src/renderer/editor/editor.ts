@@ -16,7 +16,7 @@ import {
 } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { EditorState, type ChangeSet } from "@codemirror/state";
+import { EditorState, type ChangeSet, type Text } from "@codemirror/state";
 import {
   EditorView,
   crosshairCursor,
@@ -35,7 +35,7 @@ import type { DocumentState } from "../core/document";
 
 export interface EditorCallbacks {
   onDocumentChanged(): void;
-  onChanges(changes: ChangeSet): void;
+  onChanges(changes: ChangeSet, state: EditorState): void;
   updateTitle(): void;
   onStateChanged?(): void;
 }
@@ -92,28 +92,37 @@ export function handleDocumentUpdate(
   if (!documentState.applyingDocument) {
     documentState.dirty = !update.state.doc.eq(documentState.saved);
     callbacks.updateTitle();
-    callbacks.onChanges(update.changes);
+    callbacks.onChanges(update.changes, update.state);
   }
   callbacks.onDocumentChanged();
+}
+
+export function createEditorState(
+  document: Text | string,
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): EditorState {
+  return EditorState.create({
+    doc: document,
+    extensions: [
+      editorSetup,
+      markdown(),
+      EditorView.lineWrapping,
+      EditorView.updateListener.of((update) => {
+        handleDocumentUpdate(update, documentState, callbacks);
+      }),
+    ],
+  });
 }
 
 export function createEditor(
   editorHost: HTMLElement,
   documentState: DocumentState,
   callbacks: EditorCallbacks,
+  initialState?: EditorState,
 ): EditorView {
   return new EditorView({
     parent: editorHost,
-    state: EditorState.create({
-      doc: "",
-      extensions: [
-        editorSetup,
-        markdown(),
-        EditorView.lineWrapping,
-        EditorView.updateListener.of((update) => {
-          handleDocumentUpdate(update, documentState, callbacks);
-        }),
-      ],
-    }),
+    state: initialState ?? createEditorState("", documentState, callbacks),
   });
 }
