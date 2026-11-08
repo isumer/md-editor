@@ -107,12 +107,77 @@ describe("workspace tree updates", () => {
   it("AC-R11-05: refuses an invalid path", () => {
     const nodes: readonly WorkspaceNode[] = [{ name: "a.md", kind: "file" }];
     const paths = ["/b.md", "b.md/", "folder//b.md", "folder/../b.md"];
+    const notes: readonly WorkspaceNode[] = [
+      {
+        name: "notes",
+        kind: "folder",
+        children: [{ name: "a.md", kind: "file" }],
+      },
+    ];
 
     const updated = paths.map((path) =>
       applyWorkspaceChange(nodes, { kind: "deleted", path }),
     );
 
     expect(updated.every((result) => result === nodes)).toBe(true);
+    expect(
+      applyWorkspaceChange(notes, {
+        kind: "created",
+        path: "notes/.",
+        entryKind: "file",
+      }),
+    ).toBe(notes);
+    expect(
+      applyWorkspaceChange(notes, {
+        kind: "created",
+        path: "notes/..",
+        entryKind: "file",
+      }),
+    ).toBe(notes);
+    expect(
+      applyWorkspaceChange(notes, {
+        kind: "created",
+        path: ".",
+        entryKind: "file",
+      }),
+    ).toBe(notes);
+  });
+
+  it("AC-R11-05: treats a backslash as a literal name", () => {
+    const notes = {
+      name: "notes",
+      kind: "folder" as const,
+      children: [{ name: "a.md", kind: "file" as const }],
+    };
+    const nodes: readonly WorkspaceNode[] = [notes];
+
+    const updated = applyWorkspaceChange(nodes, {
+      kind: "created",
+      path: "notes\\b.md",
+      entryKind: "file",
+    });
+
+    expect(updated).toEqual([notes, { name: "notes\\b.md", kind: "file" }]);
+    expect(updated[0]).toBe(notes);
+  });
+
+  it("AC-R11-05: adds a case-insensitively equal name after the existing entry", () => {
+    const nodes: readonly WorkspaceNode[] = [
+      { name: "Apple.md", kind: "file" },
+      { name: "banana.md", kind: "file" },
+    ];
+
+    const updated = applyWorkspaceChange(nodes, {
+      kind: "created",
+      path: "apple.md",
+      entryKind: "file",
+    });
+
+    expect(updated.map((node) => node.name)).toEqual([
+      "Apple.md",
+      "apple.md",
+      "banana.md",
+    ]);
   });
 
   it("AC-R11-05: removes a deleted file", () => {
@@ -238,8 +303,14 @@ describe("workspace tree updates", () => {
       decideOpenFile({ kind: "deleted", path: "notes/a.md" }, "notes/a.md", true),
     ).toBe("keep");
     expect(
+      decideOpenFile({ kind: "deleted", path: "notes/a.md" }, "notes/a.md", false),
+    ).toBe("close");
+    expect(
       decideOpenFile({ kind: "deleted", path: "notes" }, "notes/a.md", false),
     ).toBe("close");
+    expect(
+      decideOpenFile({ kind: "deleted", path: "note" }, "notebook/a.md", false),
+    ).toBe("keep");
     expect(
       decideOpenFile(
         { kind: "created", path: "notes/a.md", entryKind: "file" },
