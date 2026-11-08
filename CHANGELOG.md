@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Several files can be open at once, each in its own tab with its own text, undo history, cursor, scroll and preview. Opening a file that is already open focuses its tab. A dot marks each tab with unsaved changes. Dropping a file onto the window opens it in a tab.
+- Closing a tab or quitting with unsaved changes asks first: Cancel, Discard or Save. Reopening the app restores the files you had open, with their unsaved changes.
+- Unsaved typing is drafted every few seconds. If the window crashes, the app reopens it and restores the drafts. A stuck preview restarts on its own and the editor stays responsive.
 - Opening a binary file now shows "it is a binary file" and keeps your current document. Files with a UTF-8 or UTF-16 byte order mark still open as text.
 - Images next to a document now show in the preview: relative image paths load from the document's own folder (and its subfolders) and nowhere else; paths that try to escape the folder are refused.
 - A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
@@ -33,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
+- When two tabs save under the same new file name at the same moment, the second save now refuses with a message instead of overwriting the first save's content.
 
 ### Security
 

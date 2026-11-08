@@ -8,14 +8,25 @@ export interface ReplicatedVersion {
   version: number;
 }
 
+let nextDocumentNumber = 1;
+let nextEpochNumber = 1;
+
 export class DocumentReplication {
-  private documentNumber = 1;
-  private epochNumber = 1;
-  private currentVersion: ReplicatedVersion = {
-    docId: "document-1",
-    epoch: 1,
-    version: 0,
-  };
+  private documentNumber: number;
+  private epochNumber: number;
+  private currentVersion: ReplicatedVersion;
+
+  constructor() {
+    this.documentNumber = nextDocumentNumber;
+    this.epochNumber = nextEpochNumber;
+    nextDocumentNumber += 1;
+    nextEpochNumber += 1;
+    this.currentVersion = {
+      docId: `document-${this.documentNumber}`,
+      epoch: this.epochNumber,
+      version: 0,
+    };
+  }
 
   current(): ReplicatedVersion {
     return { ...this.currentVersion };
@@ -39,8 +50,10 @@ export class DocumentReplication {
 
   replace(): { detachedDocId: string; current: ReplicatedVersion } {
     const detachedDocId = this.currentVersion.docId;
-    this.documentNumber += 1;
-    this.epochNumber += 1;
+    this.documentNumber = nextDocumentNumber;
+    this.epochNumber = nextEpochNumber;
+    nextDocumentNumber += 1;
+    nextEpochNumber += 1;
     this.currentVersion = {
       docId: `document-${this.documentNumber}`,
       epoch: this.epochNumber,
