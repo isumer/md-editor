@@ -119,6 +119,18 @@ describe("acceptance report", () => {
     expect(report.missing).toEqual(["AC-R1-01"]);
   });
 
+  it("keeps a planned perf criterion planned when the perf skip is on", () => {
+    const criteria = parseCriterionFiles([{
+      path: "PERF.md",
+      content: "### AC-PERF-12 — Future speed\nstatus: planned\nGiven a file\n",
+    }]);
+
+    const report = buildAcceptanceReport(criteria, [], "linux", true);
+
+    expect(report.ok).toBe(true);
+    expect(report.markdown).toContain("| AC-PERF-12 | planned | — | planned |");
+  });
+
   it("accepts a missing implemented perf result only when the skip is on", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-acceptance-"));
     const previousSkip = process.env.MDEDITOR_SKIP_PERF;
