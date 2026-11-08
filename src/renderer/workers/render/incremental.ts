@@ -43,6 +43,8 @@ interface RenderChunk {
   startLine: number;
   endLine: number;
   rendered: boolean;
+  // Raw rendered HTML lets reference changes update published chunks.
+  html: string | null;
   labels: Set<string>;
   definitionCandidate: boolean;
 }
@@ -595,6 +597,7 @@ export class IncrementalRenderState {
       startLine,
       endLine,
       rendered: false,
+      html: null,
       labels: new Set(),
       definitionCandidate: false,
     };
@@ -614,6 +617,7 @@ export class IncrementalRenderState {
       chunk.rendered = true;
       this.unrendered -= 1;
     }
+    chunk.html = html;
     this.dirty.delete(chunk);
     return {
       id: chunk.id,

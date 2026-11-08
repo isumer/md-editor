@@ -2,7 +2,6 @@ import type {
   RenderBlock,
   RenderBlockPatch,
   RenderFillReadyMessage,
-  RenderLineShift,
   RenderResponse,
   RenderResync,
   RenderResult,
@@ -11,7 +10,18 @@ import { formatMessage } from "../../../shared/messages/en";
 import type { ReplicatedVersion } from "../../core/replication";
 import { openExternal } from "../../platform/api";
 import { RenderScheduler } from "./renderScheduler";
+import {
+  type BlockElements,
+  type BlockLayout,
+  type LineShiftRecord,
+  PreviewDocuments,
+  recordShiftTable,
+  resetLayout,
+} from "./previewDocuments";
 import { sanitizeRenderedHtml } from "./sanitize";
+
+export { PreviewDocuments } from "./previewDocuments";
+export { blockLine } from "./previewDocuments";
 
 export interface RenderWorkerEvents {
   postMessage(message: unknown): void;
@@ -23,25 +33,11 @@ interface RenderWorkerWiring {
   scheduler: RenderScheduler;
   preview: HTMLElement;
   showStatus(message?: string): void;
+  showError(message?: string): void;
   currentVersion(): ReplicatedVersion;
   onResync(response: RenderResync): void;
   rewriteHtml(html: string): string;
 }
-
-type BlockElements = Map<string, HTMLDivElement>;
-
-interface LineShiftRecord extends RenderLineShift {
-  version: number;
-}
-
-interface ShiftTable {
-  root: HTMLElement;
-  shifts: readonly LineShiftRecord[];
-}
-
-// Each block points at the live shift ledger of its preview, so resolving a
-// line costs only the number of line-count changes since it was rendered.
-const shiftTables = new WeakMap<HTMLElement, ShiftTable>();
 
 const BLOCK_CLASS = "preview-block";
 // Blocks are packed into pages and pages into sections so content-visibility
@@ -55,20 +51,6 @@ const APPEND_TASK_BLOCK_LIMIT = 4;
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
-
-interface BlockLayout {
-  section: HTMLDivElement | null;
-  page: HTMLDivElement | null;
-  blocksInPage: number;
-  pagesInSection: number;
-}
-
-function resetLayout(layout: BlockLayout): void {
-  layout.section = null;
-  layout.page = null;
-  layout.blocksInPage = 0;
-  layout.pagesInSection = 0;
-}
 
 function placeBlock(
   element: HTMLDivElement,
@@ -116,7 +98,7 @@ function updateBlock(
 ): void {
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
-  shiftTables.set(element, { root: wiring.preview, shifts });
+  recordShiftTable(element, wiring.preview, shifts);
   element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
 }
 
@@ -277,8 +259,10 @@ function applyRenderResult(
   return wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
       applyBlocks(appliedResponse, shifts, wiring, elements, layout);
+      wiring.showError();
       wiring.showStatus();
     } else {
+      wiring.showError(appliedResponse.message);
       wiring.showStatus(appliedResponse.message);
     }
   });
@@ -299,50 +283,11 @@ function requestNextFill(
   });
 }
 
-function anchorElement(
-  root: HTMLElement,
-  blockId: string,
-): HTMLElement | null {
-  const escaped = blockId.replaceAll('"', '\\"');
-  return root.querySelector<HTMLElement>(`[data-block-id="${escaped}"]`);
-}
-
-// The line a block currently starts on. The worker's last sent line is the
-// baseline; line-count changes after that block was rendered are applied from
-// the preview's ledger without rewriting every block's attributes.
-export function blockLine(element: HTMLElement): number {
-  let line = Number(element.dataset["line"] ?? "0");
-  const version = Number(element.dataset["version"] ?? "0");
-  const table = shiftTables.get(element);
-  for (const shift of table?.shifts ?? []) {
-    if (shift.version <= version) {
-      continue;
-    }
-    if (shift.after === null) {
-      line += shift.delta;
-      continue;
-    }
-    const anchor = table ? anchorElement(table.root, shift.after) : null;
-    if (anchor && anchor !== element &&
-      (anchor.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
-      line += shift.delta;
-    }
-  }
-  return line;
-}
-
 export function wireRenderWorker(
   renderWorker: RenderWorkerEvents,
   wiring: RenderWorkerWiring,
-): void {
-  const elements: BlockElements = new Map();
-  const shifts: LineShiftRecord[] = [];
-  const layout: BlockLayout = {
-    section: null,
-    page: null,
-    blocksInPage: 0,
-    pagesInSection: 0,
-  };
+): PreviewDocuments {
+  const previews = new PreviewDocuments(wiring.preview);
   // Patch results are ordered deltas, so a result is stale only once a newer
   // version has actually been shown; comparing against the live editor version
   // would discard a delta the preview still needs.
@@ -356,10 +301,20 @@ export function wireRenderWorker(
     response: RenderResult,
     requestFill: boolean,
   ): boolean => {
+    const documentPreview = previews.getOrCreate(response.docId, response.epoch);
+    const documentWiring = { ...wiring, preview: documentPreview.container };
     performance.mark("preview-apply-start");
-    const applied = applyRenderResult(response, shifts, wiring, elements, layout);
+    const applied = applyRenderResult(
+      response,
+      documentPreview.shifts,
+      documentWiring,
+      documentPreview.elements,
+      documentPreview.layout,
+    );
     performance.mark("preview-apply-end");
     if (applied && response.ok) {
+      documentPreview.version = response.version;
+      previews.display(documentPreview);
       shown = {
         docId: response.docId,
         epoch: response.epoch,
@@ -391,11 +346,14 @@ export function wireRenderWorker(
     flushAppend();
     const response = event.data;
     const current = wiring.currentVersion();
-    if (response.docId !== current.docId || response.epoch !== current.epoch) {
+    if ("op" in response) {
+      if (response.op === "resync" &&
+        response.docId === current.docId && response.epoch === current.epoch) {
+        wiring.onResync(response);
+      }
       return;
     }
-    if ("op" in response) {
-      wiring.onResync(response);
+    if (response.docId !== current.docId || response.epoch !== current.epoch) {
       return;
     }
     if (response.version > current.version) {
@@ -429,8 +387,12 @@ export function wireRenderWorker(
   };
 
   renderWorker.onerror = (event) => {
-    wiring.showStatus(event.message || "The preview worker failed");
+    const message = event.message || "The preview worker failed";
+    wiring.showError(message);
+    wiring.showStatus(message);
   };
+
+  return previews;
 }
 
 export function wirePreviewLinks(

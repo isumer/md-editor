@@ -94,6 +94,86 @@ describe("io-worker control boundary", () => {
     expect(grants.resolve(1, "grant")).toBe(targetPath);
   });
 
+  it("AC-R4-08: reads and writes the session file in the io-worker", async () => {
+    const { parent } = createHandler();
+    const sessionPath = path.join(temporaryDirectory, "session.json");
+    const session = {
+      version: 1,
+      documents: [{
+        name: "note.md",
+        path: targetPath,
+        savedText: "old",
+        text: "new",
+      }],
+    };
+
+    parent.send({ type: "readSession", id: "read-empty", path: sessionPath });
+    await expect.poll(() => parent.replies.length).toBe(1);
+    expect(parent.replies[0]).toEqual({
+      id: "read-empty",
+      result: { ok: true, value: { version: 1, documents: [] } },
+    });
+
+    parent.send({ type: "writeSession", id: "write", path: sessionPath, session });
+    await expect.poll(() => parent.replies.length).toBe(2);
+    expect(parent.replies[1]).toEqual({
+      id: "write",
+      result: { ok: true, value: {} },
+    });
+
+    parent.send({ type: "readSession", id: "read", path: sessionPath });
+    await expect.poll(() => parent.replies.length).toBe(3);
+    expect(parent.replies[2]).toEqual({
+      id: "read",
+      result: { ok: true, value: session },
+    });
+
+    parent.send({
+      type: "writeSession",
+      id: "invalid",
+      path: sessionPath,
+      session: { version: 2, documents: [] },
+    });
+    await expect.poll(() => parent.replies.length).toBe(4);
+    expect(parent.replies[3]).toMatchObject({
+      id: "invalid",
+      result: { ok: false, error: { code: "BAD_REQUEST" } },
+    });
+  });
+
+  it("AC-R4-08: reports read and write failures from the session store", async () => {
+    const parent = new FakeParent();
+    const grants = new IoGrantTable();
+    const handler = new IoControlHandler(
+      parent,
+      grants,
+      new IoFileService(grants),
+      {
+        read: async () => { throw new Error("read failed"); },
+        write: async () => { throw new Error("write failed"); },
+      } as never,
+    );
+    handler.start();
+
+    parent.send({ type: "readSession", id: "read", path: "/profiles/session.json" });
+    parent.send({
+      type: "writeSession",
+      id: "write",
+      path: "/profiles/session.json",
+      session: { version: 1, documents: [] },
+    });
+    await expect.poll(() => parent.replies.length).toBe(2);
+
+    expect(parent.replies[0]).toMatchObject({
+      id: "read",
+      result: { ok: false, error: { code: expect.any(String) } },
+    });
+    expect(parent.replies[1]).toMatchObject({
+      id: "write",
+      result: { ok: false, error: { code: expect.any(String) } },
+    });
+  });
+
   it("AC-SEC-07: rejects hostile input and still handles the next message", async () => {
     const { parent } = createHandler();
     const invalid = {
