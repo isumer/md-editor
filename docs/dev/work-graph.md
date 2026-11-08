@@ -7,7 +7,7 @@ Update a row when an item is queued, merged or sent back.
 | id | slice | owned files | depends on | lane | status |
 | --- | --- | --- | --- | --- | --- |
 | 039 → fix-2 | 4 | src/renderer/features/preview/**, src/renderer/workers/render/**, src/renderer/main.ts, src/renderer/styles.css, src/shared/workers/render.ts, preview test files (see brief slice-4-fix-2.md), test/e2e/preview*.spec.ts | main; branch auto/039-slice-4-fix-review | dev (Vision) | merged (cc087b6) |
-| 041 | 5 | listed files only (brief slice-5-fix-5.md: documentLifecycle.ts, en.ts, tabs unit tests) | slice 4 (stacked) | dev (Vision) | sent back 2026-11-08 (gate on candidate 770bb54): Save As check-to-write race; fix queued (slice-5-fix-5) |
+| 041 | 5 | listed files only (brief slice-5-fix-5.md: documentLifecycle.ts, en.ts, tabs unit tests) | slice 4 (stacked) | dev (Vision) | candidate 89face4 (Save As path reservation, fix ffe755f; Evren fallback review added the success-path release test; merge awaits CI) |
 | slice6-tree-model | 6 | src/shared/workspace/treeRows.ts, test/unit/workspaceTreeRows.test.ts | main | dev | merged (main) |
 | 040 | 8 | test/fixtures/powertools/** | main | side | merged (feb37f0) |
 | outline-fixtures | 8 | test/fixtures/outline/** | main | side | merged (de72ccb) |
