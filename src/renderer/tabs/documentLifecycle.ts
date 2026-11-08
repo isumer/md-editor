@@ -104,6 +104,11 @@ export class DocumentLifecycle {
       await this.releaseGrant(reference.grant);
       return;
     }
+    if (this.inFlightSavePaths.has(read.canonicalPath)) {
+      await this.releaseGrant(reference.grant);
+      this.options.showStatus(formatMessage("file.openInFlight", { file: read.name }));
+      return;
+    }
     const document = this.options.newDocument({
       canonicalPath: read.canonicalPath,
       grant: reference.grant,
@@ -343,7 +348,11 @@ export class DocumentLifecycle {
       return this.addRecovered(draft, null, null, "", "Untitled");
     }
     const read = await readDocument(draft.grant);
-    if (!read.ok || this.options.registry.findByPath(read.value.canonicalPath)) {
+    if (
+      !read.ok
+      || this.options.registry.findByPath(read.value.canonicalPath)
+      || this.inFlightSavePaths.has(read.value.canonicalPath)
+    ) {
       await this.discardGrant(draft.grant);
       return false;
     }
