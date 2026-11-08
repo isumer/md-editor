@@ -33,4 +33,5 @@ export function buildAcceptanceReport(
   criteria: readonly AcceptanceCriterion[],
   tests: readonly AcceptanceTest[],
   platform?: string,
+  skipPerf?: boolean,
 ): AcceptanceReport;

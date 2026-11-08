@@ -85,4 +85,32 @@ describe("acceptance report", () => {
     expect(report.ok).toBe(false);
     expect([...report.unknown.keys()]).toEqual(["AC-R9-99"]);
   });
+
+  // Temporary owner order 2026-11-08: CI filters @AC-PERF e2e tests while the perf fix is pending.
+  it("does not require an implemented perf criterion when the perf skip is on", () => {
+    const criteria = parseCriterionFiles([{
+      path: "PERF.md",
+      content: "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+    }]);
+
+    const skipped = buildAcceptanceReport(criteria, [], "linux", true);
+    const enforced = buildAcceptanceReport(criteria, [], "linux", false);
+
+    expect(skipped.ok).toBe(true);
+    expect(skipped.markdown).toContain("| skipped (perf temporary) |");
+    expect(enforced.ok).toBe(false);
+    expect(enforced.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("still requires every non-perf criterion when the perf skip is on", () => {
+    const criteria = parseCriterionFiles([{
+      path: "R01.md",
+      content: "### AC-R1-01 — First behavior\nstatus: implemented\nGiven a fixture\n",
+    }]);
+
+    const report = buildAcceptanceReport(criteria, [], "linux", true);
+
+    expect(report.ok).toBe(false);
+    expect(report.missing).toEqual(["AC-R1-01"]);
+  });
 });
