@@ -54,7 +54,8 @@ The reversed-range guard has its test. Paste your own run:
 ## Done means
 - The only new commit is the merge. No file changed.
 - The four proofs above are pasted and correct.
-- `npm run typecheck`, `npm run test:unit` and `npm run check:acceptance`
-  exit 0; paste their summary lines. Run `npm run verify` if the
-  Electron lock is free; do not wait more than 10 minutes for it.
+- `npm run typecheck`, `npm run test:unit`, `npm run check:acceptance`
+  and `npm run verify` exit 0; paste their summary lines. The
+  Electron lock is shared: queue for it, and report the log line if it
+  still cannot be taken.
 - AC-R15-04/-05/-10 stay planned; the module is unwired.
