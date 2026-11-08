@@ -60,9 +60,12 @@ Add three tests. Each `it` title starts `AC-R13-05:`. Use exact
    - `resolveUserBindings({}, { "Mod-Alt-Shift-q": "cmd" }, "win32")`
      gives bindings `{}` and problems
      `[{ chord: "Mod-Alt-Shift-q", reason: "unreachable-chord" }]`.
-   - `{ "Shift-Mod-Alt-Q": "cmd" }` gives the same (proves any order).
-   - `{ "Mod-Meta-Alt-q": "cmd" }` gives the same (proves any modifier
-     set).
+   - `{ "Shift-Mod-Alt-Q": "cmd" }` gives bindings `{}` and problems
+     `[{ chord: "Shift-Mod-Alt-Q", reason: "unreachable-chord" }]`
+     (proves any order).
+   - `{ "Mod-Meta-Alt-q": "cmd" }` gives bindings `{}` and problems
+     `[{ chord: "Mod-Meta-Alt-q", reason: "unreachable-chord" }]`
+     (proves any modifier set).
    - `{ "Alt-Shift-q": "cmd" }` on `win32` gives
      `{ "Alt-Shift-q": "cmd" }` and no problems.
 2. `AC-R13-05: rejects every whitespace key`.
