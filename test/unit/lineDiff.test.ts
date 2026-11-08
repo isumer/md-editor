@@ -242,6 +242,24 @@ describe("line diff", () => {
     expect(rebuild(result.hunks, right, "right")).toEqual(right);
   });
 
+  it("AC-R14-10: keeps sparse changes exact with normalised anchors", () => {
+    const left = Array.from({ length: 200_000 }, (_, index) => `Line-${index}`);
+    const right = left.map((line, index) =>
+      index % 100 === 0 ? `other-${index}` : line.toLowerCase(),
+    );
+
+    const result = diffLines(left, right, { ignoreCase: true });
+    const changes = result.hunks.filter((hunk) => hunk.kind === "change");
+
+    expect(changes).toHaveLength(2_000);
+    expect(
+      changes.every(
+        (hunk) => hunk.lines.length === 1 && hunk.lines[0]?.kind === "modified",
+      ),
+    ).toBe(true);
+    expect(result.limited).toBe(false);
+  });
+
   it("AC-R14-11: limits one oversized gap and keeps other gaps exact", () => {
     const leftGap = Array.from({ length: 257 }, (_, index) => `left-${index}`);
     const rightGap = Array.from(
@@ -300,6 +318,14 @@ describe("line diff", () => {
     const right = Array.from({ length: 500_000 }, (_, index) =>
       index % 2 === 0 ? "b" : "a",
     );
+
+    expect(diffLines(left, right, {}).limited).toBe(true);
+  });
+
+  it("AC-R14-11: limits work inside one matching run", () => {
+    const run = Array.from({ length: 1_000_000 }, () => "m");
+    const left = ["a1", "D", ...run, "a2", "T1"];
+    const right = ["a1", "E", ...run, "a2", "T2"];
 
     expect(diffLines(left, right, {}).limited).toBe(true);
   });
