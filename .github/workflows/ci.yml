@@ -68,6 +68,8 @@ jobs:
         if: runner.os == 'Linux'
         run: npm run check:coverage
       - name: Run end-to-end tests
+        env:
+          MDEDITOR_SKIP_PERF: "1"
         run: npm run test:e2e
       - name: Check acceptance criteria
         run: npm run check:acceptance
