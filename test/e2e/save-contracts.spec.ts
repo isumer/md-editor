@@ -4,7 +4,10 @@ import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { readTextOrNull,
+import {
+  readTextOrNull,
+  DOCUMENT_END,
+  PRIMARY_MODIFIER,
   clickMenuItem,
   closeEditor,
   dialogCallCount,
@@ -13,9 +16,6 @@ import { readTextOrNull,
   stubOpenDialog,
   stubSaveDialog,
 } from "./helpers";
-
-const PRIMARY_MODIFIER = process.platform === "darwin" ? "Meta" : "Control";
-const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
 
 async function appendEditorText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");

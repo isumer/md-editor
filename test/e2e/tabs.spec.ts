@@ -326,6 +326,7 @@ test("closing a dirty tab honours Cancel, Discard and Save", {
     await editor.click();
     await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("DISCARD-ME");
+    await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
 
     await tab(page, "alpha.md").getByTestId("tab-close").click();
     await expect(prompt).toBeVisible();
@@ -348,6 +349,7 @@ test("closing a dirty tab honours Cancel, Discard and Save", {
     await editor.click();
     await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("SAVE-ME");
+    await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
     await tab(page, "alpha.md").getByTestId("tab-close").click();
     await prompt.getByRole("button", { name: "Save" }).click();
     await expect(page.getByTestId("tab")).toHaveCount(0);

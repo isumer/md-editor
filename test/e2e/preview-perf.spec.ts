@@ -6,14 +6,19 @@ import { promisify } from "node:util";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { closeEditor, repositoryRoot, launchEditor, stubOpenDialog } from "./helpers";
+import {
+  closeEditor,
+  DOCUMENT_START,
+  repositoryRoot,
+  launchEditor,
+  stubOpenDialog,
+} from "./helpers";
 
 const run = promisify(execFile);
 const SAMPLES = 30;
 const TWENTY_MEGABYTES = "20971520";
 const large50 = path.join(repositoryRoot, "test/fixtures/big/large-50kb.md");
 const large500 = path.join(repositoryRoot, "test/fixtures/big/large-500kb.md");
-const DOCUMENT_START = process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home";
 
 let temporaryDirectory = "";
 let large20 = "";
