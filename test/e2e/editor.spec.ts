@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type ElectronApplication } from "@playwright/test";
 
 import { readTextOrNull,
   fixturePath,
@@ -24,6 +24,68 @@ test("opens an argv file and renders its heading", {
     );
   } finally {
     await application.close();
+  }
+});
+
+test("a failed argv open fails clearly and closes the application", {
+  tag: "@AC-R5-01",
+  annotation: { type: "AC-R5-01" },
+}, async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-missing-"));
+  const missingPath = path.join(directory, "missing.md");
+  let launched: ElectronApplication | undefined;
+  let launchedProcess: ReturnType<ElectronApplication["process"]> | undefined;
+  let failure: unknown;
+  try {
+    try {
+      await launchEditor(missingPath, {
+        titleTimeoutMs: 500,
+        onPage: ({ application }) => {
+          launched = application;
+          launchedProcess = application.process();
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain("argv document did not open");
+    await expect.poll(
+      () => launchedProcess?.exitCode ?? null,
+      { timeout: 5_000 },
+    ).not.toBeNull();
+  } finally {
+    if (launched) {
+      await launched.close().catch(() => undefined);
+    }
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a throwing page callback closes the application and keeps the error", {
+  tag: "@AC-R5-01",
+  annotation: { type: "AC-R5-01" },
+}, async () => {
+  let launched: ElectronApplication | undefined;
+  let launchedProcess: ReturnType<ElectronApplication["process"]> | undefined;
+  try {
+    await expect(
+      launchEditor(fixturePath, {
+        onPage: ({ application }) => {
+          launched = application;
+          launchedProcess = application.process();
+          throw new Error("onPage failed");
+        },
+      }),
+    ).rejects.toThrow("onPage failed");
+    await expect.poll(
+      () => launchedProcess?.exitCode ?? null,
+      { timeout: 5_000 },
+    ).not.toBeNull();
+  } finally {
+    if (launched) {
+      await launched.close().catch(() => undefined);
+    }
   }
 });
 
