@@ -49,13 +49,51 @@ export interface DetachDocumentMessage {
   docId: string;
 }
 
+export interface DraftDocumentInput {
+  docId: string;
+  epoch: number;
+  grant: string | null;
+  version: number;
+}
+
+export interface DraftDocumentRequest extends DraftDocumentInput {
+  id: string;
+  op: "draft";
+}
+
+export interface ListDraftsRequest {
+  id: string;
+  op: "drafts";
+}
+
+export interface ClearDraftMessage {
+  docId: string;
+  op: "clear-draft";
+}
+
+export interface DraftDocument {
+  docId: string;
+  grant: string | null;
+  text: string;
+}
+
+export interface ListDraftsResponse {
+  drafts: readonly DraftDocument[];
+}
+
 export type IoRequest =
   | ReadDocumentRequest
   | AttachDocumentRequest
-  | SaveDocumentRequest;
-export type IoOneWayMessage = ChangeDocumentMessage | DetachDocumentMessage;
+  | SaveDocumentRequest
+  | DraftDocumentRequest
+  | ListDraftsRequest;
+export type IoOneWayMessage =
+  | ChangeDocumentMessage
+  | DetachDocumentMessage
+  | ClearDraftMessage;
 
 export interface ReadDocumentResponse {
+  canonicalPath: string;
   name: string;
   text: string;
 }
@@ -76,7 +114,11 @@ export type BoundaryResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: BoundaryError };
 
-type IoResponse = ReadDocumentResponse | SaveDocumentResponse | Record<string, never>;
+type IoResponse =
+  | ReadDocumentResponse
+  | SaveDocumentResponse
+  | ListDraftsResponse
+  | Record<string, never>;
 
 export interface IoReply {
   id: string;
@@ -251,13 +293,35 @@ function validSave(value: unknown): value is SaveDocumentRequest {
     validVersion(data["epoch"]) && validVersion(data["version"]);
 }
 
+function validDraft(value: unknown): value is DraftDocumentRequest {
+  const data = exactData(
+    value,
+    ["id", "op", "grant", "docId", "epoch", "version"],
+  );
+  return data !== null && validId(data["id"]) && data["op"] === "draft" &&
+    (data["grant"] === null || validGrant(data["grant"])) &&
+    validDocId(data["docId"]) &&
+    validVersion(data["epoch"]) && validVersion(data["version"]);
+}
+
+function validListDrafts(value: unknown): value is ListDraftsRequest {
+  const data = exactData(value, ["id", "op"]);
+  return data !== null && validId(data["id"]) && data["op"] === "drafts";
+}
+
 export function isIoRequest(value: unknown): value is IoRequest {
-  return validRead(value) || validAttach(value) || validSave(value);
+  return validRead(value) || validAttach(value) || validSave(value) ||
+    validDraft(value) || validListDrafts(value);
 }
 
 export function isIoOneWayMessage(value: unknown): value is IoOneWayMessage {
   const detach = exactData(value, ["op", "docId"]);
   if (detach && detach["op"] === "detach" && validDocId(detach["docId"])) {
+    return true;
+  }
+  const clearDraft = exactData(value, ["op", "docId"]);
+  if (clearDraft && clearDraft["op"] === "clear-draft" &&
+    validDocId(clearDraft["docId"])) {
     return true;
   }
   const change = exactData(
@@ -296,18 +360,35 @@ function validError(value: unknown): value is BoundaryError {
     typeof error["retryable"] === "boolean";
 }
 
+function validDraftList(value: unknown): boolean {
+  const list = exactData(value, ["drafts"]);
+  const drafts = list ? arrayValues(list["drafts"]) : null;
+  return drafts !== null && drafts.every((draft) => {
+    const entry = exactData(draft, ["docId", "grant", "text"]);
+    return entry !== null && validDocId(entry["docId"]) &&
+      (entry["grant"] === null || validGrant(entry["grant"])) &&
+      typeof entry["text"] === "string" &&
+      entry["text"].length <= MAX_IO_TEXT_LENGTH;
+  });
+}
+
 function validSuccessValue(value: unknown): boolean {
   const empty = exactData(value, []);
   if (empty) {
     return true;
   }
-  const read = exactData(value, ["name", "text"]);
-  if (read && typeof read["name"] === "string" && typeof read["text"] === "string") {
+  const read = exactData(value, ["canonicalPath", "name", "text"]);
+  if (read && typeof read["canonicalPath"] === "string" &&
+    read["canonicalPath"].length > 0 && typeof read["name"] === "string" &&
+    typeof read["text"] === "string") {
     return true;
   }
   const save = exactData(value, ["name", "version"]);
-  return save !== null && typeof save["name"] === "string" &&
-    validVersion(save["version"]);
+  if (save !== null && typeof save["name"] === "string" &&
+    validVersion(save["version"])) {
+    return true;
+  }
+  return validDraftList(value);
 }
 
 function validResult(value: unknown): boolean {

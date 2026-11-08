@@ -1,55 +1,46 @@
-import type { Text } from "@codemirror/state";
+import { Text, type EditorState } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 
-import type { DocumentReference } from "../shared/ipc/file";
-import type {
-  MenuCommandMessage,
-  MenuContribution,
-  MenuItemId,
-} from "../shared/ipc/menu";
 import type { Result } from "../shared/ipc/result";
 import { formatMessage } from "../shared/messages/en";
-import type {
-  RenderAttachMessage,
-  RenderRequest,
-  RenderResponse,
-  RenderResync,
-} from "../shared/workers/render";
-import { createCommandRegistry } from "./core/commands";
-import { createContextKeys } from "./core/contextKeys";
+import { DraftScheduler } from "./core/draftScheduler";
 import {
+  createDocumentRecord,
   createDocumentState,
   documentTitle,
+  isDocumentDirty,
   messageParams,
-  settleDocumentReplacement,
+  type DocumentRecord,
 } from "./core/document";
-import { installKeymap } from "./core/keymap";
+import { DocumentRegistry } from "./core/documentRegistry";
+import { FrameCoalescer } from "./core/frameCoalescer";
 import {
   DocumentReplication,
-  type ReplicatedVersion,
-  saveReplicatedDocument,
 } from "./core/replication";
-import { createEditor, dispatchRedo, dispatchUndo } from "./editor/editor";
+import {
+  createEditor,
+  createEditorState,
+  type EditorCallbacks,
+} from "./editor/editor";
 import {
   wirePreviewLinks,
-  wireRenderWorker,
 } from "./features/preview/preview";
-import { RenderScheduler } from "./features/preview/renderScheduler";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
-  chooseSaveTarget,
-  contributeMenu,
+  clearDraft,
   detachDocument,
-  onMenuCommand,
   onOpenRequest,
-  openFile,
-  readDocument,
+  onSessionCloseRequest,
   readyForOpenRequests,
-  releaseDocument,
-  saveDocument as saveDocumentVersion,
   sendChanges,
 } from "./platform/api";
+import { DocumentClosePrompt } from "./tabs/closePrompt";
+import { DocumentCommands } from "./tabs/documentCommands";
+import { DocumentLifecycle } from "./tabs/documentLifecycle";
+import { RenderController } from "./tabs/renderController";
+import { TabStrip } from "./tabs/tabStrip";
 import "./styles.css";
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
@@ -60,27 +51,21 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
   return element;
 }
 
-interface RenderWorkerPort {
-  postMessage(message: unknown): void;
-  onmessage: ((event: MessageEvent<RenderResponse>) => void) | null;
-  onerror: ((event: ErrorEvent) => void) | null;
-}
-
-function defaultRenderWorkerFactory(url: URL): RenderWorkerPort {
-  return new Worker(url, { type: "module" });
-}
-
 const editorHost = requiredElement<HTMLElement>("#editor");
 const preview = requiredElement<HTMLElement>("#preview");
+const previewError = requiredElement<HTMLElement>("#preview-error");
 const status = requiredElement<HTMLElement>("#status");
-const renderWorker = defaultRenderWorkerFactory(
-  new URL(renderWorkerUrl, window.location.href),
-);
+const tabsHost = requiredElement<HTMLElement>("#tabs");
+const closePrompt = requiredElement<HTMLElement>("#close-prompt");
+const closePromptMessage = requiredElement<HTMLElement>("#close-prompt-message");
 const documentState = createDocumentState();
-const replication = new DocumentReplication();
-
+const registry = new DocumentRegistry();
+let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
 let statusFromPreview = false;
+let editor: EditorView;
+let lifecycle: DocumentLifecycle;
+let documentCommands: DocumentCommands | null = null;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -95,200 +80,184 @@ function showPreviewStatus(message = ""): void {
   }
 }
 
+function showPreviewError(message = ""): void {
+  previewError.textContent = message;
+  previewError.hidden = message === "";
+}
+
 function updateTitle(): void {
   document.title = documentTitle(documentState);
 }
 
-const scheduler = new RenderScheduler((request) => {
-  renderWorker.postMessage({
-    op: "render",
-    id: request.id,
-    ...replication.current(),
-  } satisfies RenderRequest);
-}, {
-  onApplied: (latency) => {
-    const end = performance.now();
-    performance.measure("preview-latency", { start: end - latency, end });
-  },
-});
-
-const editor = createEditor(
-  editorHost,
-  documentState,
-  {
-    onDocumentChanged: () => scheduler.schedule(),
-    onChanges: (changes) => {
-      const message = replication.changed(changes);
-      sendChanges(message);
-      renderWorker.postMessage(message);
-    },
-    updateTitle,
-    onStateChanged: () => refreshContextKeys(),
-  },
-);
-
-const contextKeys = createContextKeys();
-const commandContext = { contextKeys };
-const commands = createCommandRegistry();
-const menuItemCommands: Readonly<Record<MenuItemId, string>> = {
-  "file-open": "file.open",
-  "file-save": "file.save",
-  "file-save-as": "file.saveAs",
-};
-
-function refreshContextKeys(): void {
-  const keys = new Set<string>();
-  if (editor.hasFocus) {
-    keys.add("editorFocus");
-  }
-  if (editor.state.selection.ranges.some((range) => !range.empty)) {
-    keys.add("hasSelection");
-  }
-  contextKeys.set(keys);
+function syncDocumentState(document: DocumentRecord): void {
+  documentState.currentGrant = document.grant;
+  documentState.currentName = document.name;
+  documentState.saved = document.saved.text;
+  documentState.dirty = document.dirty;
 }
 
-function platformName(): string {
-  if (navigator.platform.startsWith("Mac")) {
-    return "darwin";
-  }
-  return navigator.platform.startsWith("Win") ? "win32" : "linux";
-}
-
-commands.register({
-  id: "file.open",
-  titleKey: "menu.open",
-  run: () => openDocument(),
-});
-commands.register({
-  id: "file.save",
-  titleKey: "menu.save",
-  run: () => saveEditorDocument(false),
-});
-commands.register({
-  id: "file.saveAs",
-  titleKey: "menu.saveAs",
-  run: () => saveEditorDocument(true),
-});
-commands.register({
-  id: "undo",
-  titleKey: "menu.undo",
-  run: () => {
-    dispatchUndo(editor);
-  },
-});
-commands.register({
-  id: "redo",
-  titleKey: "menu.redo",
-  run: () => {
-    dispatchRedo(editor);
-  },
-});
-
-function menuContribution(): MenuContribution {
-  return {
-    fileMenuTitle: formatMessage("menu.file", {}),
-    items: [
-      { id: "file-open", title: formatMessage("menu.open", {}), accelerator: "CmdOrCtrl+O" },
-      { id: "file-save", title: formatMessage("menu.save", {}), accelerator: "CmdOrCtrl+S" },
-      {
-        id: "file-save-as",
-        title: formatMessage("menu.saveAs", {}),
-        accelerator: "CmdOrCtrl+Shift+S",
-      },
-    ],
-  };
-}
-
-async function publishMenuContribution(): Promise<void> {
-  valueOrStatus(await contributeMenu(menuContribution()));
-}
-
-function runMenuCommand(menuItemId: MenuCommandMessage): void {
-  const commandId = menuItemCommands[menuItemId];
-  if (commandId !== undefined) {
-    void commands.run(commandId, commandContext, undefined, "menu");
-  }
-}
-
-onMenuCommand(runMenuCommand);
-installKeymap(document, {
-  registry: commands,
-  context: commandContext,
-  platform: platformName(),
-});
-refreshContextKeys();
-editor.contentDOM.addEventListener("focus", refreshContextKeys);
-editor.contentDOM.addEventListener("blur", refreshContextKeys);
-void publishMenuContribution().catch(showUnexpectedError);
-
-function resyncRenderWorker(response: RenderResync): void {
-  const current = replication.current();
-  if (response.docId !== current.docId || response.epoch !== current.epoch ||
-    response.version > current.version) {
+function syncDirty(document: DocumentRecord): void {
+  tabStrip.update(document);
+  if (document !== activeDocument) {
     return;
   }
-  renderWorker.postMessage({
-    op: "attach",
-    ...current,
-    text: editor.state.doc.toString(),
-  } satisfies RenderAttachMessage);
-  scheduler.schedule();
+  syncDocumentState(document);
+  updateTitle();
 }
 
-wireRenderWorker(renderWorker, {
-  scheduler,
+const renderController = new RenderController({
+  current: () => activeDocument,
   preview,
-  showStatus: showPreviewStatus,
-  currentVersion: () => replication.current(),
-  onResync: resyncRenderWorker,
+  restartMessage: formatMessage("preview.workerRestarted", {}),
   rewriteHtml: (html) => rewriteAssetUrls(html, {
     windowId,
-    grant: documentState.currentGrant,
+    grant: activeDocument?.grant ?? null,
   }),
+  showError: showPreviewError,
+  showStatus: showPreviewStatus,
+  workerUrl: new URL(renderWorkerUrl, window.location.href),
 });
-wirePreviewLinks(preview, showStatus);
 
-async function attachText(
-  text: string,
-  version: ReplicatedVersion,
-  fileName: string | null,
-): Promise<void> {
-  const message = { ...version, text };
-  renderWorker.postMessage({ op: "attach", ...message } satisfies RenderAttachMessage);
-  const result = await attachDocument(message);
-  if (!result.ok) {
-    valueOrStatus(result, fileName);
+const callbacks: EditorCallbacks = {
+  onDocumentChanged: () => {
+    const document = activeDocument;
+    if (document) {
+      // Every update, including a selection change, is the tab's view state.
+      document.state = editor.state;
+      document.scrollTop = editor.scrollDOM.scrollTop;
+      dirtyFrame.changed(document);
+    }
+    renderController.schedule();
+  },
+  onChanges: (changes, state) => {
+    const document = activeDocument;
+    if (!document) {
+      return;
+    }
+    document.state = state;
+    const message = document.replication.changed(changes);
+    sendChanges(message);
+    renderController.change(message);
+    dirtyFrame.changed(document);
+  },
+  updateTitle,
+  onStateChanged: () => documentCommands?.refresh(),
+};
+
+editor = createEditor(editorHost, documentState, callbacks);
+
+const drafts = new DraftScheduler({
+  onDraft: (docId) => lifecycle.sendDraft(docId),
+});
+
+// Dirty state is evaluated at most once per frame, and only that tab row updates.
+const dirtyFrame = new FrameCoalescer<DocumentRecord>({
+  requestFrame: (callback) => {
+    requestAnimationFrame(callback);
+  },
+  apply: (document) => {
+    if (!registry.get(document.id)) {
+      return;
+    }
+    document.dirty = isDocumentDirty(document);
+    if (document.dirty) {
+      drafts.documentChanged(document.id, document.state.doc.length);
+    } else {
+      drafts.documentSaved(document.id);
+    }
+    syncDirty(document);
+  },
+});
+
+const prompt = new DocumentClosePrompt(closePrompt, closePromptMessage);
+const tabStrip = new TabStrip({
+  active: () => activeDocument,
+  close: (document) => {
+    void lifecycle.closeTab(document).catch(showUnexpectedError);
+  },
+  documents: () => registry.all(),
+  host: tabsHost,
+  select: (document) => activateDocument(document),
+});
+
+function activateDocument(document: DocumentRecord): void {
+  if (activeDocument === document) {
+    editor.focus();
+    return;
+  }
+  if (activeDocument) {
+    activeDocument.state = editor.state;
+    activeDocument.scrollTop = editor.scrollDOM.scrollTop;
+  }
+  activeDocument = document;
+  documentState.applyingDocument = true;
+  editor.setState(document.state);
+  documentState.applyingDocument = false;
+  syncDocumentState(document);
+  editor.scrollDOM.scrollTop = document.scrollTop;
+  requestAnimationFrame(() => {
+    if (activeDocument === document) {
+      editor.scrollDOM.scrollTop = document.scrollTop;
+    }
+  });
+  updateTitle();
+  tabStrip.render();
+  showPreviewError();
+  renderController.activate(document);
+  editor.focus();
+}
+
+function newDocument(input: {
+  canonicalPath: string | null;
+  grant: string | null;
+  name: string | null;
+  savedText: string;
+  text: string;
+}): DocumentRecord {
+  const replication = new DocumentReplication();
+  const document = createDocumentRecord({
+    canonicalPath: input.canonicalPath,
+    grant: input.grant,
+    name: input.name,
+    replication,
+    savedText: Text.of(input.savedText.split("\n")),
+    state: createEditorState(input.text, documentState, callbacks),
+  });
+  registry.add(document);
+  const version = replication.current();
+  const text = document.state.doc.toString();
+  renderController.attach(document);
+  void attachDocument({ ...version, text }).then((result) => {
+    valueOrStatus(result, document.name);
+  }).catch(showUnexpectedError);
+  return document;
+}
+
+function createUntitled(): DocumentRecord {
+  return newDocument({
+    canonicalPath: null,
+    grant: null,
+    name: null,
+    savedText: "",
+    text: "",
+  });
+}
+
+function removePristineUntitled(): void {
+  if (registry.size <= 1) {
+    return;
+  }
+  const untouched = registry.all().find((document) =>
+    document.grant === null && !document.dirty && document.state.doc.length === 0);
+  if (untouched) {
+    removeDocument(untouched);
   }
 }
 
-async function displayDocument(
-  documentFile: DocumentReference & { text: string },
-): Promise<void> {
-  const replaced = replication.replace();
-  detachDocument({ docId: replaced.detachedDocId });
-  renderWorker.postMessage({ op: "detach", docId: replaced.detachedDocId });
-  documentState.applyingDocument = true;
-  documentState.currentGrant = documentFile.grant;
-  documentState.currentName = documentFile.name;
-  // Attach before the editor rebuild and the first render request: the worker
-  // starts chunking the document while CodeMirror parses it, and a render can
-  // never reach the worker before the text it refers to.
-  const attached = attachText(documentFile.text, replaced.current, documentFile.name);
-  editor.dispatch({
-    changes: { from: 0, to: editor.state.doc.length, insert: documentFile.text },
-    selection: { anchor: 0 },
-  });
-  documentState.applyingDocument = false;
-  documentState.saved = editor.state.doc;
-  documentState.dirty = false;
-  updateTitle();
-  scheduler.schedule();
-  showStatus();
-  editor.focus();
-  await attached;
-}
-
-function valueOrStatus<T>(result: Result<T>, fileName: string | null = null): T | undefined {
+function valueOrStatus<T>(
+  result: Result<T>,
+  fileName: string | null = null,
+): T | undefined {
   if (!result.ok) {
     showStatus(formatMessage(
       result.error.messageKey,
@@ -299,147 +268,106 @@ function valueOrStatus<T>(result: Result<T>, fileName: string | null = null): T 
   return result.value;
 }
 
-async function openDocument(): Promise<void> {
-  try {
-    const opened = valueOrStatus(await openFile());
-    if (opened) {
-      await loadDocument(opened);
-    }
-  } catch (error) {
-    showStatus(error instanceof Error ? error.message : String(error));
-  }
-}
-
-async function releaseGrant(grant: string): Promise<void> {
-  valueOrStatus(await releaseDocument({ grant }));
-}
-
-async function loadDocument(reference: DocumentReference): Promise<void> {
-  const read = valueOrStatus(
-    await readDocument(reference.grant),
-    reference.name,
-  );
-  if (!read) {
-    await releaseGrant(reference.grant);
-    return;
-  }
-  const accepted = await settleDocumentReplacement({
-    currentGrant: documentState.currentGrant,
-    newGrant: reference.grant,
-    dirty: documentState.dirty,
-    confirmDiscard: () => window.confirm("Discard unsaved changes?"),
-    release: releaseGrant,
-  });
-  if (accepted) {
-    await displayDocument({ ...reference, text: read.text });
-  }
-}
-
-function handleOpenRequest(request: Result<DocumentReference>): void {
-  const opened = valueOrStatus(request);
-  if (opened) {
-    void loadDocument(opened).catch(showUnexpectedError);
-  }
-}
-
 function showUnexpectedError(error: unknown): void {
   showStatus(error instanceof Error ? error.message : String(error));
 }
 
-function markSaved(document: Text): void {
-  documentState.saved = document;
-  documentState.dirty = !editor.state.doc.eq(document);
-  updateTitle();
-}
-
-interface SaveSnapshot {
-  document: Text;
-  version: ReplicatedVersion;
-}
-
-async function saveSnapshot(
-  snapshot: SaveSnapshot,
-  grant: string,
-  fileName: string | null,
-): Promise<string | undefined> {
-  const saved = valueOrStatus(
-    await saveReplicatedDocument({
-      grant,
-      document: snapshot.document,
-      version: snapshot.version,
-      attach: attachDocument,
-      save: saveDocumentVersion,
-    }),
-    fileName,
-  );
-  if (saved) {
-    markSaved(snapshot.document);
-    showStatus();
-    return saved.name;
-  }
-  return undefined;
-}
-
-async function saveToCurrentGrant(snapshot: SaveSnapshot, grant: string): Promise<void> {
-  const name = await saveSnapshot(snapshot, grant, documentState.currentName);
-  if (name) {
-    documentState.currentName = name;
-    updateTitle();
-  }
-}
-
-async function saveToNewGrant(snapshot: SaveSnapshot): Promise<void> {
-  const target = valueOrStatus(await chooseSaveTarget({
-    grant: documentState.currentGrant,
-  }));
-  if (!target) {
+function removeDocument(document: DocumentRecord): void {
+  if (!registry.get(document.id)) {
     return;
   }
-  const name = await saveSnapshot(snapshot, target.grant, target.name);
-  if (!name) {
-    await releaseGrant(target.grant);
-    return;
+  const ordered = registry.all();
+  const index = ordered.indexOf(document);
+  registry.remove(document.id);
+  dirtyFrame.forget(document.id);
+  detachDocument({ docId: document.id });
+  renderController.detach(document.id);
+  drafts.documentSaved(document.id);
+  clearDraft({ docId: document.id });
+  if (document.grant) {
+    void lifecycle.releaseGrant(document.grant);
   }
-  const previousGrant = documentState.currentGrant;
-  documentState.currentGrant = target.grant;
-  documentState.currentName = name;
-  updateTitle();
-  if (previousGrant) {
-    await releaseGrant(previousGrant);
-  }
-}
-
-async function saveEditorDocument(saveAs: boolean): Promise<void> {
-  const snapshot = {
-    document: editor.state.doc,
-    version: replication.current(),
-  };
-  try {
-    const grant = documentState.currentGrant;
-    if (!saveAs && grant) {
-      await saveToCurrentGrant(snapshot, grant);
+  if (document === activeDocument) {
+    activeDocument = null;
+    const remaining = registry.all();
+    const next = remaining[Math.max(0, index - 1)] ?? remaining[0] ?? null;
+    if (next) {
+      activateDocument(next);
     } else {
-      await saveToNewGrant(snapshot);
+      preview.replaceChildren();
+      documentState.applyingDocument = true;
+      editor.setState(createEditorState("", documentState, callbacks));
+      documentState.applyingDocument = false;
+      documentState.currentGrant = null;
+      documentState.currentName = null;
+      documentState.saved = Text.empty;
+      documentState.dirty = false;
+      updateTitle();
+      tabStrip.render();
     }
-  } catch (error) {
-    showUnexpectedError(error);
+  } else {
+    tabStrip.render();
   }
 }
 
-onOpenRequest(handleOpenRequest);
+lifecycle = new DocumentLifecycle({
+  active: () => activeDocument,
+  activate: activateDocument,
+  drafts,
+  flushDirty: () => dirtyFrame.flush(),
+  newDocument,
+  prompt,
+  registry,
+  remove: removeDocument,
+  removePristineUntitled,
+  showStatus,
+  syncDirty,
+});
+documentCommands = new DocumentCommands({
+  editor,
+  onError: showUnexpectedError,
+  onResult: (result) => {
+    valueOrStatus(result);
+  },
+  open: () => lifecycle.open(),
+  save: (saveAs) => lifecycle.saveActive(saveAs),
+});
 
-async function initializeOpenRequests(): Promise<void> {
-  scheduler.schedule();
+onOpenRequest((request) => lifecycle.handleOpenRequest(request));
+onSessionCloseRequest((request) => {
+  void lifecycle.handleSessionClose(request).catch(showUnexpectedError);
+});
+
+window.addEventListener("dragover", (event) => {
+  event.preventDefault();
+});
+window.addEventListener("drop", (event) => {
+  event.preventDefault();
+});
+
+async function initialize(): Promise<void> {
+  for (const action of ["cancel", "discard", "save"] as const) {
+    const button = closePrompt.querySelector<HTMLButtonElement>(
+      `[data-action="${action}"]`,
+    );
+    if (button) {
+      button.textContent = formatMessage(`close.${action}`, {});
+    }
+  }
+  renderController.start();
+  wirePreviewLinks(preview, showStatus);
+  const untitled = createUntitled();
+  activateDocument(untitled);
   updateTitle();
   try {
-    await attachText(editor.state.doc.toString(), replication.current(), null);
     const ready = valueOrStatus(await readyForOpenRequests());
     if (ready) {
       windowId = ready.windowId;
       documentState.productName = ready.productName;
       updateTitle();
-      if (documentState.currentGrant) {
-        scheduler.schedule();
+      const recovered = await lifecycle.recover();
+      if (!recovered) {
+        await lifecycle.restoreSession();
       }
       if (ready.notice) {
         showStatus(ready.notice);
@@ -450,4 +378,4 @@ async function initializeOpenRequests(): Promise<void> {
   }
 }
 
-void initializeOpenRequests();
+void initialize();

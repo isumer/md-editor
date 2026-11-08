@@ -8,6 +8,7 @@ import { readTextOrNull,
   DOCUMENT_END,
   PRIMARY_MODIFIER,
   clickMenuItem,
+  closeEditor,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -60,7 +61,7 @@ test("Save As writes the chosen path and later Save uses it", {
       .toBe(originalText + firstEdit + secondEdit);
     expect(await fs.readFile(originalPath, "utf8")).toBe(originalText);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -87,7 +88,7 @@ test("Save on an untitled document asks for a path and writes it", {
     await expect(page).toHaveTitle(/^chosen\.md —/);
     await expect(page).not.toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -120,7 +121,7 @@ test("cancelling Open leaves the dirty document and disk unchanged", {
     expect(await fs.readFile(currentPath, "utf8")).toBe(originalText);
     expect(await directoryEntries(temporaryDirectory)).toEqual(entries);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -153,7 +154,7 @@ test("cancelling Save As leaves the dirty document and disk unchanged", {
     expect(await fs.readFile(currentPath, "utf8")).toBe(originalText);
     expect(await directoryEntries(temporaryDirectory)).toEqual(entries);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -198,7 +199,7 @@ test("an edit made while Save is in flight stays dirty and off disk", {
       .toBe(originalText + beforeSave);
     await expect(page).toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -225,7 +226,7 @@ test("Save writes exactly the edited document version", {
     await expect.poll(() => readTextOrNull(currentPath)).toBe(edited);
     await expect(page).not.toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -248,7 +249,7 @@ test("the Open menu item opens the file chosen by its dialog", {
     await expect.poll(() => dialogCallCount(application, "open")).toBe(1);
     await expect(page.getByTestId("editor")).toContainText("Open menu ran");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -273,7 +274,7 @@ test("the Save menu item writes the current document", {
     await expect.poll(() => readTextOrNull(currentPath))
       .toBe(originalText + edit);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -296,12 +297,12 @@ test("the Save As menu item writes the path chosen by its dialog", {
     await expect.poll(() => dialogCallCount(application, "save")).toBe(1);
     await expect.poll(() => readTextOrNull(chosenPath)).toBe(originalText);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
 
-test("declining to discard changes for another file keeps Save writing the current one", {
+test("opening another file keeps the dirty document and Save still writes it", {
   tag: "@AC-R5-09",
   annotation: { type: "AC-R5-09" },
 }, async () => {
@@ -314,22 +315,21 @@ test("declining to discard changes for another file keeps Save writing the curre
   try {
     await expect(page.getByTestId("editor")).toContainText("Current");
     await appendEditorText(page, "\nkept edit");
-    const discardDeclined = new Promise<string>((resolve) => {
-      page.once("dialog", (dialog) => {
-        void dialog.dismiss().then(() => { resolve(dialog.message()); });
-      });
-    });
     await stubOpenDialog(application, otherPath);
 
     await clickMenuItem(application, "file-open");
-    expect(await discardDeclined).toBe("Discard unsaved changes?");
+
+    await expect(page.getByTestId("close-prompt")).toBeHidden();
+    await expect(page.getByTestId("tab")).toHaveCount(2);
+    await expect(page.getByTestId("editor")).toContainText("Other");
+    await page.locator('[data-testid="tab"][data-name="current.md"]').click();
     await expect(page.getByTestId("editor")).toContainText("kept edit");
     await clickMenuItem(application, "file-save");
 
     await expect.poll(() => readTextOrNull(currentPath)).toBe("# Current\n\nkept edit");
     await expect(page).not.toHaveTitle(/•/);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -353,7 +353,7 @@ if (process.platform !== "win32") {
       await expect(page.getByTestId("status")).toContainText("permission");
       expect(await fs.readFile(readOnlyPath, "utf8")).toBe("# Read only\n");
     } finally {
-      await application.close();
+      await closeEditor(application, page);
       await fs.chmod(readOnlyPath, 0o600);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
@@ -378,7 +378,7 @@ if (process.platform !== "win32") {
 
       await expect(page.getByTestId("status")).toHaveText(failure as string);
     } finally {
-      await application.close();
+      await closeEditor(application, page);
       await fs.chmod(readOnlyPath, 0o600);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }

@@ -9,8 +9,11 @@ import { ioRequestId } from "../../shared/ipc/io";
 import {
   isRegisterGrantReply,
   isResolveAssetReply,
+  isSessionReadReply,
+  isSessionWriteReply,
   type RegisteredGrant,
   type ResolvedAsset,
+  type StoredSession,
 } from "../../shared/ipc/ioControl";
 import {
   serviceError,
@@ -28,7 +31,27 @@ interface IoWorkerDependencies {
 }
 
 interface PendingControl {
+  kind: ControlKind;
   resolve(result: Result<unknown>): void;
+}
+
+type ControlKind =
+  | "registerGrant"
+  | "resolveAsset"
+  | "readSession"
+  | "writeSession";
+
+function isReplyFor(kind: ControlKind, message: unknown): boolean {
+  if (kind === "registerGrant") {
+    return isRegisterGrantReply(message);
+  }
+  if (kind === "resolveAsset") {
+    return isResolveAssetReply(message);
+  }
+  if (kind === "readSession") {
+    return isSessionReadReply(message);
+  }
+  return isSessionWriteReply(message);
 }
 
 type PortReceiver = (port: MessagePortMain) => void;
@@ -121,6 +144,23 @@ export class IoWorkerSupervisor {
     this.child?.postMessage({ type: "revokeGrant", windowId, handle });
   }
 
+  async readSession(filePath: string): Promise<Result<StoredSession>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<StoredSession>({ type: "readSession", path: filePath })
+      : failedControl();
+  }
+
+  async writeSession(
+    filePath: string,
+    session: StoredSession,
+  ): Promise<Result<void>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<void>({ type: "writeSession", path: filePath, session })
+      : failedControl();
+  }
+
   async revokeWindow(windowId: number): Promise<void> {
     this.receivers.delete(windowId);
     await this.generationReady;
@@ -150,19 +190,25 @@ export class IoWorkerSupervisor {
   }
 
   private handleReply(message: unknown): void {
-    const reply = isRegisterGrantReply(message) || isResolveAssetReply(message)
-      ? message
-      : null;
-    if (!reply) {
-      const id = ioRequestId(message);
-      if (id) {
-        this.settleControl(id, {
-          ok: false,
-          error: serviceError("BAD_REQUEST", "request.invalid"),
-        });
-      }
+    const id = ioRequestId(message);
+    if (id === null) {
       return;
     }
+    const pending = this.pending.get(id);
+    if (!pending) {
+      return;
+    }
+    if (!isReplyFor(pending.kind, message)) {
+      this.settleControl(id, {
+        ok: false,
+        error: serviceError("BAD_REQUEST", "request.invalid"),
+      });
+      return;
+    }
+    const reply = message as {
+      id: string;
+      result: { ok: true; value: unknown } | { ok: false; error: unknown };
+    };
     const result: Result<unknown> = reply.result.ok
       ? reply.result
       : { ok: false, error: toServiceError(reply.result.error) };
@@ -177,10 +223,13 @@ export class IoWorkerSupervisor {
     }
   }
 
-  private sendControl<T>(request: Record<string, unknown>): Promise<Result<T>> {
+  private sendControl<T>(
+    request: { type: ControlKind } & Record<string, unknown>,
+  ): Promise<Result<T>> {
     const id = `control-${this.nextRequestId++}`;
     return new Promise((resolve) => {
       this.pending.set(id, {
+        kind: request.type,
         resolve: (result) => resolve(result as Result<T>),
       });
       const child = this.child;
