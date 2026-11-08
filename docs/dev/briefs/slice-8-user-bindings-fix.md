@@ -44,7 +44,7 @@ results. Change only these three checks.
    - `Alt-Shift-q` stays bound (no `Mod`).
    - `Mod-Alt-F5` stays bound (the key has five characters).
 2. Whitespace check. Reject a one-character key when the character
-   matches `\s`. Use the same `/\s/u` rule that the command value check
+   matches `\s`. Use the same `/\s/` test that the command value check
    already uses at line 116. Keep the `-` rejection.
 3. Plain-object check. A plain object has `Object.prototype` or `null`
    as its prototype. Reject every other object, including instances of
