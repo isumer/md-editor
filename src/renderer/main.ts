@@ -25,6 +25,13 @@ import {
 import { CompareController } from "./features/compare/controller";
 import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
 import "./features/compare/compare.css";
+import { MergeView } from "./features/merge/mergeView";
+import "./features/merge/merge.css";
+import {
+  initializeMarkerMerge,
+  markerMergeExtension,
+  type MarkerMergeState,
+} from "./features/merge/markerMergeState";
 import {
   wirePreviewLinks,
 } from "./features/preview/preview";
@@ -68,6 +75,7 @@ let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
 let statusFromPreview = false;
 let editor: EditorView;
+let mergeView: MergeView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 
@@ -145,10 +153,19 @@ const callbacks: EditorCallbacks = {
     dirtyFrame.changed(document);
   },
   updateTitle,
-  onStateChanged: () => documentCommands?.refresh(),
+  onStateChanged: (state) => {
+    documentCommands?.refresh();
+    mergeView?.stateChanged(activeDocument?.id ?? null, state);
+  },
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
+mergeView = new MergeView({
+  editorHost,
+  preview,
+  workspace,
+  editor,
+});
 
 const compareController = new CompareController({
   documents: () => registry.all(),
@@ -217,6 +234,7 @@ function activateDocument(document: DocumentRecord): void {
   tabStrip.render();
   showPreviewError();
   renderController.activate(document);
+  mergeView.activate(document.id, document.state);
   editor.focus();
 }
 
@@ -234,16 +252,33 @@ function newDocument(input: {
     name: input.name,
     replication,
     savedText: Text.of(input.savedText.split("\n")),
-    state: createEditorState(input.text, documentState, callbacks),
+    state: createEditorState(input.text, documentState, callbacks, markerMergeExtension),
   });
   registry.add(document);
   const version = replication.current();
   const text = document.state.doc.toString();
   renderController.attach(document, text);
+  window.setTimeout(() => detectMerge(document, text), 0);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);
   }).catch(showUnexpectedError);
   return document;
+}
+
+function installMerge(document: DocumentRecord, source: string, merge: MarkerMergeState): void {
+  if (!registry.get(document.id)) return;
+  const spec = initializeMarkerMerge(document.state, source, merge);
+  if (spec === null) return;
+  if (activeDocument === document) {
+    editor.dispatch(spec);
+    mergeView.activate(document.id, editor.state);
+  } else {
+    document.state = document.state.update(spec).state;
+  }
+}
+
+function detectMerge(document: DocumentRecord, text: string): void {
+  mergeView.detect(document.id, text, (merge) => installMerge(document, text, merge));
 }
 
 function createUntitled(): DocumentRecord {
@@ -292,6 +327,7 @@ function removeDocument(document: DocumentRecord): void {
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
+  mergeView.forget(document.id);
   dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderController.detach(document.id);
@@ -309,7 +345,7 @@ function removeDocument(document: DocumentRecord): void {
     } else {
       preview.replaceChildren();
       documentState.applyingDocument = true;
-      editor.setState(createEditorState("", documentState, callbacks));
+      editor.setState(createEditorState("", documentState, callbacks, markerMergeExtension));
       documentState.applyingDocument = false;
       documentState.currentGrant = null;
       documentState.currentName = null;
