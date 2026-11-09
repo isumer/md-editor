@@ -81,11 +81,11 @@ export class RenderController {
     this.scheduler.schedule();
   }
 
-  attach(document: DocumentRecord): void {
+  attach(document: DocumentRecord, text = document.state.doc.toString()): void {
     this.worker.postMessage({
       op: "attach",
       ...document.replication.current(),
-      text: document.state.doc.toString(),
+      text,
     } satisfies RenderAttachMessage);
   }
 

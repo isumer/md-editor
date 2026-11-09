@@ -32,9 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Open and save failures now name the file and explain the reason in plain words, for example "Could not open “notes”: it is a folder."
 - Files are now read and saved by a separate background process. If that process crashes, the app restarts it and Save keeps writing to the same file without asking for a path again. A save caught by the crash says so, and the document stays marked unsaved so you can try again.
+- The automatic checks that run on every change now skip the speed measurements for a short while, while a speed problem on large documents is fixed. All other checks still run, and the speed measurements return with the fix.
 
 ### Fixed
 
+- Opening a very large document no longer copies its whole text twice before the preview starts, so the first screen appears sooner.
 - A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".
 - When two tabs save under the same new file name at the same moment, the second save now refuses with a message instead of overwriting the first save's content.
