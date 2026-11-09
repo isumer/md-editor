@@ -316,12 +316,7 @@ export function wireRenderWorker(
     performance.mark("preview-apply-end");
     if (applied && response.ok) {
       documentPreview.version = response.version;
-      const renderComplete = documentPreview.container.dataset["renderComplete"] ?? "false";
-      if (wiring.preview.childNodes.length !== 1 ||
-        wiring.preview.firstChild !== documentPreview.container ||
-        wiring.preview.dataset["renderComplete"] !== renderComplete) {
-        previews.display(documentPreview);
-      }
+      previews.display(documentPreview);
       shown = {
         docId: response.docId,
         epoch: response.epoch,
