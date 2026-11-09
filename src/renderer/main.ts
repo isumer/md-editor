@@ -1,4 +1,4 @@
-import { Text, type ChangeSet, type EditorState } from "@codemirror/state";
+import { Text, Transaction, type ChangeSet, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
@@ -22,6 +22,7 @@ import {
   createEditorState,
   dispatchRedo,
   dispatchUndo,
+  editorCallbacksEffect,
   type EditorCallbacks,
 } from "./editor/editor";
 import { MergeView } from "./features/merge/mergeView";
@@ -83,9 +84,6 @@ let editor: EditorView;
 let editorTwo: EditorView;
 let secondaryDocument: DocumentRecord | null = null;
 let mirroring = false;
-type EditEvent = "edit" | "redo" | "undo";
-let historyEvent: EditEvent = "edit";
-const secondaryStates = new Map<string, { state: EditorState; scrollTop: number }>();
 const documentViews = new DocumentViews();
 let mergeView: MergeView;
 let lifecycle: DocumentLifecycle;
@@ -145,23 +143,24 @@ const renderController = new RenderController({
 
 const callbacks: EditorCallbacks = {
   onDocumentChanged: () => {
+    if (mirroring) return;
     const document = activeDocument;
     if (document) {
-      // Every update, including a selection change, is the tab's view state.
       document.state = editor.state;
-      document.scrollTop = editor.scrollDOM.scrollTop;
+      saveEditorViewState(document, 1, editor);
       dirtyFrame.changed(document);
     }
     renderController.schedule();
   },
   onChanges: (changes, state) => {
+    if (mirroring) return;
     const document = activeDocument;
     if (!document) {
       return;
     }
     document.state = state;
-    if (mirroring) return;
-    mirrorChange(editorTwo, changes, historyEvent);
+    saveEditorViewState(document, 1, editor);
+    syncPeerEditor(document, 1, changes);
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderController.change(message);
@@ -177,25 +176,20 @@ const callbacks: EditorCallbacks = {
 editor = createEditor(editorHost, documentState, callbacks);
 const secondaryCallbacks: EditorCallbacks = {
   onDocumentChanged: () => {
+    if (mirroring) return;
     const document = secondaryDocument;
-    if (document) secondaryStates.set(document.id, {
-      state: editorTwo.state,
-      scrollTop: editorTwo.scrollDOM.scrollTop,
-    });
+    if (document) {
+      document.state = editorTwo.state;
+      saveEditorViewState(document, 2, editorTwo);
+    }
   },
   onChanges: (changes, state) => {
+    if (mirroring) return;
     const document = secondaryDocument;
     if (!document) return;
-    secondaryStates.set(document.id, {
-      state,
-      scrollTop: editorTwo.scrollDOM.scrollTop,
-    });
-    if (mirroring) return;
-    if (activeDocument === document) {
-      mirrorChange(editor, changes, historyEvent);
-    } else {
-      document.state = document.state.update({ changes }).state;
-    }
+    document.state = state;
+    saveEditorViewState(document, 2, editorTwo);
+    syncPeerEditor(document, 2, changes);
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderController.change(message);
@@ -206,31 +200,88 @@ const secondaryCallbacks: EditorCallbacks = {
 };
 editorTwo = createEditor(editorTwoHost, documentState, secondaryCallbacks);
 
-function mirrorChange(
-  peer: EditorView,
-  changes: ChangeSet,
-  event: EditEvent,
+function hydrateEditor(view: DocumentViewId): void {
+  const target = view === 1 ? editor : editorTwo;
+  const document = view === 1 ? activeDocument : secondaryDocument;
+  if (!document) return;
+  saveEditorViewState(document, view, target);
+  const scrollTop = target.scrollDOM.scrollTop;
+  target.setState(editorStateForView(document, view));
+  target.scrollDOM.scrollTop = scrollTop;
+}
+
+editor.contentDOM.addEventListener("focus", () => hydrateEditor(1));
+editorTwo.contentDOM.addEventListener("focus", () => hydrateEditor(2));
+
+function saveEditorViewState(
+  document: DocumentRecord,
+  view: DocumentViewId,
+  source: EditorView,
 ): void {
-  if (!activeDocument || activeDocument !== secondaryDocument) return;
+  documentViews.saveState(document.id, view, {
+    scrollTop: source.scrollDOM.scrollTop,
+    selection: source.state.selection,
+  });
+}
+
+function editorStateForView(
+  document: DocumentRecord,
+  view: DocumentViewId,
+): EditorState {
+  const selection = documentViews.state(document.id, view)?.selection ??
+    document.state.selection;
+  return document.state.update({
+    annotations: Transaction.addToHistory.of(false),
+    effects: editorCallbacksEffect(
+      documentState,
+      view === 1 ? callbacks : secondaryCallbacks,
+    ),
+    selection,
+  }).state;
+}
+
+function syncPeerEditor(
+  document: DocumentRecord,
+  sourceView: DocumentViewId,
+  changes: ChangeSet,
+): void {
+  const peerView = sourceView === 1 ? 2 : 1;
+  const peer = peerView === 1 ? editor : editorTwo;
+  const peerDocument = peerView === 1 ? activeDocument : secondaryDocument;
+  if (peerDocument !== document) {
+    const stored = documentViews.state(document.id, peerView);
+    if (stored !== undefined) {
+      documentViews.saveState(document.id, peerView, {
+        ...stored,
+        selection: stored.selection.map(changes),
+      });
+    }
+    return;
+  }
+  documentViews.saveState(document.id, peerView, {
+    scrollTop: peer.scrollDOM.scrollTop,
+    selection: peer.state.selection.map(changes),
+  });
+  const scrollTop = peer.scrollDOM.scrollTop;
   mirroring = true;
   try {
-    if (event === "undo") dispatchUndo(peer);
-    else if (event === "redo") dispatchRedo(peer);
-    else peer.dispatch({ changes });
+    peer.dispatch({
+      annotations: Transaction.addToHistory.of(false),
+      changes,
+    });
+    saveEditorViewState(document, peerView, peer);
+    peer.scrollDOM.scrollTop = scrollTop;
   } finally {
     mirroring = false;
   }
 }
 
 function runHistory(event: "redo" | "undo"): void {
-  historyEvent = event;
-  try {
-    const activeEditor = editorTwo.hasFocus ? editorTwo : editor;
-    if (event === "undo") dispatchUndo(activeEditor);
-    else dispatchRedo(activeEditor);
-  } finally {
-    historyEvent = "edit";
-  }
+  const secondary = editorTwo.hasFocus;
+  hydrateEditor(secondary ? 2 : 1);
+  const activeEditor = secondary ? editorTwo : editor;
+  if (event === "undo") dispatchUndo(activeEditor);
+  else dispatchRedo(activeEditor);
 }
 mergeView = new MergeView({
   editorHost,
@@ -272,7 +323,8 @@ const tabStrip = new TabStrip({
     .map((id) => registry.get(id)).filter((value): value is DocumentRecord => value !== undefined),
   host: tabsHost,
   select: (document) => activateDocument(document),
-  otherView: (document, action) => changeDocumentView(document, 1, action),
+  commandTarget: (document) => `1:${document.id}`,
+  runCommand: (id, target) => documentCommands?.run(id, target),
 });
 const tabStripTwo = new TabStrip({
   active: () => secondaryDocument,
@@ -281,7 +333,8 @@ const tabStripTwo = new TabStrip({
     .map((id) => registry.get(id)).filter((value): value is DocumentRecord => value !== undefined),
   host: tabsTwoHost,
   select: activateSecondaryDocument,
-  otherView: (document, action) => changeDocumentView(document, 2, action),
+  commandTarget: (document) => `2:${document.id}`,
+  runCommand: (id, target) => documentCommands?.run(id, target),
 });
 
 function activateDocument(document: DocumentRecord): void {
@@ -291,17 +344,18 @@ function activateDocument(document: DocumentRecord): void {
   }
   if (activeDocument) {
     activeDocument.state = editor.state;
-    activeDocument.scrollTop = editor.scrollDOM.scrollTop;
+    saveEditorViewState(activeDocument, 1, editor);
   }
   activeDocument = document;
   documentState.applyingDocument = true;
-  editor.setState(document.state);
+  editor.setState(editorStateForView(document, 1));
   documentState.applyingDocument = false;
   syncDocumentState(document);
-  editor.scrollDOM.scrollTop = document.scrollTop;
+  const scrollTop = documentViews.state(document.id, 1)?.scrollTop ?? document.scrollTop;
+  editor.scrollDOM.scrollTop = scrollTop;
   requestAnimationFrame(() => {
     if (activeDocument === document) {
-      editor.scrollDOM.scrollTop = document.scrollTop;
+      editor.scrollDOM.scrollTop = scrollTop;
     }
   });
   updateTitle();
@@ -314,21 +368,12 @@ function activateDocument(document: DocumentRecord): void {
 
 function activateSecondaryDocument(document: DocumentRecord): void {
   if (secondaryDocument) {
-    secondaryStates.set(secondaryDocument.id, {
-      state: editorTwo.state,
-      scrollTop: editorTwo.scrollDOM.scrollTop,
-    });
+    saveEditorViewState(secondaryDocument, 2, editorTwo);
   }
   secondaryDocument = document;
-  const saved = secondaryStates.get(document.id);
-  const state = saved?.state ?? createEditorState(
-    document.state.doc,
-    documentState,
-    secondaryCallbacks,
-    markerMergeExtension,
-  );
-  editorTwo.setState(state);
-  editorTwo.scrollDOM.scrollTop = saved?.scrollTop ?? 0;
+  const state = documentViews.state(document.id, 2);
+  editorTwo.setState(editorStateForView(document, 2));
+  editorTwo.scrollDOM.scrollTop = state?.scrollTop ?? 0;
   tabStripTwo.render();
   editorTwo.focus();
 }
@@ -350,6 +395,18 @@ function changeDocumentView(
   }
   tabStrip.render();
   tabStripTwo.render();
+}
+
+function runDocumentViewCommand(
+  target: string,
+  action: "clone" | "move",
+): void {
+  const separator = target.indexOf(":");
+  const view = target.slice(0, separator);
+  const document = registry.get(target.slice(separator + 1));
+  if (document && (view === "1" || view === "2")) {
+    changeDocumentView(document, view === "1" ? 1 : 2, action);
+  }
 }
 
 function newDocument(input: {
@@ -443,7 +500,6 @@ function removeDocument(document: DocumentRecord): void {
   const index = ordered.indexOf(document);
   registry.remove(document.id);
   documentViews.remove(document.id);
-  secondaryStates.delete(document.id);
   if (secondaryDocument === document) {
     secondaryDocument = null;
     const nextId = documentViews.documents(2)[0];
@@ -506,6 +562,7 @@ documentCommands = new DocumentCommands({
     valueOrStatus(result);
   },
   open: () => lifecycle.open(),
+  otherView: runDocumentViewCommand,
   redo: () => runHistory("redo"),
   save: (saveAs) => lifecycle.saveActive(saveAs),
   undo: () => runHistory("undo"),

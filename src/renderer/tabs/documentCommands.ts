@@ -36,6 +36,7 @@ export interface DocumentCommandsOptions {
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   open(): Promise<void>;
+  otherView?(target: string, action: "clone" | "move"): void;
   redo?(): void;
   save(saveAs: boolean): Promise<void>;
   undo?(): void;
@@ -79,6 +80,10 @@ export class DocumentCommands {
     this.contextKeys.set(keys);
   }
 
+  run(id: string, target: string): void {
+    void this.commands.run(id, this.commandContext, undefined, target);
+  }
+
   private register(): void {
     this.commands.register({ id: "file.open", titleKey: "menu.open", run: this.options.open });
     this.commands.register({
@@ -101,6 +106,16 @@ export class DocumentCommands {
       titleKey: "menu.redo",
       run: () => this.runRedo(),
     });
+    this.commands.register({
+      id: "tab.moveToOtherView",
+      titleKey: "tab.moveToOtherView",
+      run: (_context, _args, target) => this.runOtherView(target, "move"),
+    });
+    this.commands.register({
+      id: "tab.cloneToOtherView",
+      titleKey: "tab.cloneToOtherView",
+      run: (_context, _args, target) => this.runOtherView(target, "clone"),
+    });
   }
 
   private editor(): EditorView {
@@ -117,6 +132,15 @@ export class DocumentCommands {
   private runRedo(): void {
     if (this.options.redo) this.options.redo();
     else dispatchRedo(this.editor());
+  }
+
+  private runOtherView(
+    target: string | undefined,
+    action: "clone" | "move",
+  ): void {
+    if (target !== undefined) {
+      this.options.otherView?.(target, action);
+    }
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {

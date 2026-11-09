@@ -17,6 +17,7 @@ import {
 import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
+  Compartment,
   EditorState,
   StateEffect,
   StateField,
@@ -91,6 +92,23 @@ const editorSetup = [
     ...lintKeymap,
   ]),
 ];
+const callbacksCompartment = new Compartment();
+
+function callbacksExtension(
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): Extension {
+  return EditorView.updateListener.of((update) => {
+    handleDocumentUpdate(update, documentState, callbacks);
+  });
+}
+
+export function editorCallbacksEffect(
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): StateEffect<unknown> {
+  return callbacksCompartment.reconfigure(callbacksExtension(documentState, callbacks));
+}
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
@@ -133,9 +151,7 @@ export function createEditorState(
       extension,
       ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
       EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        handleDocumentUpdate(update, documentState, callbacks);
-      }),
+      callbacksCompartment.of(callbacksExtension(documentState, callbacks)),
     ],
   });
 }

@@ -85,4 +85,30 @@ describe("tab strip", () => {
     strip.update(added);
     expect(host.querySelectorAll('[data-testid="tab"]')).toHaveLength(1);
   });
+
+  it("AC-R4-10: context actions invoke registered command ids with the tab target", () => {
+    const host = document.createElement("div");
+    const item = record("one", "note.md");
+    const runCommand = vi.fn();
+    new TabStrip({
+      active: () => item,
+      close: vi.fn(),
+      commandTarget: () => "1:one",
+      documents: () => [item],
+      host,
+      runCommand,
+      select: vi.fn(),
+    }).render();
+    const row = host.querySelector<HTMLElement>('[data-testid="tab"]');
+
+    row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    const actions = host.querySelectorAll<HTMLButtonElement>('[role="menu"] button');
+    expect([...actions].map((button) => button.textContent)).toEqual([
+      "Move to Other View",
+      "Clone to Other View",
+    ]);
+    actions[1]?.click();
+
+    expect(runCommand).toHaveBeenCalledWith("tab.cloneToOtherView", "1:one");
+  });
 });

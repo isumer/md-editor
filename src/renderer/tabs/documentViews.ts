@@ -1,9 +1,20 @@
+import type { EditorSelection } from "@codemirror/state";
+
 export type DocumentViewId = 1 | 2;
+
+export interface DocumentViewState {
+  readonly scrollTop: number;
+  readonly selection: EditorSelection;
+}
 
 export class DocumentViews {
   private readonly members: Record<DocumentViewId, string[]> = {
     1: [],
     2: [],
+  };
+  private readonly states: Record<DocumentViewId, Map<string, DocumentViewState>> = {
+    1: new Map(),
+    2: new Map(),
   };
 
   constructor(documents: readonly string[] = []) {
@@ -34,6 +45,20 @@ export class DocumentViews {
   remove(documentId: string): void {
     this.removeFrom(documentId, 1);
     this.removeFrom(documentId, 2);
+    this.states[1].delete(documentId);
+    this.states[2].delete(documentId);
+  }
+
+  saveState(
+    documentId: string,
+    view: DocumentViewId,
+    state: DocumentViewState,
+  ): void {
+    this.states[view].set(documentId, state);
+  }
+
+  state(documentId: string, view: DocumentViewId): DocumentViewState | undefined {
+    return this.states[view].get(documentId);
   }
 
   private addTo(documentId: string, view: DocumentViewId): void {

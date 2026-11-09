@@ -1,6 +1,8 @@
 import { formatMessage } from "../../shared/messages/en";
 import type { DocumentRecord } from "../core/document";
 
+export type TabViewCommand = "tab.cloneToOtherView" | "tab.moveToOtherView";
+
 export function tabLabel(document: Pick<DocumentRecord, "name">): string {
   return document.name ?? "Untitled";
 }
@@ -18,7 +20,8 @@ export interface TabStripOptions {
   documents(): readonly DocumentRecord[];
   host: HTMLElement;
   select(document: DocumentRecord): void;
-  otherView?(document: DocumentRecord, action: "clone" | "move"): void;
+  commandTarget?(document: DocumentRecord): string;
+  runCommand?(id: TabViewCommand, target: string): void;
 }
 
 export class TabStrip {
@@ -94,13 +97,20 @@ export class TabStrip {
     menu.className = "tab-context-menu";
     menu.setAttribute("role", "menu");
     menu.addEventListener("pointerdown", (event) => event.stopPropagation());
-    for (const action of ["move", "clone"] as const) {
+    const actions: readonly [TabViewCommand, "tab.moveToOtherView" | "tab.cloneToOtherView"][] = [
+      ["tab.moveToOtherView", "tab.moveToOtherView"],
+      ["tab.cloneToOtherView", "tab.cloneToOtherView"],
+    ];
+    for (const [commandId, titleKey] of actions) {
       const button = window.document.createElement("button");
       button.type = "button";
-      button.textContent = action === "move" ? "Move to Other View" : "Clone to Other View";
+      button.textContent = formatMessage(titleKey, {});
       button.addEventListener("click", () => {
         menu.remove();
-        this.options.otherView?.(document, action);
+        const target = this.options.commandTarget?.(document);
+        if (target !== undefined) {
+          this.options.runCommand?.(commandId, target);
+        }
       });
       menu.append(button);
     }

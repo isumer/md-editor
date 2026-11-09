@@ -34,6 +34,8 @@ export type MessageKey =
   | "merge.accept.both"
   | "tab.close"
   | "tab.unsaved"
+  | "tab.moveToOtherView"
+  | "tab.cloneToOtherView"
   | "close.cancel"
   | "close.discard"
   | "close.save"
@@ -78,6 +80,8 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "merge.accept.both": "Both",
   "tab.close": "Close {file}",
   "tab.unsaved": "Unsaved changes",
+  "tab.moveToOtherView": "Move to Other View",
+  "tab.cloneToOtherView": "Clone to Other View",
   "close.cancel": "Cancel",
   "close.discard": "Discard",
   "close.save": "Save",

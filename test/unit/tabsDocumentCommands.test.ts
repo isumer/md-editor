@@ -38,7 +38,15 @@ describe("document commands", () => {
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
     const onResult = vi.fn();
-    const commands = new DocumentCommands({ editor, onError: vi.fn(), onResult, open, save });
+    const otherView = vi.fn();
+    const commands = new DocumentCommands({
+      editor,
+      onError: vi.fn(),
+      onResult,
+      open,
+      otherView,
+      save,
+    });
     await Promise.resolve();
 
     expect(contributeMenu.mock.calls[0]?.[0].items.map((item) => item.id)).toEqual([
@@ -64,6 +72,13 @@ describe("document commands", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, key: "y",
     }));
+    commands.run("tab.moveToOtherView", "2:document-one");
+    commands.run("tab.cloneToOtherView", "1:document-two");
+    await Promise.resolve();
+    expect(otherView.mock.calls).toEqual([
+      ["2:document-one", "move"],
+      ["1:document-two", "clone"],
+    ]);
     editor.contentDOM.blur();
     editor.destroy();
   });
