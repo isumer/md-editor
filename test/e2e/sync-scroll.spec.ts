@@ -98,10 +98,15 @@ test("AC-R3-03: synchronized scrolling does not feed back", async () => {
       editor: document.querySelector<HTMLElement>(".cm-scroller")?.scrollTop ?? -1,
       preview: document.querySelector<HTMLElement>("#preview")?.scrollTop ?? -1,
     }));
-    await expect.poll(() => page.evaluate(() => ({
-      editor: document.querySelector<HTMLElement>(".cm-scroller")?.scrollTop ?? -1,
-      preview: document.querySelector<HTMLElement>("#preview")?.scrollTop ?? -1,
-    }))).toEqual(positions);
+    const stabilityStart = Date.now();
+    await expect.poll(async () => {
+      const current = await page.evaluate(() => ({
+        editor: document.querySelector<HTMLElement>(".cm-scroller")?.scrollTop ?? -1,
+        preview: document.querySelector<HTMLElement>("#preview")?.scrollTop ?? -1,
+      }));
+      expect(current).toEqual(positions);
+      return Date.now() - stabilityStart;
+    }, { intervals: [100], timeout: 2_000 }).toBeGreaterThanOrEqual(1_000);
   } finally {
     await closeEditor(application, page);
   }

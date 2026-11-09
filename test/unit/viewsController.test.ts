@@ -41,6 +41,7 @@ describe("view controller", () => {
     expect(workspace.dataset["viewMode"]).toBe("editor");
     controller.setMode("preview");
     expect(workspace.dataset["viewMode"]).toBe("preview");
+    expect(controller.viewMode).toBe("preview");
     controller.setMode("split");
 
     expect(workspace.dataset["viewMode"]).toBe("split");
@@ -98,5 +99,42 @@ describe("view controller", () => {
     expect(workspace.dataset["viewMode"]).toBe("preview");
     expect(enterFullScreen).toHaveBeenCalledOnce();
     expect(leaveFullScreen).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R2-04: repeated focus transitions are no-ops", async () => {
+    const { divider, workspace } = elements();
+    const enterFullScreen = vi.fn(async () => undefined);
+    const leaveFullScreen = vi.fn(async () => undefined);
+    const controller = new ViewController({
+      divider,
+      workspace,
+      enterFullScreen,
+      leaveFullScreen,
+    });
+
+    await controller.enterFocusMode();
+    await controller.enterFocusMode();
+    await controller.toggleFocusMode();
+    await controller.leaveFocusMode();
+
+    expect(enterFullScreen).toHaveBeenCalledOnce();
+    expect(leaveFullScreen).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R2-02: ignores divider input outside split mode or without width", () => {
+    const { divider, workspace } = elements();
+    vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({
+      left: 0, width: 0, right: 0, top: 0, bottom: 600, height: 600,
+      x: 0, y: 0, toJSON: () => ({}),
+    });
+    const controller = new ViewController({ divider, workspace });
+
+    divider.dispatchEvent(new MouseEvent("pointerdown", { clientX: 300, bubbles: true }));
+    expect(controller.dividerShare).toBe(0.5);
+    controller.setMode("editor");
+    divider.dispatchEvent(new MouseEvent("pointerdown", { clientX: 300, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+
+    expect(controller.dividerShare).toBe(0.5);
   });
 });

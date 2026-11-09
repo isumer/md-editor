@@ -41,7 +41,7 @@ function registerCommands(
   commands.register({ id: "view.syncScroll", titleKey: "menu.syncScroll",
     run: options.toggleSync });
   commands.register({ id: "view.focusMode", titleKey: "menu.focusMode",
-    run: () => controller.toggleFocusMode() });
+    run: () => controller.toggleFocusMode().catch(options.onError) });
   return { commands, context };
 }
 

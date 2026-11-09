@@ -24,12 +24,16 @@ export class SyncScrollController {
   private suppressEditor = false;
   private suppressPreview = false;
   private anchorTimer: ReturnType<typeof setTimeout> | null = null;
+  private documentRoot: Element | null;
+  private previewTargetTop: number | null = null;
+  private lastPreviewLine: number | null = null;
   private readonly requestFrame: (callback: FrameRequestCallback) => number;
   private readonly mutationObserver: MutationObserver;
   private readonly resizeObserver: ResizeObserver | null;
 
   constructor(private readonly options: SyncScrollControllerOptions) {
     this.requestFrame = options.requestFrame ?? ((callback) => requestAnimationFrame(callback));
+    this.documentRoot = options.preview.firstElementChild;
     options.editorScroll.addEventListener("scroll", this.onEditorScroll, { passive: true });
     options.preview.addEventListener("scroll", this.onPreviewScroll, { passive: true });
     options.preview.addEventListener(
@@ -37,7 +41,7 @@ export class SyncScrollController {
       this.onContentVisibilityChange,
       true,
     );
-    this.mutationObserver = new MutationObserver(() => this.scheduleAnchorRefresh());
+    this.mutationObserver = new MutationObserver(() => this.onPreviewMutation());
     this.mutationObserver.observe(options.preview, { childList: true, subtree: true });
     this.resizeObserver = typeof ResizeObserver === "undefined"
       ? null
@@ -65,7 +69,7 @@ export class SyncScrollController {
     const pages = [...this.options.preview.querySelectorAll<HTMLElement>(".preview-page")];
     const anchors = pages.length === 0
       ? this.blockAnchors(this.options.preview, previewTop, scrollTop)
-      : pages.flatMap((page) => this.pageAnchors(page, previewTop, scrollTop));
+      : pages.flatMap((page) => this.pageAnchor(page, previewTop, scrollTop));
     this.anchors = anchors.sort((left, right) =>
       left.blockTop - right.blockTop || left.sourceLine - right.sourceLine);
   }
@@ -85,6 +89,8 @@ export class SyncScrollController {
 
   private readonly onEditorScroll = (): void => {
     if (!this.enabled || this.suppressEditor || this.editorFrame) return;
+    this.previewTargetTop = null;
+    this.lastPreviewLine = null;
     this.editorFrame = true;
     this.requestFrame(() => {
       this.editorFrame = false;
@@ -100,16 +106,14 @@ export class SyncScrollController {
   };
 
   private readonly onPreviewScroll = (): void => {
-    if (!this.enabled || this.suppressPreview || this.previewFrame) return;
+    if (!this.enabled || this.suppressPreview || this.previewFrame || this.anchors.length === 0) {
+      return;
+    }
+    this.previewTargetTop = this.options.preview.scrollTop;
     this.previewFrame = true;
     this.requestFrame(() => {
       this.previewFrame = false;
-      this.suppressEditor = true;
-      this.options.scrollEditorToLine(sourceLineForPreviewTop(
-        this.anchors,
-        this.options.preview.scrollTop,
-      ));
-      this.requestFrame(() => { this.suppressEditor = false; });
+      this.applyPreviewTarget(false);
     });
   };
 
@@ -118,19 +122,23 @@ export class SyncScrollController {
     this.visibilityFrame = true;
     this.requestFrame(() => {
       this.visibilityFrame = false;
-      this.refreshAnchors();
-      this.reapplyPreviewTarget();
+      this.refreshAndReapply();
     });
   };
 
-  private reapplyPreviewTarget(): void {
-    if (!this.enabled) return;
+  private applyPreviewTarget(skipUnchanged: boolean): void {
+    if (!this.enabled || this.previewTargetTop === null || this.anchors.length === 0) return;
+    const line = sourceLineForPreviewTop(this.anchors, this.previewTargetTop);
+    if (skipUnchanged && line === this.lastPreviewLine) return;
+    this.lastPreviewLine = line;
     this.suppressEditor = true;
-    this.options.scrollEditorToLine(sourceLineForPreviewTop(
-      this.anchors,
-      this.options.preview.scrollTop,
-    ));
+    this.options.scrollEditorToLine(line);
     this.requestFrame(() => { this.suppressEditor = false; });
+  }
+
+  private refreshAndReapply(): void {
+    this.refreshAnchors();
+    this.applyPreviewTarget(true);
   }
 
   private blockAnchors(
@@ -149,12 +157,11 @@ export class SyncScrollController {
       });
   }
 
-  private pageAnchors(
+  private pageAnchor(
     page: HTMLElement,
     previewTop: number,
     scrollTop: number,
   ): SyncAnchor[] {
-    const blockAnchors = this.blockAnchors(page, previewTop, scrollTop);
     const firstBlock = page.querySelector<HTMLElement>(".preview-block");
     if (firstBlock === null) return [];
     const bounds = page.getBoundingClientRect();
@@ -163,22 +170,33 @@ export class SyncScrollController {
       blockTop: bounds.top - previewTop + scrollTop,
       blockHeight: bounds.height,
     };
-    return blockAnchors.length === 0 ? [pageAnchor] : [pageAnchor, ...blockAnchors];
+    return bounds.height <= 0 ? [] : [pageAnchor];
+  }
+
+  private onPreviewMutation(): void {
+    const nextRoot = this.options.preview.firstElementChild;
+    if (nextRoot !== this.documentRoot) {
+      this.documentRoot = nextRoot;
+      this.anchors = [];
+      this.previewTargetTop = null;
+      this.lastPreviewLine = null;
+    }
+    this.scheduleAnchorRefresh();
   }
 
   private scheduleAnchorRefresh(): void {
     if (this.options.preview.dataset["renderComplete"] === "true") {
-      this.requestFrame(() => this.refreshAnchors());
+      this.requestFrame(() => this.refreshAndReapply());
     } else {
       this.scheduleDelayedRefresh();
     }
   }
 
   private scheduleDelayedRefresh(): void {
-    if (this.anchorTimer !== null) clearTimeout(this.anchorTimer);
+    if (this.anchorTimer !== null) return;
     this.anchorTimer = setTimeout(() => {
       this.anchorTimer = null;
-      this.requestFrame(() => this.refreshAnchors());
+      this.requestFrame(() => this.refreshAndReapply());
     }, 100);
   }
 }
