@@ -4,30 +4,19 @@ import {
   type DiffHunk,
 } from "../../../shared/diff/lineDiff";
 import { diffWords, type WordSpan } from "../../../shared/diff/wordDiff";
+import type {
+  CompareRow,
+  CompareSide,
+  CompareState,
+  HighlightMode,
+} from "../../../shared/workers/compare";
 
-export type HighlightMode = "words" | "characters" | "lines" | "none";
-export type CompareRowKind = "unchanged" | "added" | "deleted" | "modified";
-
-export interface CompareSide {
-  readonly lineNumber: number;
-  readonly text: string;
-  readonly spans: readonly WordSpan[];
-}
-
-export interface CompareRow {
-  readonly kind: CompareRowKind;
-  readonly changeIndex: number | null;
-  readonly left?: CompareSide;
-  readonly right?: CompareSide;
-}
-
-export interface CompareState {
-  readonly rows: readonly CompareRow[];
-  readonly changeCount: number;
-  readonly selectedChange: number;
-  readonly highlight: HighlightMode;
-  readonly limited: boolean;
-}
+export type {
+  CompareRow,
+  CompareSide,
+  CompareState,
+  HighlightMode,
+} from "../../../shared/workers/compare";
 
 function oneSpan(text: string, kind: WordSpan["kind"]): readonly WordSpan[] {
   return text.length === 0 ? [] : [{ kind, text }];

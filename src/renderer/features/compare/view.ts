@@ -4,7 +4,7 @@ import type {
   CompareSide,
   CompareState,
   HighlightMode,
-} from "./state";
+} from "../../../shared/workers/compare";
 
 export interface CompareViewActions {
   close(): void;

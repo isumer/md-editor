@@ -8,7 +8,7 @@ import { createCompareState } from "../../src/renderer/features/compare/state";
 import type {
   CompareWorkerRequest,
   CompareWorkerResponse,
-} from "../../src/renderer/features/compare/worker";
+} from "../../src/shared/workers/compare";
 import type { DocumentRecord } from "../../src/renderer/core/document";
 
 class FakeWorker {

@@ -1,29 +1,34 @@
-import { createCompareState, type CompareState, type HighlightMode } from "./state";
+import type {
+  CompareState,
+  CompareWorkerResponse,
+  HighlightMode,
+} from "../../../shared/workers/compare";
+import { isCompareWorkerRequest } from "../../../shared/workers/compare";
+import { createCompareState } from "./state";
 
-export interface CompareWorkerRequest {
-  readonly id: number;
-  readonly left: string;
-  readonly right: string;
-  readonly highlight: HighlightMode;
-}
-
-export type CompareWorkerResponse =
-  | { readonly id: number; readonly ok: true; readonly state: CompareState }
-  | { readonly id: number; readonly ok: false; readonly message: string };
+type CreateState = (
+  left: string,
+  right: string,
+  highlight: HighlightMode,
+) => CompareState;
 
 export class CompareWorkerHandler {
-  constructor(private readonly post: (response: CompareWorkerResponse) => void) {}
+  constructor(
+    private readonly post: (response: CompareWorkerResponse) => void,
+    private readonly createState: CreateState = createCompareState,
+  ) {}
 
-  handle(request: CompareWorkerRequest): void {
+  handle(value: unknown): void {
+    if (!isCompareWorkerRequest(value)) return;
     try {
       this.post({
-        id: request.id,
+        id: value.id,
         ok: true,
-        state: createCompareState(request.left, request.right, request.highlight),
+        state: this.createState(value.left, value.right, value.highlight),
       });
     } catch (error) {
       this.post({
-        id: request.id,
+        id: value.id,
         ok: false,
         message: error instanceof Error ? error.message : String(error),
       });

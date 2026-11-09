@@ -1,8 +1,13 @@
 import { formatMessage } from "../../../shared/messages/en";
+import type {
+  CompareState,
+  CompareWorkerRequest,
+  CompareWorkerResponse,
+  HighlightMode,
+} from "../../../shared/workers/compare";
 import type { DocumentRecord } from "../../core/document";
-import { moveDifference, type CompareState, type HighlightMode } from "./state";
+import { moveDifference } from "./state";
 import { CompareView } from "./view";
-import type { CompareWorkerRequest, CompareWorkerResponse } from "./worker";
 
 interface WorkerPort {
   onmessage: ((event: MessageEvent<CompareWorkerResponse>) => void) | null;
