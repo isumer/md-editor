@@ -1,13 +1,18 @@
 import {
   controlRequestId,
   isIoControlRequest,
+  type ReadSessionRequest,
   type RegisterGrantReply,
   type ResolveAssetReply,
+  type SessionReadReply,
+  type SessionWriteReply,
+  type WriteSessionRequest,
 } from "../shared/ipc/ioControl";
 import { serviceError, toServiceError } from "../shared/ipc/result";
 import type { IoGrantTable } from "./grants";
 import { IoPortRegistry, type IoWorkerPort } from "./port";
 import type { IoFileService } from "./services/file";
+import { SessionStore } from "./services/session";
 
 export interface IoParentPort {
   on(
@@ -24,6 +29,7 @@ export class IoControlHandler {
     private readonly parent: IoParentPort,
     private readonly grants: IoGrantTable,
     private readonly files: IoFileService,
+    private readonly sessions: SessionStore = new SessionStore(),
   ) {
     this.ports = new IoPortRegistry(files);
   }
@@ -52,6 +58,10 @@ export class IoControlHandler {
       void this.register(data);
     } else if (data.type === "resolveAsset") {
       void this.resolveAsset(data);
+    } else if (data.type === "readSession") {
+      void this.readSession(data);
+    } else if (data.type === "writeSession") {
+      void this.writeSession(data);
     } else if (data.type === "revokeGrant") {
       this.grants.revoke(data.windowId, data.handle);
     } else if (data.type === "revokeWindow") {
@@ -109,6 +119,36 @@ export class IoControlHandler {
         id: request.id,
         result: { ok: false, error: toServiceError(error) },
       } satisfies ResolveAssetReply);
+    }
+  }
+
+  private async readSession(request: ReadSessionRequest): Promise<void> {
+    try {
+      const value = await this.sessions.read(request.path);
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value },
+      } satisfies SessionReadReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies SessionReadReply);
+    }
+  }
+
+  private async writeSession(request: WriteSessionRequest): Promise<void> {
+    try {
+      await this.sessions.write(request.path, request.session);
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value: {} },
+      } satisfies SessionWriteReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies SessionWriteReply);
     }
   }
 }

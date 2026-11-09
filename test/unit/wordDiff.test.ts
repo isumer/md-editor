@@ -30,7 +30,7 @@ describe("word diff", () => {
     ).join(" ");
 
     expect(diffWords(left, right, { workLimit: 10 })).toEqual({ limited: true });
-    expect(diffLines([left], [right], {})).toHaveLength(1);
+    expect(diffLines([left], [right], {}).hunks).toHaveLength(1);
   });
 
   it("boundary: returns one same span for identical lines", () => {

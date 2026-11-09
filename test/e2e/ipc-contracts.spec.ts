@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 import {
+  closeEditor,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -131,7 +132,7 @@ for (const invalidCase of invalidSaveCases) {
       expect(await dialogCallCount(application, "save")).toBe(0);
       await expectRendererResponsive(page, invalidCase.kind);
     } finally {
-      await application.close();
+      await closeEditor(application, page);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
@@ -179,7 +180,7 @@ for (const rejectedUrl of rejectedExternalUrls) {
         (globalThis as typeof globalThis & { externalUrls?: string[] }).externalUrls,
       )).toEqual([]);
     } finally {
-      await application.close();
+      await closeEditor(application, page);
     }
   });
 }
@@ -201,22 +202,53 @@ test("the preload exposes only the fixed named API", {
       keys: [
         "attachDocument",
         "chooseSaveTarget",
+        "clearDraft",
         "contributeMenu",
         "detachDocument",
+        "draftDocument",
+        "listDrafts",
+        "loadSession",
         "onMenuCommand",
         "onOpenRequest",
+        "onSessionCloseRequest",
         "openExternal",
         "openFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
+        "respondSessionClose",
         "saveDocument",
         "sendChanges",
       ],
       legacyGlobal: false,
     });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
+  }
+});
+
+test("page scripts cannot open a path or create a trusted drop", {
+  tag: "@AC-SEC-09",
+  annotation: { type: "AC-SEC-09" },
+}, async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page.getByTestId("tab")).toHaveCount(1);
+
+    const exposed = await page.evaluate(() => ({
+      openPath: "openPath" in window.api,
+      pathForFile: "pathForFile" in window.api,
+    }));
+    expect(exposed).toEqual({ openPath: false, pathForFile: false });
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new DragEvent("drop", {
+        dataTransfer: new DataTransfer(),
+      }));
+    });
+    await expect(page.getByTestId("tab")).toHaveCount(1);
+  } finally {
+    await closeEditor(application, page);
   }
 });
 
@@ -252,7 +284,7 @@ test("the file-save contract rejects raw and forged grants", {
     }
     expect(await fs.readdir(temporaryDirectory)).toEqual([]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -296,7 +328,7 @@ test("the file-save contract rejects a released grant", {
     });
     expect(await fs.readFile(firstPath, "utf8")).toBe("first");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });

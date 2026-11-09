@@ -4,37 +4,75 @@ export interface SyncAnchor {
   readonly blockHeight: number;
 }
 
+function clampTop(top: number, maxTop: number): number {
+  if (Number.isNaN(top)) {
+    return 0;
+  }
+  return Math.min(maxTop, Math.max(0, top));
+}
+
+function lineAnchorIndex(
+  anchors: readonly SyncAnchor[],
+  sourceLine: number,
+): number {
+  let low = 0;
+  let high = anchors.length - 1;
+  while (low <= high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const anchor = anchors[middle];
+    if (anchor === undefined || anchor.sourceLine > sourceLine) {
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return Math.max(0, high);
+}
+
+function topAnchorIndex(anchors: readonly SyncAnchor[], top: number): number {
+  let low = 0;
+  let high = anchors.length - 1;
+  while (low <= high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const anchor = anchors[middle];
+    if (anchor === undefined || anchor.blockTop > top) {
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return Math.max(0, high);
+}
+
 export function previewTopForLine(
   anchors: readonly SyncAnchor[],
   sourceLine: number,
   maxTop: number,
 ): number {
   const first = anchors[0];
-  if (first === undefined) return 0;
-  const last = anchors[anchors.length - 1] as SyncAnchor;
-  if (sourceLine <= first.sourceLine) return Math.min(first.blockTop, maxTop);
-  if (sourceLine >= last.sourceLine) return Math.min(last.blockTop, maxTop);
-
-  let low = 0;
-  let high = anchors.length - 1;
-  while (low + 1 < high) {
-    const middle = low + Math.floor((high - low) / 2);
-    const anchor = anchors[middle] as SyncAnchor;
-    if (anchor.sourceLine <= sourceLine) low = middle;
-    else high = middle;
+  const last = anchors[anchors.length - 1];
+  if (first === undefined || last === undefined) {
+    return 0;
+  }
+  if (sourceLine <= first.sourceLine || Number.isNaN(sourceLine)) {
+    return clampTop(first.blockTop, maxTop);
+  }
+  if (sourceLine >= last.sourceLine) {
+    return clampTop(last.blockTop, maxTop);
   }
 
-  const before = anchors[low] as SyncAnchor;
-  const after = anchors[high] as SyncAnchor;
-  if (sourceLine === before.sourceLine) {
-    return Math.min(before.blockTop, maxTop);
+  const anchorIndex = lineAnchorIndex(anchors, sourceLine);
+  const anchor = anchors[anchorIndex];
+  const next = anchors[anchorIndex + 1];
+  if (anchor === undefined || next === undefined) {
+    return 0;
   }
-  const lineProgress =
-    (sourceLine - before.sourceLine) /
-    (after.sourceLine - before.sourceLine);
-  const previewTop =
-    before.blockTop + lineProgress * (after.blockTop - before.blockTop);
-  return Math.min(maxTop, Math.max(0, previewTop));
+  const progress =
+    (sourceLine - anchor.sourceLine) / (next.sourceLine - anchor.sourceLine);
+  return clampTop(
+    anchor.blockTop + progress * (next.blockTop - anchor.blockTop),
+    maxTop,
+  );
 }
 
 export function sourceLineForPreviewTop(
@@ -42,26 +80,25 @@ export function sourceLineForPreviewTop(
   top: number,
 ): number {
   const first = anchors[0];
-  if (first === undefined) return 1;
-  const last = anchors[anchors.length - 1] as SyncAnchor;
-  if (top <= first.blockTop) return first.sourceLine;
-  if (top >= last.blockTop) return last.sourceLine;
-
-  let low = 0;
-  let high = anchors.length - 1;
-  while (low + 1 < high) {
-    const middle = low + Math.floor((high - low) / 2);
-    const anchor = anchors[middle] as SyncAnchor;
-    if (anchor.blockTop <= top) low = middle;
-    else high = middle;
+  const last = anchors[anchors.length - 1];
+  if (first === undefined || last === undefined) {
+    return 1;
+  }
+  if (top <= first.blockTop || Number.isNaN(top)) {
+    return first.sourceLine;
+  }
+  if (top >= last.blockTop) {
+    return last.sourceLine;
   }
 
-  const before = anchors[low] as SyncAnchor;
-  const after = anchors[high] as SyncAnchor;
-  if (top === before.blockTop) return before.sourceLine;
-  const topProgress =
-    (top - before.blockTop) / (after.blockTop - before.blockTop);
+  const anchorIndex = topAnchorIndex(anchors, top);
+  const anchor = anchors[anchorIndex];
+  const next = anchors[anchorIndex + 1];
+  if (anchor === undefined || next === undefined) {
+    return first.sourceLine;
+  }
+  const progress = (top - anchor.blockTop) / (next.blockTop - anchor.blockTop);
   return Math.round(
-    before.sourceLine + topProgress * (after.sourceLine - before.sourceLine),
+    anchor.sourceLine + progress * (next.sourceLine - anchor.sourceLine),
   );
 }
