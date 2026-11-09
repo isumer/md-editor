@@ -168,4 +168,12 @@ describe('AC-R13-01: outlineHeadings', () => {
     const entries = outlineHeadings(markdown);
     expect(entries).toEqual([]);
   });
+
+  it('reads level five and six headings and ignores a seventh', () => {
+    const markdown = '##### five\n###### six\n####### seven\n';
+    expect(outlineHeadings(markdown)).toEqual([
+      { level: 5, text: 'five', line: 1 },
+      { level: 6, text: 'six', line: 2 },
+    ]);
+  });
 });
