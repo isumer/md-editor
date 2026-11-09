@@ -30,12 +30,18 @@ test("AC-R14-01 AC-R14-02 AC-R14-07: compares open files and moves between diffe
     await expect(compare.getByTestId("compare-right-title")).toHaveText("right.txt");
     await expect(compare.locator('[data-change-kind="modified"]')).not.toHaveCount(0);
     await expect(compare.getByTestId("changed-word").filter({ hasText: "and paper" })).toBeVisible();
-    await expect(compare.getByTestId("compare-overview-marker")).not.toHaveCount(0);
+    await expect(compare.getByTestId("compare-overview-marker")).toHaveCount(5);
 
     await compare.getByRole("combobox", { name: "Highlight" }).selectOption("none");
     await expect(compare.getByTestId("changed-word")).toHaveCount(0);
+    await compare.getByRole("combobox", { name: "Highlight" }).selectOption("lines");
+    const firstModified = compare.locator('[data-change-kind="modified"]').first();
+    await expect(firstModified.locator("mark")).toHaveText([
+      "Main export: timber",
+      "Main export: timber and paper",
+    ]);
     await compare.getByRole("combobox", { name: "Highlight" }).selectOption("characters");
-    await expect(compare.getByTestId("changed-word")).not.toHaveCount(0);
+    await expect(firstModified.getByTestId("changed-word")).toHaveText(" and paper");
 
     const active = compare.locator('[data-active-difference="true"]');
     await expect(active.first()).toHaveAttribute("data-difference", "0");

@@ -49,4 +49,20 @@ describe("compare view state", () => {
     expect(wrapped.activeDifference).toBe(0);
     expect(previous.activeDifference).toBe(1);
   });
+
+  it("AC-R14-01: keeps added and deleted lines on their respective sides", () => {
+    const added = createCompareViewState(["same"], ["same", "right only"]);
+    const deleted = createCompareViewState(["same", "left only"], ["same"]);
+
+    expect(added.rows[1]).toMatchObject({
+      kind: "added",
+      right: { lineNumber: 2, text: "right only" },
+    });
+    expect(added.rows[1]?.left).toBeUndefined();
+    expect(deleted.rows[1]).toMatchObject({
+      kind: "deleted",
+      left: { lineNumber: 2, text: "left only" },
+    });
+    expect(deleted.rows[1]?.right).toBeUndefined();
+  });
 });

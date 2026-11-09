@@ -55,6 +55,7 @@ describe("keymap data", () => {
       "Mod-o": "file.open",
       "Mod-s": "file.save",
       "Mod-Shift-s": "file.saveAs",
+      "Mod-Shift-c": "file.compare",
       "Mod-z": "undo",
       "Mod-Shift-z": "redo",
       "Mod-y": "redo",
