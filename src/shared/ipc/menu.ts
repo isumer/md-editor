@@ -4,7 +4,12 @@ export const MENU_CHANNELS = {
 } as const;
 
 // Menu item ids are stable across slices: e2e tests address the items by these ids.
-export const MENU_ITEM_IDS = ["file-open", "file-save", "file-save-as"] as const;
+export const MENU_ITEM_IDS = [
+  "file-open",
+  "file-save",
+  "file-save-as",
+  "file-compare",
+] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
 
 export interface MenuContributionItem {

@@ -25,6 +25,8 @@ import {
 import {
   wirePreviewLinks,
 } from "./features/preview/preview";
+import { CompareController } from "./features/compare/controller";
+import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
@@ -52,6 +54,7 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 }
 
 const editorHost = requiredElement<HTMLElement>("#editor");
+const workspace = requiredElement<HTMLElement>("#workspace");
 const preview = requiredElement<HTMLElement>("#preview");
 const previewError = requiredElement<HTMLElement>("#preview-error");
 const status = requiredElement<HTMLElement>("#status");
@@ -146,6 +149,24 @@ const callbacks: EditorCallbacks = {
 
 editor = createEditor(editorHost, documentState, callbacks);
 
+const compareController = new CompareController({
+  workspace,
+  editor: editorHost,
+  preview,
+  previewError,
+  workerUrl: new URL(compareWorkerUrl, window.location.href),
+  previousLabel: formatMessage("compare.previousDifference", {}),
+  nextLabel: formatMessage("compare.nextDifference", {}),
+  highlightLabel: formatMessage("compare.highlight", {}),
+  highlightOptions: {
+    words: formatMessage("compare.highlightWords", {}),
+    characters: formatMessage("compare.highlightCharacters", {}),
+    lines: formatMessage("compare.highlightLines", {}),
+    none: formatMessage("compare.highlightNone", {}),
+  },
+  onError: showStatus,
+});
+
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
 });
@@ -181,6 +202,7 @@ const tabStrip = new TabStrip({
 });
 
 function activateDocument(document: DocumentRecord): void {
+  compareController.close();
   if (activeDocument === document) {
     editor.focus();
     return;
@@ -276,6 +298,7 @@ function removeDocument(document: DocumentRecord): void {
   if (!registry.get(document.id)) {
     return;
   }
+  compareController.close();
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
@@ -323,6 +346,20 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
+
+function compareOpenDocuments(): void {
+  const current = activeDocument;
+  const other = [...registry.all()].reverse().find((document) => document !== current);
+  if (current === null || other === undefined) {
+    showStatus(formatMessage("compare.openTwo", {}));
+    return;
+  }
+  compareController.open(
+    { name: other.name ?? "Untitled", text: other.state.doc.toString() },
+    { name: current.name ?? "Untitled", text: current.state.doc.toString() },
+  );
+}
+
 documentCommands = new DocumentCommands({
   editor,
   onError: showUnexpectedError,
@@ -331,6 +368,7 @@ documentCommands = new DocumentCommands({
   },
   open: () => lifecycle.open(),
   save: (saveAs) => lifecycle.saveActive(saveAs),
+  compare: compareOpenDocuments,
 });
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));

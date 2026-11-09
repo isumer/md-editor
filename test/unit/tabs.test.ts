@@ -46,6 +46,7 @@ describe("tab modules", () => {
       "file-open",
       "file-save",
       "file-save-as",
+      "file-compare",
     ]);
   });
 

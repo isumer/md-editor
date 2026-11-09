@@ -1,0 +1,126 @@
+.compare-view {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #ffffff;
+}
+
+.compare-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  border-bottom: 1px solid #d0d7de;
+  background: #f6f8fa;
+}
+
+.compare-title {
+  overflow: hidden;
+  padding: 8px 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-title:last-child {
+  text-align: right;
+}
+
+.compare-navigation {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.compare-navigation button {
+  padding: 3px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.compare-navigation select {
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.compare-rows {
+  overflow: auto;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.compare-row {
+  display: grid;
+  min-width: 720px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.compare-cell {
+  display: grid;
+  min-height: 1.5em;
+  grid-template-columns: 4em minmax(0, 1fr);
+  border-right: 1px solid #d0d7de;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.compare-line-number {
+  padding-right: 8px;
+  color: #656d76;
+  text-align: right;
+  user-select: none;
+}
+
+.compare-code {
+  padding: 0 8px;
+}
+
+.compare-row[data-change-kind="added"] .compare-cell:last-child,
+.compare-row[data-change-kind="modified"] .compare-cell:last-child {
+  background: #dafbe1;
+}
+
+.compare-row[data-change-kind="deleted"] .compare-cell:first-child,
+.compare-row[data-change-kind="modified"] .compare-cell:first-child {
+  background: #ffebe9;
+}
+
+.compare-code mark {
+  color: inherit;
+  background: #ff818266;
+}
+
+.compare-cell:last-child .compare-code mark {
+  background: #2da44e66;
+}
+
+.compare-row[data-active-difference="true"] {
+  outline: 2px solid #0969da;
+  outline-offset: -2px;
+}
+
+.compare-overview {
+  position: absolute;
+  top: 42px;
+  right: 2px;
+  bottom: 2px;
+  width: 7px;
+  pointer-events: none;
+}
+
+.compare-overview button {
+  position: absolute;
+  width: 7px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  background: #bf8700;
+  pointer-events: auto;
+}
+
+.compare-overview button[data-active-difference="true"] {
+  background: #0969da;
+}
