@@ -190,9 +190,47 @@ export class SyncScrollController {
     const anchors: SyncAnchor[] = [];
     for (let offset = 0; offset < 2; offset += 1) {
       const page = this.pages[index + offset];
-      if (page !== undefined) anchors.push(...this.pageAnchor(page, previewTop, scrollTop));
+      if (page !== undefined) anchors.push(...this.pageAnchors(page, previewTop, scrollTop));
     }
     return anchors;
+  }
+
+  private pageAnchors(
+    page: HTMLElement,
+    previewTop: number,
+    scrollTop: number,
+  ): readonly SyncAnchor[] {
+    const blockAnchors = this.blockAnchors(page, previewTop, scrollTop);
+    const anchors = blockAnchors.length > 0
+      ? blockAnchors
+      : this.pageAnchor(page, previewTop, scrollTop);
+    if (blockAnchors.length > 0 || this.pages.at(-1) !== page) return anchors;
+    const terminal = this.pageTerminalAnchor(page, previewTop, scrollTop);
+    const last = anchors.at(-1);
+    return terminal !== null && last !== undefined && terminal.blockTop > last.blockTop
+      ? [...anchors, terminal]
+      : anchors;
+  }
+
+  private pageTerminalAnchor(
+    page: HTMLElement,
+    previewTop: number,
+    scrollTop: number,
+  ): SyncAnchor | null {
+    const blocks = page.querySelectorAll<HTMLElement>(".preview-block");
+    const last = blocks.item(blocks.length - 1);
+    if (last === null) return null;
+    const previous = blocks.item(blocks.length - 2);
+    const lastLine = this.options.blockLine(last) + 1;
+    const lineStep = previous === null
+      ? 1
+      : Math.max(1, lastLine - (this.options.blockLine(previous) + 1));
+    const bounds = page.getBoundingClientRect();
+    return {
+      sourceLine: lastLine + lineStep,
+      blockTop: bounds.bottom - previewTop + scrollTop,
+      blockHeight: 0,
+    };
   }
 
   private pageLine(page: HTMLElement): number {

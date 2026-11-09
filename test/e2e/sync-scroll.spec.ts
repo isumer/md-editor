@@ -13,6 +13,7 @@ const run = promisify(execFile);
 const TWENTY_MEGABYTES = "20971520";
 let temporaryDirectory = "";
 let large20 = "";
+let finalPageFixture = "";
 
 function sourceLineForText(
   source: readonly string[],
@@ -27,11 +28,17 @@ function sourceLineForText(
 test.beforeAll(async () => {
   temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-sync-"));
   large20 = path.join(temporaryDirectory, "large-20mb.md");
+  finalPageFixture = path.join(temporaryDirectory, "final-page.md");
   await run("node", [
     path.join(repositoryRoot, "test/fixtures/big/generate.mjs"),
     TWENTY_MEGABYTES,
     large20,
   ], { cwd: repositoryRoot });
+  const sections = Array.from({ length: 10 }, (_, index) => {
+    const number = String(index + 1).padStart(2, "0");
+    return `## Final Heading ${number}\n\nBody ${number}.\nBody ${number}, continued.\n`;
+  });
+  await fs.writeFile(finalPageFixture, sections.join("\n"), "utf8");
 });
 
 test.afterAll(async () => {
@@ -81,6 +88,38 @@ test("AC-R3-02: preview scrolling brings the matching line into the editor", asy
         line.textContent?.startsWith("## "))?.textContent ?? "";
     }))
       .toMatch(/Heading (19|20|21)/);
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+test("AC-R3-01 AC-R3-02: final-page headings synchronize in both directions", async () => {
+  const { application, page } = await launchEditor(finalPageFixture);
+  try {
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(900, 300);
+    });
+    await expect.poll(() => page.evaluate(() => window.innerHeight)).toBeLessThan(300);
+    const preview = page.getByTestId("preview");
+    const finalPage = preview.locator(".preview-page").last();
+    await expect(finalPage.getByRole("heading", { name: "Final Heading 08" })).toBeAttached();
+    await expect(finalPage.getByRole("heading", { name: "Final Heading 10" })).toBeAttached();
+    await scrollEditorToLine(page, 36);
+    await expect.poll(() => preview.evaluate((element) => {
+      const top = element.getBoundingClientRect().top;
+      return [...element.querySelectorAll("h2")]
+        .find((heading) => heading.getBoundingClientRect().bottom > top)?.textContent;
+    })).toMatch(/Final Heading (07|08|09)/);
+
+    const heading = finalPage.getByRole("heading", { name: "Final Heading 09" });
+    await heading.evaluate((element) => element.parentElement?.scrollIntoView());
+    await expect.poll(() => page.getByTestId("editor").locator(".cm-scroller")
+      .evaluate((scroller) => {
+        const top = scroller.getBoundingClientRect().top;
+        return [...scroller.querySelectorAll(".cm-line")]
+          .find((line) => line.getBoundingClientRect().bottom > top &&
+            line.textContent?.startsWith("## "))?.textContent ?? "";
+      })).toMatch(/Final Heading (08|09|10)/);
   } finally {
     await closeEditor(application, page);
   }

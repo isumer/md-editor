@@ -68,8 +68,8 @@ export class ViewController {
 
   async leaveFocusMode(): Promise<void> {
     if (!this.focusMode) return;
-    document.body.classList.remove("focus-mode");
     await this.leaveFullScreen();
+    document.body.classList.remove("focus-mode");
   }
 
   async toggleFocusMode(): Promise<void> {

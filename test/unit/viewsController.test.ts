@@ -131,6 +131,21 @@ describe("view controller", () => {
     expect(leaveFullScreen).toHaveBeenCalledOnce();
   });
 
+  it("AC-R2-04: failed full-screen exit keeps focus mode active", async () => {
+    const { divider, workspace } = elements();
+    const controller = new ViewController({
+      divider,
+      workspace,
+      enterFullScreen: async () => undefined,
+      leaveFullScreen: async () => Promise.reject(new Error("exit failed")),
+    });
+
+    await controller.enterFocusMode();
+    await expect(controller.leaveFocusMode()).rejects.toThrow("exit failed");
+
+    expect(controller.focusMode).toBe(true);
+  });
+
   it("AC-R2-02: ignores divider input outside split mode or without width", () => {
     const { divider, workspace } = elements();
     vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({

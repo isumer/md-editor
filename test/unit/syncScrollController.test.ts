@@ -20,7 +20,7 @@ function setup(initial: readonly PageFixture[] = [
   { line: 1, height: 100 },
   { line: 10, height: 200 },
   { line: 20, height: 240 },
-]) {
+], initialBlockCount = 1) {
   document.body.innerHTML = `<div id="editor"></div><div id="preview"></div>`;
   const editorScroll = document.querySelector<HTMLElement>("#editor");
   const preview = document.querySelector<HTMLElement>("#preview");
@@ -52,13 +52,16 @@ function setup(initial: readonly PageFixture[] = [
       block.dataset["line"] = String(fixture.line + index - 1);
       vi.spyOn(block, "getBoundingClientRect").mockImplementation(() => {
         blockRectCount += 1;
-        return rect(index * 20 - preview.scrollTop, 20);
+        const pageIndex = pages.indexOf(fixture);
+        const pageTop = pages.slice(0, pageIndex).reduce((sum, item) => sum + item.height, 0);
+        const blockHeight = fixture.height / blockCount;
+        return rect(pageTop + index * blockHeight - preview.scrollTop, blockHeight);
       });
       page.append(block);
     }
     root.append(page);
   };
-  for (const fixture of initial) addPage(fixture);
+  for (const fixture of initial) addPage(fixture, initialBlockCount);
   const frames: FrameRequestCallback[] = [];
   const scrollEditorToLine = vi.fn();
   let editorLine = 10;
@@ -117,6 +120,37 @@ describe("sync scroll controller", () => {
     preview.dispatchEvent(new Event("scroll"));
     flush();
     expect(scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(10);
+  });
+
+  it("AC-R3-02: maps preview scrolling within the final page", () => {
+    const { flush, preview, scrollEditorToLine } = setup([
+      { line: 20, height: 200 },
+    ], 10);
+    preview.scrollTop = 100;
+    preview.dispatchEvent(new Event("scroll"));
+    flush();
+    expect(scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(25);
+  });
+
+  it("AC-R3-01: maps editor scrolling within the final page", () => {
+    const { editorScroll, flush, preview, setEditorLine } = setup([
+      { line: 20, height: 200 },
+    ], 10);
+    setEditorLine(25);
+    editorScroll.dispatchEvent(new Event("scroll"));
+    flush();
+    expect(preview.scrollTop).toBe(100);
+  });
+
+  it("AC-R3-01: uses a terminal anchor when final-page blocks have no layout", () => {
+    const state = setup([{ line: 20, height: 200 }], 10);
+    for (const block of state.preview.querySelectorAll<HTMLElement>(".preview-block")) {
+      vi.mocked(block.getBoundingClientRect).mockReturnValue(rect(0, 0));
+    }
+    state.setEditorLine(25);
+    state.editorScroll.dispatchEvent(new Event("scroll"));
+    state.flush();
+    expect(state.preview.scrollTop).toBe(100);
   });
 
   it("AC-R3-02: refreshes and reapplies anchors during a steady fill", async () => {
@@ -194,7 +228,7 @@ describe("sync scroll controller", () => {
     state.preview.dispatchEvent(new Event("scroll"));
     state.flush();
     expect(state.pageRects() - pagesBefore).toBeLessThanOrEqual(8);
-    expect(state.blockRects() - blocksBefore).toBe(0);
+    expect(state.blockRects() - blocksBefore).toBeLessThanOrEqual(40);
   });
 
   it("refresh uses visible blocks when the preview has no pages", () => {
