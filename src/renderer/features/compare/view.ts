@@ -128,6 +128,20 @@ export class CompareView {
       ?.scrollIntoView({ block: "center" });
   }
 
+  moveSelection(previous: number, selected: number): void {
+    for (const row of this.changeRows(previous)) {
+      row.classList.remove("compare-selected");
+    }
+    for (const row of this.changeRows(selected)) {
+      row.classList.add("compare-selected");
+    }
+    this.reveal(selected);
+  }
+
+  private changeRows(changeIndex: number): NodeListOf<HTMLElement> {
+    return this.rows.querySelectorAll(`[data-change-index="${changeIndex}"]`);
+  }
+
   private headingCell(name: string, testId: string): HTMLElement {
     const heading = element("strong", "compare-heading");
     heading.dataset.testid = testId;

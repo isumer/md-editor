@@ -113,9 +113,9 @@ export class CompareController {
 
   private move(direction: 1 | -1): void {
     if (!this.state) return;
+    const previous = this.state.selectedChange;
     this.state = moveDifference(this.state, direction);
-    this.view.render(this.state);
-    this.view.reveal(this.state.selectedChange);
+    this.view.moveSelection(previous, this.state.selectedChange);
   }
 
   private keydown(event: KeyboardEvent): void {
