@@ -2,10 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  BINARY_SAMPLE_BYTES,
-  isBinarySample,
-} from "../../src/shared/text/binary";
+import { isBinarySample } from "../../src/shared/text/binary";
 
 function fixture(name: string): Uint8Array {
   return readFileSync(new URL(`../fixtures/binary/${name}`, import.meta.url));
@@ -61,13 +58,14 @@ describe("AC-R12-01: binary detection from the first bytes", () => {
   });
 
   it("AC-R12-01: a NUL at the last sampled index marks the buffer binary", () => {
-    const bytes = asciiSampleWithNulAt(BINARY_SAMPLE_BYTES - 1);
+    // 8192 is the criterion's sample size; pin the literal, not the constant.
+    const bytes = asciiSampleWithNulAt(8192 - 1);
 
     expect(isBinarySample(bytes)).toBe(true);
   });
 
   it("AC-R12-01: a NUL at index 8192 outside the sample is ignored", () => {
-    const bytes = asciiSampleWithNulAt(BINARY_SAMPLE_BYTES);
+    const bytes = asciiSampleWithNulAt(8192);
 
     expect(isBinarySample(bytes)).toBe(false);
   });
