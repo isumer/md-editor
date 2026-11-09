@@ -146,20 +146,38 @@ const rejectedExternalUrls: ReadonlyArray<{ name: string; value: unknown; code: 
   { name: "a non-string URL", value: 42, code: "BAD_REQUEST" },
 ];
 
-for (const rejectedUrl of rejectedExternalUrls) {
-  test(`the open-external contract rejects ${rejectedUrl.name}`, {
-    tag: "@AC-SEC-08",
-    annotation: { type: "AC-SEC-08" },
-  }, async () => {
-    const { application, page } = await launchEditor(fixturePath);
-    try {
-      await expect(page.getByTestId("editor")).toContainText("Sample document");
-      await application.evaluate(({ shell }) => {
+test.describe("the open-external contract", () => {
+  let editor: Awaited<ReturnType<typeof launchEditor>> | undefined;
+
+  test.beforeAll(async () => {
+    editor = await launchEditor(fixturePath);
+    await expect(editor.page.getByTestId("editor")).toContainText("Sample document");
+    await editor.application.evaluate(({ shell }) => {
+      const probe = globalThis as typeof globalThis & { externalUrls?: string[] };
+      shell.openExternal = async (url) => {
+        probe.externalUrls?.push(url);
+      };
+    });
+  });
+
+  test.afterAll(async () => {
+    if (editor) {
+      await closeEditor(editor.application, editor.page);
+    }
+  });
+
+  for (const rejectedUrl of rejectedExternalUrls) {
+    test(`rejects ${rejectedUrl.name}`, {
+      tag: "@AC-SEC-08",
+      annotation: { type: "AC-SEC-08" },
+    }, async () => {
+      if (!editor) {
+        throw new Error("The shared editor did not launch");
+      }
+      const { application, page } = editor;
+      await application.evaluate(() => {
         const probe = globalThis as typeof globalThis & { externalUrls?: string[] };
         probe.externalUrls = [];
-        shell.openExternal = async (url) => {
-          probe.externalUrls?.push(url);
-        };
       });
 
       const result = await page.evaluate(async (value) => {
@@ -179,11 +197,9 @@ for (const rejectedUrl of rejectedExternalUrls) {
       await expect.poll(() => application.evaluate(() =>
         (globalThis as typeof globalThis & { externalUrls?: string[] }).externalUrls,
       )).toEqual([]);
-    } finally {
-      await closeEditor(application, page);
-    }
-  });
-}
+    });
+  }
+});
 
 test("the preload exposes only the fixed named API", {
   tag: "@AC-SEC-11",
