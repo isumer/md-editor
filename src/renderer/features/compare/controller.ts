@@ -22,21 +22,24 @@ export interface CompareControllerOptions {
   showStatus(message?: string): void;
   workspace: HTMLElement;
   worker?: WorkerPort;
+  workerFactory?: () => WorkerPort;
   workerUrl?: URL;
 }
 
 function createWorker(options: CompareControllerOptions): WorkerPort {
+  if (options.workerFactory) return options.workerFactory();
   if (options.worker) return options.worker;
   if (!options.workerUrl) throw new Error("A compare worker URL is required.");
   return new Worker(options.workerUrl, { type: "module" });
 }
 
 export class CompareController {
-  private readonly worker: WorkerPort;
+  private worker: WorkerPort;
   private readonly view: CompareView;
   private requestId = 0;
   private state: CompareState | null = null;
   private pair: readonly [DocumentRecord, DocumentRecord] | null = null;
+  private hiddenState: { editor: string | null; preview: string | null } | null = null;
 
   constructor(private readonly options: CompareControllerOptions) {
     this.worker = createWorker(options);
@@ -46,10 +49,7 @@ export class CompareController {
       move: (direction) => this.move(direction),
     });
     options.workspace.append(this.view.root);
-    this.worker.onmessage = (event) => this.receive(event.data);
-    this.worker.onerror = () => this.options.showStatus(
-      formatMessage("compare.workerFailed", {}),
-    );
+    this.bindWorker();
     document.addEventListener("keydown", (event) => this.keydown(event), true);
   }
 
@@ -61,6 +61,10 @@ export class CompareController {
     }
     this.pair = [documents[documents.length - 2] as DocumentRecord,
       documents[documents.length - 1] as DocumentRecord];
+    this.hiddenState = {
+      editor: this.options.editor.getAttribute("hidden"),
+      preview: this.options.preview.getAttribute("hidden"),
+    };
     this.options.editor.hidden = true;
     this.options.preview.hidden = true;
     this.options.workspace.classList.add("compare-open");
@@ -72,8 +76,7 @@ export class CompareController {
     this.pair = null;
     this.state = null;
     this.view.hide();
-    this.options.editor.hidden = false;
-    this.options.preview.hidden = false;
+    this.restoreHiddenState();
     this.options.workspace.classList.remove("compare-open");
   }
 
@@ -92,7 +95,7 @@ export class CompareController {
   private receive(response: CompareWorkerResponse): void {
     if (response.id !== this.requestId || !this.pair) return;
     if (!response.ok) {
-      this.options.showStatus(response.message);
+      this.fail(response.message);
       return;
     }
     this.state = response.state;
@@ -121,5 +124,31 @@ export class CompareController {
     }
     event.preventDefault();
     this.move(event.shiftKey ? -1 : 1);
+  }
+
+  private bindWorker(): void {
+    this.worker.onmessage = (event) => this.receive(event.data);
+    this.worker.onerror = () => this.fail(formatMessage("compare.workerFailed", {}));
+  }
+
+  private fail(message: string): void {
+    this.close();
+    this.options.showStatus(message);
+    this.worker.onmessage = null;
+    this.worker.onerror = null;
+    this.worker = createWorker(this.options);
+    this.bindWorker();
+  }
+
+  private restoreHiddenState(): void {
+    if (!this.hiddenState) return;
+    this.restoreHidden(this.options.editor, this.hiddenState.editor);
+    this.restoreHidden(this.options.preview, this.hiddenState.preview);
+    this.hiddenState = null;
+  }
+
+  private restoreHidden(element: HTMLElement, value: string | null): void {
+    if (value === null) element.removeAttribute("hidden");
+    else element.setAttribute("hidden", value);
   }
 }
