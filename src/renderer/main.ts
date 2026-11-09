@@ -246,7 +246,7 @@ function newDocument(input: {
   const version = replication.current();
   const text = document.state.doc.toString();
   renderController.attach(document, text);
-  queueMicrotask(() => detectMerge(document, text));
+  window.setTimeout(() => detectMerge(document, text), 0);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);
   }).catch(showUnexpectedError);

@@ -174,6 +174,7 @@ function conflictChunks(file: ConflictFile): readonly MergeChunk[] {
 }
 
 export function createMarkerMergeState(text: string): MarkerMergeState | null {
+  if (!text.includes("<<<<<<<")) return null;
   const parsed = parseConflictFile(text);
   if (!parsed.ok || parsed.file.conflicts.length === 0) return null;
   const chunks = conflictChunks(parsed.file);
