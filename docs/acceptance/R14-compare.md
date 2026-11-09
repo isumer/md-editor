@@ -3,13 +3,13 @@
 ## File compare
 
 ### AC-R14-01 — Two files open in a side-by-side compare
-status: planned
+status: implemented
 Given two text files that differ in added, deleted and modified lines
 When the user compares them (tab menu Compare with…, two sidebar selections, or `--diff a b`)
 Then both are shown side by side, aligned, with each changed line marked added, deleted or modified
 
 ### AC-R14-02 — Modified lines highlight the changed words
-status: planned
+status: implemented
 Given a modified line where one word changed
 When the compare is shown with Highlight: words
 Then only that word is highlighted inside the line; Highlight: characters, lines and none behave likewise on fixtures
@@ -39,7 +39,7 @@ When the user edits either side
 Then the diff updates without a full re-diff of unchanged regions, and each side saves atomically with its own encoding and line endings
 
 ### AC-R14-07 — Next and previous difference
-status: planned
+status: implemented
 Given a compare with changes and focus on the first
 When the user presses F7 three times and Shift+F7 once
 Then the selection moves to the next change each time and back once, and the gutter overview marks every change

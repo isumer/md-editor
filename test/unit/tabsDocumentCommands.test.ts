@@ -37,23 +37,34 @@ describe("document commands", () => {
     const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
+    const compare = vi.fn();
     const onResult = vi.fn();
-    const commands = new DocumentCommands({ editor, onError: vi.fn(), onResult, open, save });
+    const commands = new DocumentCommands({
+      compare,
+      editor,
+      onError: vi.fn(),
+      onResult,
+      open,
+      save,
+    });
     await Promise.resolve();
 
     expect(contributeMenu.mock.calls[0]?.[0].items.map((item) => item.id)).toEqual([
       "file-open",
       "file-save",
       "file-save-as",
+      "file-compare-open",
     ]);
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
+    menuListener?.("file-compare-open");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
+    expect(compare).toHaveBeenCalledOnce();
     expect(onResult).toHaveBeenCalledWith({ ok: true, value: undefined });
     editor.contentDOM.focus();
     editor.dispatch({ selection: { anchor: 0, head: 2 } });

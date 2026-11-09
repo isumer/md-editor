@@ -21,6 +21,7 @@ export type MessageKey =
   | "menu.open"
   | "menu.save"
   | "menu.saveAs"
+  | "menu.compareOpen"
   | "menu.undo"
   | "menu.redo"
   | "tab.close"
@@ -31,6 +32,18 @@ export type MessageKey =
   | "close.dirtyFile"
   | "close.dirtyDocuments"
   | "preview.workerRestarted"
+  | "compare.needTwo"
+  | "compare.workerFailed"
+  | "compare.view"
+  | "compare.highlight"
+  | "compare.highlight.words"
+  | "compare.highlight.characters"
+  | "compare.highlight.lines"
+  | "compare.highlight.none"
+  | "compare.previous"
+  | "compare.next"
+  | "compare.close"
+  | "compare.difference"
   | "draft.recovered";
 
 export const messages: Readonly<Record<MessageKey, string>> = {
@@ -56,6 +69,7 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.open": "Open",
   "menu.save": "Save",
   "menu.saveAs": "Save As",
+  "menu.compareOpen": "Compare Open Files",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
   "tab.close": "Close {file}",
@@ -66,6 +80,18 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "close.dirtyFile": "“{file}” has unsaved changes. Save before closing?",
   "close.dirtyDocuments": "These documents have unsaved changes: {files}",
   "preview.workerRestarted": "The preview stopped responding. It was restarted.",
+  "compare.needTwo": "Open two files before you compare them.",
+  "compare.workerFailed": "The compare worker stopped unexpectedly.",
+  "compare.view": "File comparison",
+  "compare.highlight": "Highlight:",
+  "compare.highlight.words": "Words",
+  "compare.highlight.characters": "Characters",
+  "compare.highlight.lines": "Lines",
+  "compare.highlight.none": "None",
+  "compare.previous": "Previous difference",
+  "compare.next": "Next difference",
+  "compare.close": "Close compare",
+  "compare.difference": "Difference {number}",
   "draft.recovered": "Recovered unsaved text for “{file}”.",
 };
 
