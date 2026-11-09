@@ -180,17 +180,20 @@ describe("sync scroll controller", () => {
     expect(scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(13);
   });
 
-  it("refresh measures pages and does not measure every block", () => {
-    const fixtures = Array.from({ length: 4 }, (_, index) => ({
+  it("scroll measures bounded pages and does not measure every block", async () => {
+    const fixtures = Array.from({ length: 64 }, (_, index) => ({
       line: index * 20 + 1,
       height: 100,
     }));
     const state = setup([]);
     for (const fixture of fixtures) state.addPage(fixture, 20);
+    await Promise.resolve();
     const pagesBefore = state.pageRects();
     const blocksBefore = state.blockRects();
-    state.controller.refreshAnchors();
-    expect(state.pageRects() - pagesBefore).toBe(fixtures.length);
+    state.preview.scrollTop = 3_000;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+    expect(state.pageRects() - pagesBefore).toBeLessThanOrEqual(8);
     expect(state.blockRects() - blocksBefore).toBe(0);
   });
 
@@ -231,8 +234,66 @@ describe("sync scroll controller", () => {
     expect(scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(5);
   });
 
-  it("refresh ignores empty and hidden pages", () => {
-    const { controller, root } = setup([]);
+  it("maps editor scrolling through block anchors when pages are absent", () => {
+    const { controller, editorScroll, flush, preview, root, setEditorLine } = setup([]);
+    const block = document.createElement("div");
+    block.className = "preview-block";
+    block.dataset["line"] = "9";
+    vi.spyOn(block, "getBoundingClientRect").mockReturnValue(rect(100, 40));
+    root.append(block);
+    controller.refreshAnchors();
+    setEditorLine(10);
+    editorScroll.dispatchEvent(new Event("scroll"));
+    flush();
+    expect(preview.scrollTop).toBe(100);
+  });
+
+  it("keeps page order after pages move or are removed", async () => {
+    const state = setup();
+    const pageElements = [...state.root.querySelectorAll<HTMLElement>(".preview-page")];
+    const first = pageElements[0];
+    const second = pageElements[1];
+    const third = pageElements[2];
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error("Missing page elements");
+    }
+    const inserted = document.createElement("div");
+    inserted.className = "preview-page";
+    vi.spyOn(inserted, "getBoundingClientRect").mockReturnValue(rect(-100, 100));
+    const block = document.createElement("div");
+    block.className = "preview-block";
+    block.dataset["line"] = "4";
+    inserted.append(block);
+    state.root.insertBefore(inserted, first);
+    state.root.append(third);
+    second.remove();
+    state.root.append(document.createTextNode("fill"));
+    await Promise.resolve();
+
+    state.preview.scrollTop = 0;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.scrollEditorToLine).toHaveBeenCalledWith(1);
+  });
+
+  it("skips an empty page while finding an editor line", async () => {
+    const state = setup([]);
+    const empty = document.createElement("div");
+    empty.className = "preview-page";
+    state.root.append(empty);
+    state.addPage({ line: 10, height: 100 });
+    await Promise.resolve();
+
+    state.setEditorLine(10);
+    state.editorScroll.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.preview.scrollTop).toBe(0);
+  });
+
+  it("scroll ignores empty and hidden pages", async () => {
+    const { flush, preview, root, scrollEditorToLine } = setup([]);
     const empty = document.createElement("div");
     empty.className = "preview-page";
     vi.spyOn(empty, "getBoundingClientRect").mockReturnValue(rect(0, 100));
@@ -244,11 +305,13 @@ describe("sync scroll controller", () => {
     block.dataset["line"] = "9";
     hidden.append(block);
     root.append(empty, hidden);
+    await Promise.resolve();
 
-    controller.refreshAnchors();
+    preview.scrollTop = 100;
+    preview.dispatchEvent(new Event("scroll"));
+    flush();
 
-    expect(empty.getBoundingClientRect).not.toHaveBeenCalled();
-    expect(hidden.getBoundingClientRect).toHaveBeenCalledOnce();
+    expect(scrollEditorToLine).not.toHaveBeenCalled();
   });
 
   it("uses the browser frame and resize observers by default", async () => {

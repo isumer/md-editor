@@ -25,7 +25,7 @@ When the user turns it off in the View menu and scrolls the editor
 Then the preview does not move, and the setting survives a restart
 
 ### AC-R3-05 — Sync scroll of a 20 MB document keeps the scroll frame budget
-status: planned
+status: implemented
 Given a 20 MB document with sync scroll on
 When the editor is fling-scrolled
 Then no frame in either pane takes over 32 ms

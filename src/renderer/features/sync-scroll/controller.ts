@@ -25,6 +25,8 @@ export class SyncScrollController {
   private suppressPreview = false;
   private anchorTimer: ReturnType<typeof setTimeout> | null = null;
   private documentRoot: Element | null;
+  private pages: HTMLElement[] = [];
+  private readonly pageSet = new Set<HTMLElement>();
   private previewTargetTop: number | null = null;
   private lastPreviewLine: number | null = null;
   private readonly requestFrame: (callback: FrameRequestCallback) => number;
@@ -41,7 +43,8 @@ export class SyncScrollController {
       this.onContentVisibilityChange,
       true,
     );
-    this.mutationObserver = new MutationObserver(() => this.onPreviewMutation());
+    this.collectPages(options.preview);
+    this.mutationObserver = new MutationObserver((records) => this.onPreviewMutation(records));
     this.mutationObserver.observe(options.preview, { childList: true, subtree: true });
     this.resizeObserver = typeof ResizeObserver === "undefined"
       ? null
@@ -64,13 +67,13 @@ export class SyncScrollController {
   }
 
   refreshAnchors(): void {
+    if (this.pages.length > 0) {
+      this.anchors = [];
+      return;
+    }
     const previewTop = this.options.preview.getBoundingClientRect().top;
     const scrollTop = this.options.preview.scrollTop;
-    const pages = [...this.options.preview.querySelectorAll<HTMLElement>(".preview-page")];
-    const anchors = pages.length === 0
-      ? this.blockAnchors(this.options.preview, previewTop, scrollTop)
-      : pages.flatMap((page) => this.pageAnchor(page, previewTop, scrollTop));
-    this.anchors = anchors.sort((left, right) =>
+    this.anchors = this.blockAnchors(this.options.preview, previewTop, scrollTop).sort((left, right) =>
       left.blockTop - right.blockTop || left.sourceLine - right.sourceLine);
   }
 
@@ -95,10 +98,11 @@ export class SyncScrollController {
     this.requestFrame(() => {
       this.editorFrame = false;
       const maxTop = this.options.preview.scrollHeight - this.options.preview.clientHeight;
+      const line = this.options.sourceLineAtEditorTop();
       this.suppressPreview = true;
       this.options.preview.scrollTop = previewTopForLine(
-        this.anchors,
-        this.options.sourceLineAtEditorTop(),
+        this.anchorsForLine(line),
+        line,
         Math.max(0, maxTop),
       );
       this.requestFrame(() => { this.suppressPreview = false; });
@@ -106,7 +110,7 @@ export class SyncScrollController {
   };
 
   private readonly onPreviewScroll = (): void => {
-    if (!this.enabled || this.suppressPreview || this.previewFrame || this.anchors.length === 0) {
+    if (!this.enabled || this.suppressPreview || this.previewFrame || !this.hasAnchors()) {
       return;
     }
     this.previewTargetTop = this.options.preview.scrollTop;
@@ -127,8 +131,10 @@ export class SyncScrollController {
   };
 
   private applyPreviewTarget(skipUnchanged: boolean): void {
-    if (!this.enabled || this.previewTargetTop === null || this.anchors.length === 0) return;
-    const line = sourceLineForPreviewTop(this.anchors, this.previewTargetTop);
+    if (!this.enabled || this.previewTargetTop === null || !this.hasAnchors()) return;
+    const anchors = this.anchorsForTop(this.previewTargetTop);
+    if (anchors.length === 0) return;
+    const line = sourceLineForPreviewTop(anchors, this.previewTargetTop);
     if (skipUnchanged && line === this.lastPreviewLine) return;
     this.lastPreviewLine = line;
     this.suppressEditor = true;
@@ -139,6 +145,59 @@ export class SyncScrollController {
   private refreshAndReapply(): void {
     this.refreshAnchors();
     this.applyPreviewTarget(true);
+  }
+
+  private hasAnchors(): boolean {
+    return this.pages.length > 0 || this.anchors.length > 0;
+  }
+
+  private anchorsForLine(line: number): readonly SyncAnchor[] {
+    if (this.pages.length === 0) return this.anchors;
+    let low = 0;
+    let high = this.pages.length - 1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const page = this.pages[middle];
+      if (page === undefined) break;
+      if (this.pageLine(page) <= line) low = middle + 1;
+      else high = middle - 1;
+    }
+    return this.nearbyPageAnchors(Math.max(0, high));
+  }
+
+  private anchorsForTop(top: number): readonly SyncAnchor[] {
+    if (this.pages.length === 0) return this.anchors;
+    const previewTop = this.options.preview.getBoundingClientRect().top;
+    const scrollTop = this.options.preview.scrollTop;
+    let low = 0;
+    let high = this.pages.length - 1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const page = this.pages[middle];
+      if (page === undefined) break;
+      const anchor = this.pageAnchor(page, previewTop, scrollTop)[0];
+      if (anchor !== undefined && anchor.blockTop <= top) low = middle + 1;
+      else high = middle - 1;
+    }
+    return this.nearbyPageAnchors(Math.max(0, high), previewTop, scrollTop);
+  }
+
+  private nearbyPageAnchors(
+    index: number,
+    previewTop = this.options.preview.getBoundingClientRect().top,
+    scrollTop = this.options.preview.scrollTop,
+  ): readonly SyncAnchor[] {
+    const anchors: SyncAnchor[] = [];
+    for (let offset = 0; offset < 2; offset += 1) {
+      const page = this.pages[index + offset];
+      if (page !== undefined) anchors.push(...this.pageAnchor(page, previewTop, scrollTop));
+    }
+    return anchors;
+  }
+
+  private pageLine(page: HTMLElement): number {
+    const firstBlock = page.querySelector<HTMLElement>(".preview-block");
+    return firstBlock === null ? Number.MAX_SAFE_INTEGER : this.options.blockLine(firstBlock) + 1;
   }
 
   private blockAnchors(
@@ -173,15 +232,68 @@ export class SyncScrollController {
     return bounds.height <= 0 ? [] : [pageAnchor];
   }
 
-  private onPreviewMutation(): void {
+  private onPreviewMutation(records: readonly MutationRecord[]): void {
     const nextRoot = this.options.preview.firstElementChild;
     if (nextRoot !== this.documentRoot) {
       this.documentRoot = nextRoot;
       this.anchors = [];
+      this.pages = [];
+      this.pageSet.clear();
       this.previewTargetTop = null;
       this.lastPreviewLine = null;
     }
+    if (records.some((record) => record.removedNodes.length > 0)) {
+      this.pages = this.pages.filter((page) => {
+        const keep = page.isConnected && this.documentRoot?.contains(page) === true;
+        if (!keep) this.pageSet.delete(page);
+        return keep;
+      });
+    }
+    for (const record of records) {
+      for (const node of record.addedNodes) this.collectPages(node);
+    }
     this.scheduleAnchorRefresh();
+  }
+
+  private collectPages(root: Node): void {
+    if (root instanceof HTMLElement && root.classList.contains("preview-page")) {
+      this.insertPage(root);
+      return;
+    }
+    if (!(root instanceof Element)) return;
+    const canContainPages = root === this.options.preview ||
+      root instanceof HTMLElement &&
+      (root.classList.contains("preview-section") ||
+        root.classList.contains("preview-document"));
+    if (!canContainPages) return;
+    for (const page of root.querySelectorAll<HTMLElement>(".preview-page")) {
+      this.insertPage(page);
+    }
+  }
+
+  private insertPage(page: HTMLElement): void {
+    if (this.pageSet.has(page)) return;
+    const last = this.pages.at(-1);
+    if (last === undefined ||
+      (last.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
+      this.pages.push(page);
+      this.pageSet.add(page);
+      return;
+    }
+    let low = 0;
+    let high = this.pages.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      const current = this.pages[middle];
+      if (current !== undefined &&
+        (current.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    this.pages.splice(low, 0, page);
+    this.pageSet.add(page);
   }
 
   private scheduleAnchorRefresh(): void {
