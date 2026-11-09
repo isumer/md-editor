@@ -67,4 +67,24 @@ describe("document commands", () => {
     editor.contentDOM.blur();
     editor.destroy();
   });
+
+  it("view menu ids do not run file commands", async () => {
+    const { DocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    const open = vi.fn(async () => undefined);
+    const save = vi.fn(async () => undefined);
+    new DocumentCommands({ editor, onError: vi.fn(), onResult: vi.fn(), open, save });
+    await Promise.resolve();
+
+    menuListener?.("view-split");
+    await Promise.resolve();
+
+    expect(open).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    editor.destroy();
+  });
 });

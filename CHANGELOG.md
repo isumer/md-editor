@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
+- A View menu now controls the layout: show the editor alone, the preview alone, or both side by side. The divider between the panes drags to any share and returns to the middle on a double-click; its position comes back after a restart. Focus mode fills the screen and hides the tab bar and status bar until you press Esc. Scrolling one pane brings the same passage to the top of the other; you can turn this off, and the choice is kept.
 
 ### Changed
 
