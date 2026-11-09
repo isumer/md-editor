@@ -25,6 +25,12 @@ import type {
   SessionCloseResult,
   SessionLoadResponse,
 } from "../../shared/ipc/session";
+import type {
+  ChooseWorkspaceRootResponse,
+  ListWorkspaceChildrenResponse,
+  OpenWorkspaceFileResponse,
+  WorkspacePathRequest,
+} from "../../shared/ipc/workspace";
 
 interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
@@ -46,6 +52,13 @@ interface Api {
   loadSession(): Promise<Result<SessionLoadResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
+  chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;
+  listWorkspaceChildren(request: WorkspacePathRequest): Promise<
+    Result<ListWorkspaceChildrenResponse>
+  >;
+  openWorkspaceFile(request: WorkspacePathRequest): Promise<
+    Result<OpenWorkspaceFileResponse>
+  >;
 }
 
 declare global {

@@ -1,6 +1,7 @@
 import type { EditorState, Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
+import type { DocumentReference } from "../../shared/ipc/file";
 import type { DocumentRecord } from "../core/document";
 
 export interface FeatureRewriteContext {
@@ -15,6 +16,7 @@ export interface FeatureContext {
   readonly workspace: HTMLElement;
   hasDocument(documentId: string): boolean;
   isActive(document: DocumentRecord): boolean;
+  openDocument(reference: DocumentReference): Promise<void>;
   showStatus(message?: string): void;
 }
 

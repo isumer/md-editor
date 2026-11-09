@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Application composition stays in one entry module. */
 import { Text, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
@@ -159,6 +160,7 @@ installedFeatures = installFeatures({
   editor,
   hasDocument: (documentId) => registry.get(documentId) !== undefined,
   isActive: (document) => activeDocument === document,
+  openDocument: (reference) => lifecycle.openReference(reference),
   showStatus,
 });
 
