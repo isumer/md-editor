@@ -8,7 +8,7 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-o": "file.open",
   "Mod-s": "file.save",
   "Mod-Shift-s": "file.saveAs",
-  "Mod-Alt-c": "file.compareOpen",
+  "Mod-Shift-c": "file.compareOpen",
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",
   "Mod-y": "redo",
@@ -30,7 +30,6 @@ export interface KeyEventLike {
   metaKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
-  getModifierState?(key: string): boolean;
   preventDefault(): void;
 }
 
@@ -95,10 +94,6 @@ export function chordForEvent(
   // On Windows AltGr arrives as Ctrl+Alt and must stay text input.
   if (platform === "win32" && event.ctrlKey && event.altKey &&
     event.key.length === 1) {
-    return null;
-  }
-  // Other platforms report AltGr as a modifier state: it types a character, not a chord.
-  if (event.altKey && event.getModifierState?.("AltGraph")) {
     return null;
   }
   const apple = platform === "darwin";

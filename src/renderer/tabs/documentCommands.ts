@@ -30,7 +30,7 @@ export function menuContribution(): MenuContribution {
       {
         id: "file-compare-open",
         title: formatMessage("menu.compareOpen", {}),
-        accelerator: "CmdOrCtrl+Alt+C",
+        accelerator: "CmdOrCtrl+Shift+C",
       },
     ],
   };

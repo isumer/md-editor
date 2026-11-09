@@ -55,6 +55,8 @@ describe("document commands", () => {
       "file-save-as",
       "file-compare-open",
     ]);
+    expect(contributeMenu.mock.calls[0]?.[0].items[3]?.accelerator)
+      .toBe("CmdOrCtrl+Shift+C");
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
@@ -65,6 +67,10 @@ describe("document commands", () => {
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
+    }));
+    expect(compare).toHaveBeenCalledTimes(2);
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, altKey: true, key: "c",
     }));
