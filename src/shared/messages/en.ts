@@ -23,6 +23,12 @@ export type MessageKey =
   | "menu.saveAs"
   | "menu.undo"
   | "menu.redo"
+  | "menu.viewSplit"
+  | "menu.viewEditor"
+  | "menu.viewPreview"
+  | "menu.syncScroll"
+  | "menu.fullScreen"
+  | "menu.focusMode"
   | "tab.close"
   | "tab.unsaved"
   | "close.cancel"
@@ -58,6 +64,12 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.saveAs": "Save As",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
+  "menu.viewSplit": "Split View",
+  "menu.viewEditor": "Editor Only",
+  "menu.viewPreview": "Preview Only",
+  "menu.syncScroll": "Sync Scroll",
+  "menu.fullScreen": "Full Screen",
+  "menu.focusMode": "Focus Mode",
   "tab.close": "Close {file}",
   "tab.unsaved": "Unsaved changes",
   "close.cancel": "Cancel",

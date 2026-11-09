@@ -41,6 +41,44 @@ function sendMenuCommand(command: MenuCommandMessage): void {
   }
 }
 
+function sendViewCommand(command: string): void {
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(MENU_CHANNELS.command, command);
+  }
+}
+
+function toggleFullScreen(): void {
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  }
+}
+
+function viewMenu(platform: string): MenuItemConstructorOptions {
+  return {
+    label: "View",
+    submenu: [
+      { id: "view-split", label: "Split View", accelerator: "CmdOrCtrl+1",
+        registerAccelerator: false, click: () => sendViewCommand("view-split") },
+      { id: "view-editor", label: "Editor Only", accelerator: "CmdOrCtrl+2",
+        registerAccelerator: false, click: () => sendViewCommand("view-editor") },
+      { id: "view-preview", label: "Preview Only", accelerator: "CmdOrCtrl+3",
+        registerAccelerator: false, click: () => sendViewCommand("view-preview") },
+      { type: "separator" },
+      { id: "view-sync-scroll", label: "Sync Scroll", type: "checkbox", checked: true,
+        accelerator: "CmdOrCtrl+Shift+L", registerAccelerator: false,
+        click: () => sendViewCommand("view-sync-scroll") },
+      { type: "separator" },
+      { id: "view-full-screen", label: "Full Screen",
+        accelerator: platform === "darwin" ? "Ctrl+Command+F" : "F11",
+        click: toggleFullScreen },
+      { id: "view-focus-mode", label: "Focus Mode", accelerator: "CmdOrCtrl+Shift+F",
+        registerAccelerator: false, click: () => sendViewCommand("view-focus-mode") },
+    ],
+  };
+}
+
 function macApplicationMenu(appName: string): MenuItemConstructorOptions {
   return {
     label: appName,
@@ -120,6 +158,7 @@ export function buildContributionTemplate(
       label: contribution.fileMenuTitle,
       submenu: items,
     });
+    template.splice(3, 0, viewMenu(platform));
     return template;
   }
   const fileMenu = template[fileMenuIndex(platform)];
@@ -129,6 +168,7 @@ export function buildContributionTemplate(
       ? [...items, { type: "separator" }, { role: "quit" }]
       : [{ role: "quit" }];
   }
+  template.splice(2, 0, viewMenu(platform));
   return template;
 }
 
