@@ -18,6 +18,7 @@ export interface TabStripOptions {
   documents(): readonly DocumentRecord[];
   host: HTMLElement;
   select(document: DocumentRecord): void;
+  otherView?(document: DocumentRecord, action: "clone" | "move"): void;
 }
 
 export class TabStrip {
@@ -81,6 +82,30 @@ export class TabStrip {
         this.options.close(document);
       }
     });
+    element.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openContextMenu(element, document);
+    });
+  }
+
+  private openContextMenu(anchor: HTMLElement, document: DocumentRecord): void {
+    window.document.querySelectorAll(".tab-context-menu").forEach((menu) => menu.remove());
+    const menu = window.document.createElement("div");
+    menu.className = "tab-context-menu";
+    menu.setAttribute("role", "menu");
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    for (const action of ["move", "clone"] as const) {
+      const button = window.document.createElement("button");
+      button.type = "button";
+      button.textContent = action === "move" ? "Move to Other View" : "Clone to Other View";
+      button.addEventListener("click", () => {
+        menu.remove();
+        this.options.otherView?.(document, action);
+      });
+      menu.append(button);
+    }
+    anchor.append(menu);
+    window.document.addEventListener("pointerdown", () => menu.remove(), { once: true });
   }
 
   private configureClose(close: HTMLButtonElement, document: DocumentRecord): void {

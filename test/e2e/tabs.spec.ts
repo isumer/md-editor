@@ -135,6 +135,53 @@ test("two tabs keep their own text, cursor, selection, scroll and undo history",
   }
 });
 
+test("tabs move and clone to another view with shared edits and history", {
+  tag: ["@AC-R4-10", "@AC-R4-11", "@AC-R4-12"],
+  annotation: [
+    { type: "AC-R4-10" },
+    { type: "AC-R4-11" },
+    { type: "AC-R4-12" },
+  ],
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, page, beta);
+    await tab(page, "beta.md").click({ button: "right" });
+    await page.getByRole("button", { name: "Move to Other View" }).click();
+    await expect(page.getByTestId("document-view-two")).toBeVisible();
+    await expect(page.getByTestId("tabs").getByTestId("tab")).toHaveCount(1);
+    await expect(page.getByTestId("tabs-two").getByTestId("tab")).toHaveCount(1);
+
+    await tab(page, "alpha.md").click({ button: "right" });
+    await page.getByRole("button", { name: "Clone to Other View" }).click();
+    await expect(page.getByTestId("tabs-two").getByTestId("tab")).toHaveCount(2);
+    const otherAlpha = page.getByTestId("tabs-two")
+      .locator('[data-testid="tab"][data-name="alpha.md"]');
+    await otherAlpha.click();
+
+    const otherEditor = page.getByTestId("editor-two").locator(".cm-content");
+    await otherEditor.click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("CLONED-EDIT");
+    await expect(page.getByTestId("editor")).toContainText("CLONED-EDIT");
+    await expect(page.getByTestId("tabs").locator(
+      '[data-testid="tab"][data-name="alpha.md"]',
+    ).getByTestId("tab-dirty")).toBeVisible();
+    await expect(otherAlpha.getByTestId("tab-dirty")).toBeVisible();
+
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
+    await expect(page.getByTestId("editor")).not.toContainText("CLONED-EDIT");
+    await page.getByTestId("editor").locator(".cm-content").click();
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+z`);
+    await page.keyboard.press(DOCUMENT_END);
+    await expect(page.getByTestId("editor-two")).toContainText("CLONED-EDIT");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("switching back reconnects the same preview blocks without appending", {
   tag: "@AC-R4-01",
   annotation: { type: "AC-R4-01" },

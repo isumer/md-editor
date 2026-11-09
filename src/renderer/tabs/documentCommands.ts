@@ -32,11 +32,13 @@ export function menuContribution(): MenuContribution {
 }
 
 export interface DocumentCommandsOptions {
-  editor: EditorView;
+  editor: EditorView | (() => EditorView);
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   open(): Promise<void>;
+  redo?(): void;
   save(saveAs: boolean): Promise<void>;
+  undo?(): void;
 }
 
 export class DocumentCommands {
@@ -58,17 +60,20 @@ export class DocumentCommands {
       platform: platformName(navigator.platform),
     });
     this.refresh();
-    options.editor.contentDOM.addEventListener("focus", () => this.refresh());
-    options.editor.contentDOM.addEventListener("blur", () => this.refresh());
+    if (typeof options.editor !== "function") {
+      options.editor.contentDOM.addEventListener("focus", () => this.refresh());
+      options.editor.contentDOM.addEventListener("blur", () => this.refresh());
+    }
     void this.publish().catch(options.onError);
   }
 
   refresh(): void {
+    const editor = this.editor();
     const keys = new Set<string>();
-    if (this.options.editor.hasFocus) {
+    if (editor.hasFocus) {
       keys.add("editorFocus");
     }
-    if (this.options.editor.state.selection.ranges.some((range) => !range.empty)) {
+    if (editor.state.selection.ranges.some((range) => !range.empty)) {
       keys.add("hasSelection");
     }
     this.contextKeys.set(keys);
@@ -89,13 +94,29 @@ export class DocumentCommands {
     this.commands.register({
       id: "undo",
       titleKey: "menu.undo",
-      run: () => dispatchUndo(this.options.editor),
+      run: () => this.runUndo(),
     });
     this.commands.register({
       id: "redo",
       titleKey: "menu.redo",
-      run: () => dispatchRedo(this.options.editor),
+      run: () => this.runRedo(),
     });
+  }
+
+  private editor(): EditorView {
+    return typeof this.options.editor === "function"
+      ? this.options.editor()
+      : this.options.editor;
+  }
+
+  private runUndo(): void {
+    if (this.options.undo) this.options.undo();
+    else dispatchUndo(this.editor());
+  }
+
+  private runRedo(): void {
+    if (this.options.redo) this.options.redo();
+    else dispatchRedo(this.editor());
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {
