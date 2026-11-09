@@ -28,6 +28,15 @@ export type MessageKey =
   | "menu.viewPreview"
   | "menu.syncScroll"
   | "menu.focusMode"
+  | "merge.left"
+  | "merge.result"
+  | "merge.right"
+  | "merge.conflict"
+  | "merge.conflictLeft"
+  | "merge.conflictsLeft"
+  | "merge.accept.left"
+  | "merge.accept.right"
+  | "merge.accept.both"
   | "tab.close"
   | "tab.unsaved"
   | "close.cancel"
@@ -68,6 +77,15 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.viewPreview": "Preview Only",
   "menu.syncScroll": "Sync Scroll",
   "menu.focusMode": "Focus Mode",
+  "merge.left": "Left",
+  "merge.result": "Result",
+  "merge.right": "Right",
+  "merge.conflict": "Conflict {number}",
+  "merge.conflictLeft": "{count} conflict left",
+  "merge.conflictsLeft": "{count} conflicts left",
+  "merge.accept.left": "← Left",
+  "merge.accept.right": "Right →",
+  "merge.accept.both": "Both",
   "tab.close": "Close {file}",
   "tab.unsaved": "Unsaved changes",
   "close.cancel": "Cancel",
