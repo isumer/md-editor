@@ -23,6 +23,7 @@ test("two open files show aligned line and word differences with navigation", {
 }, async () => {
   const { application, page } = await launchEditor(leftPath);
   try {
+    await expect(page.getByRole("tab", { name: /left\.txt/ })).toBeVisible();
     await stubOpenDialog(application, rightPath);
     await clickMenuItem(application, "file-open");
     await expect(page.getByRole("tab", { name: /right\.txt/ })).toBeVisible();
