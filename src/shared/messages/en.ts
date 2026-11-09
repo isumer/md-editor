@@ -23,6 +23,16 @@ export type MessageKey =
   | "menu.saveAs"
   | "menu.undo"
   | "menu.redo"
+  | "merge.left"
+  | "merge.result"
+  | "merge.right"
+  | "merge.conflict"
+  | "merge.conflictLeft"
+  | "merge.conflictsLeft"
+  | "merge.accept.left"
+  | "merge.accept.right"
+  | "merge.accept.both"
+  | "merge.undo"
   | "tab.close"
   | "tab.unsaved"
   | "close.cancel"
@@ -58,6 +68,16 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.saveAs": "Save As",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
+  "merge.left": "Left",
+  "merge.result": "Result",
+  "merge.right": "Right",
+  "merge.conflict": "Conflict {number}",
+  "merge.conflictLeft": "{count} conflict left",
+  "merge.conflictsLeft": "{count} conflicts left",
+  "merge.accept.left": "← Left",
+  "merge.accept.right": "Right →",
+  "merge.accept.both": "Both",
+  "merge.undo": "Undo merge choice",
   "tab.close": "Close {file}",
   "tab.unsaved": "Unsaved changes",
   "close.cancel": "Cancel",
