@@ -57,10 +57,13 @@ async function loadPreload() {
   const module = await import("../../src/preload/preload");
   const api = electron.exposeInMainWorld.mock.calls[0]?.[1];
   const portListener = electron.on.mock.calls.find(([channel]) => channel === "io:port")?.[1];
+  const portLostListener = electron.on.mock.calls.find(
+    ([channel]) => channel === "io:port-lost",
+  )?.[1];
   if (!api || !portListener) {
     throw new Error("preload did not expose its API and port listener");
   }
-  return { api, IoPortClient: module.IoPortClient, portListener };
+  return { api, IoPortClient: module.IoPortClient, portListener, portLostListener };
 }
 
 describe("preload bridge", () => {
@@ -204,6 +207,16 @@ describe("preload bridge", () => {
     expect(electron.invoke).not.toHaveBeenCalled();
     expect(untrusted.preventDefault).not.toHaveBeenCalled();
 
+    const empty = {
+      isTrusted: true,
+      dataTransfer: null,
+      preventDefault: vi.fn(),
+    };
+    listener?.(empty);
+    await Promise.resolve();
+    expect(electron.invoke).not.toHaveBeenCalled();
+    expect(empty.preventDefault).toHaveBeenCalledOnce();
+
     // A real drop reaches main as a path and reports the result to the renderer.
     const reference = {
       canonicalPath: "/tmp/dropped.md",
@@ -253,6 +266,143 @@ describe("preload bridge", () => {
       },
     });
     expect(first.close).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R5-17: posts a request queued after port loss on the replacement port", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    const replacement = new FakePort();
+    portListener({ ports: [first] });
+    expect(portLostListener).toBeDefined();
+    portLostListener?.({});
+
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+    portListener({ ports: [replacement] });
+
+    expect(first.messages).toEqual([]);
+    expect(replacement.messages).toEqual([{
+      id: "io-1",
+      op: "save",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    }]);
+    replacement.reply({
+      id: "io-1",
+      result: { ok: true, value: { name: "note.md", version: 1 } },
+    });
+    await expect(saved).resolves.toMatchObject({ ok: true, value: { version: 1 } });
+  });
+
+  it("AC-R5-17: a second port loss keeps a message queued after the first", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    portLostListener?.({});
+    api.sendChanges({
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    });
+
+    portLostListener?.({});
+
+    const replacement = new FakePort();
+    portListener({ ports: [replacement] });
+    expect(replacement.messages).toEqual([{
+      op: "change",
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    }]);
+  });
+
+  it("AC-R5-17: a second port loss keeps a request queued after the first", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    portLostListener?.({});
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+
+    portLostListener?.({});
+
+    const replacement = new FakePort();
+    portListener({ ports: [replacement] });
+    replacement.reply({
+      id: "io-1",
+      result: { ok: true, value: { name: "note.md", version: 1 } },
+    });
+    await expect(saved).resolves.toMatchObject({ ok: true, value: { version: 1 } });
+  });
+
+  it("AC-R5-17: port loss fails a request pending on the old port", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    expect(portLostListener).toBeDefined();
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+
+    portLostListener?.({});
+
+    await expect(saved).resolves.toMatchObject({
+      ok: false,
+      error: { code: "WORKER_RESTARTED", retryable: true },
+    });
+    expect(first.close).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R5-17: a failure port settles a request queued after port loss", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    const failure = new FakePort();
+    portListener({ ports: [first] });
+    expect(portLostListener).toBeDefined();
+    portLostListener?.({});
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+
+    portListener({ ports: [failure] });
+    failure.reply({
+      id: "io-1",
+      result: {
+        ok: false,
+        error: {
+          code: "WORKER_RESTARTED",
+          messageKey: "file.workerRestarted",
+          params: {},
+          retryable: true,
+        },
+      },
+    });
+
+    await expect(saved).resolves.toMatchObject({
+      ok: false,
+      error: { code: "WORKER_RESTARTED", retryable: true },
+    });
   });
 
   it("AC-R5-17: queues requests and one-way messages in one FIFO", async () => {
