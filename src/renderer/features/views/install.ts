@@ -1,3 +1,8 @@
+import {
+  VIEW_MENU_ITEM_IDS,
+  type MenuCommandMessage,
+  type ViewMenuItemId,
+} from "../../../shared/ipc/menu";
 import { createCommandRegistry } from "../../core/commands";
 import { createContextKeys } from "../../core/contextKeys";
 import { installKeymap } from "../../core/keymap";
@@ -62,7 +67,7 @@ function installViewMenu(
   commands: ReturnType<typeof createCommandRegistry>,
   context: { contextKeys: ReturnType<typeof createContextKeys> },
 ): void {
-  const menuCommands: Readonly<Record<string, string>> = {
+  const menuCommands: Readonly<Record<ViewMenuItemId, string>> = {
     "view-split": "view.split",
     "view-editor": "view.editor",
     "view-preview": "view.preview",
@@ -70,9 +75,13 @@ function installViewMenu(
     "view-focus-mode": "view.focusMode",
   };
   onMenuCommand((item) => {
-    const command = menuCommands[String(item)];
-    if (command) void commands.run(command, context);
+    if (!isViewMenuItemId(item)) return;
+    void commands.run(menuCommands[item], context);
   });
+}
+
+function isViewMenuItemId(item: MenuCommandMessage): item is ViewMenuItemId {
+  return (VIEW_MENU_ITEM_IDS as readonly MenuCommandMessage[]).includes(item);
 }
 
 export function installViews(options: ViewInstallationOptions): void {

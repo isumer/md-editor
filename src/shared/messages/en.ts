@@ -27,7 +27,6 @@ export type MessageKey =
   | "menu.viewEditor"
   | "menu.viewPreview"
   | "menu.syncScroll"
-  | "menu.fullScreen"
   | "menu.focusMode"
   | "tab.close"
   | "tab.unsaved"
@@ -68,7 +67,6 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "menu.viewEditor": "Editor Only",
   "menu.viewPreview": "Preview Only",
   "menu.syncScroll": "Sync Scroll",
-  "menu.fullScreen": "Full Screen",
   "menu.focusMode": "Focus Mode",
   "tab.close": "Close {file}",
   "tab.unsaved": "Unsaved changes",

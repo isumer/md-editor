@@ -21,12 +21,19 @@ function setup() {
     scrollHeight: { value: 1_000, configurable: true },
   });
   vi.spyOn(preview, "getBoundingClientRect").mockReturnValue(rect(0, 200));
-  for (const [line, top] of [[1, 0], [10, 100], [20, 300]] as const) {
+  const page = document.createElement("div");
+  page.className = "preview-page";
+  vi.spyOn(page, "getBoundingClientRect").mockImplementation(() =>
+    rect(-preview.scrollTop, 540));
+  preview.append(page);
+  let blockTops: readonly number[] = [0, 100, 300];
+  for (const [index, line] of [1, 10, 20].entries()) {
     const block = document.createElement("div");
     block.className = "preview-block";
     block.dataset["line"] = String(line - 1);
-    vi.spyOn(block, "getBoundingClientRect").mockReturnValue(rect(top, 40));
-    preview.append(block);
+    vi.spyOn(block, "getBoundingClientRect").mockImplementation(() =>
+      rect((blockTops[index] ?? 0) - preview.scrollTop, 40));
+    page.append(block);
   }
   const frames: FrameRequestCallback[] = [];
   const scrollEditorToLine = vi.fn();
@@ -49,6 +56,7 @@ function setup() {
   flush();
   return {
     controller, editorScroll, flush, preview, scrollEditorToLine,
+    setBlockTops: (tops: readonly number[]) => { blockTops = tops; },
     setEditorLine: (line: number) => { editorLine = line; },
   };
 }
@@ -77,6 +85,34 @@ describe("sync scroll controller", () => {
     flush();
 
     expect(scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(10);
+  });
+
+  it("AC-R3-02: reapplies the preview target after page layout changes", () => {
+    const { flush, preview, scrollEditorToLine, setBlockTops } = setup();
+    preview.scrollTop = 150;
+    preview.dispatchEvent(new Event("scroll"));
+    flush();
+    expect(scrollEditorToLine).toHaveBeenLastCalledWith(13);
+
+    setBlockTops([0, 200, 500]);
+    preview.dispatchEvent(new Event("contentvisibilityautostatechange"));
+    flush();
+
+    expect(scrollEditorToLine).toHaveBeenLastCalledWith(8);
+  });
+
+  it("AC-R3-02: keeps the preview target when page layout does not change", () => {
+    const { flush, preview, scrollEditorToLine } = setup();
+    preview.scrollTop = 150;
+    preview.dispatchEvent(new Event("scroll"));
+    flush();
+    expect(scrollEditorToLine).toHaveBeenLastCalledWith(13);
+
+    preview.dispatchEvent(new Event("contentvisibilityautostatechange"));
+    flush();
+
+    expect(scrollEditorToLine).toHaveBeenCalledTimes(2);
+    expect(scrollEditorToLine).toHaveBeenLastCalledWith(13);
   });
 
   it("AC-R3-03: suppresses the reverse scroll caused by synchronization", () => {

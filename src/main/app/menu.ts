@@ -6,6 +6,7 @@ import {
   type MenuContribution,
   type MenuContributionItem,
   type MenuItemId,
+  type ViewMenuItemId,
 } from "../../shared/ipc/menu";
 import { getMainWindow } from "./window";
 
@@ -41,7 +42,7 @@ function sendMenuCommand(command: MenuCommandMessage): void {
   }
 }
 
-function sendViewCommand(command: string): void {
+function sendViewCommand(command: ViewMenuItemId): void {
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(MENU_CHANNELS.command, command);
@@ -66,7 +67,7 @@ function viewMenu(platform: string): MenuItemConstructorOptions {
       { id: "view-preview", label: "Preview Only", accelerator: "CmdOrCtrl+3",
         registerAccelerator: false, click: () => sendViewCommand("view-preview") },
       { type: "separator" },
-      { id: "view-sync-scroll", label: "Sync Scroll", type: "checkbox", checked: true,
+      { id: "view-sync-scroll", label: "Sync Scroll",
         accelerator: "CmdOrCtrl+Shift+L", registerAccelerator: false,
         click: () => sendViewCommand("view-sync-scroll") },
       { type: "separator" },

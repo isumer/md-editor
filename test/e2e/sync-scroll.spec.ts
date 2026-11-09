@@ -1,10 +1,44 @@
+import { execFile } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { expect, test } from "@playwright/test";
 
 import { closeEditor, launchEditor, repositoryRoot } from "./helpers";
 
 const syncFixture = path.join(repositoryRoot, "test/fixtures/views/sync-scroll.md");
+const run = promisify(execFile);
+const TWENTY_MEGABYTES = "20971520";
+let temporaryDirectory = "";
+let large20 = "";
+
+function sourceLineForText(
+  source: readonly string[],
+  visible: readonly string[],
+): number {
+  const index = source.findIndex((line, candidate) =>
+    line === visible[0] && visible.every((text, offset) => source[candidate + offset] === text));
+  if (index < 0) throw new Error("Visible editor lines are missing from the source");
+  return index + 1;
+}
+
+test.beforeAll(async () => {
+  temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-sync-"));
+  large20 = path.join(temporaryDirectory, "large-20mb.md");
+  await run("node", [
+    path.join(repositoryRoot, "test/fixtures/big/generate.mjs"),
+    TWENTY_MEGABYTES,
+    large20,
+  ], { cwd: repositoryRoot });
+});
+
+test.afterAll(async () => {
+  if (temporaryDirectory) {
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
 
 async function scrollEditorToLine(page: import("@playwright/test").Page, line: number) {
   await page.getByTestId("editor").locator(".cm-scroller").evaluate((element, value) => {
@@ -91,24 +125,63 @@ test("AC-R3-04: the View menu disables sync scroll", async () => {
   }
 });
 
-test("AC-R3-05: sync scroll coalesces a fling into animation frames", async () => {
-  const { application, page } = await launchEditor(syncFixture);
+test("AC-R3-05: sync scroll keeps both panes within the frame budget", {
+  tag: "@AC-PERF-20MB",
+  annotation: { type: "AC-R3-05" },
+}, async () => {
+  test.setTimeout(420_000);
+  const { application, page } = await launchEditor(large20);
   try {
-    await expect(page.getByTestId("preview").getByRole("heading", { name: "Heading 40" }))
-      .toBeAttached();
-    const durations = await page.getByTestId("editor").locator(".cm-scroller")
-      .evaluate(async (element) => {
-        const samples: number[] = [];
+    const preview = page.getByTestId("preview");
+    await expect.poll(() => preview.evaluate((element) => element.dataset["renderComplete"]), {
+      timeout: 300_000,
+    }).toBe("true");
+    await page.evaluate(() => localStorage.setItem("syncScroll.enabled", "true"));
+    await page.reload();
+    await expect.poll(() => preview.evaluate((element) => element.dataset["renderComplete"]), {
+      timeout: 300_000,
+    }).toBe("true");
+    const measurements = await page.getByTestId("editor").locator(".cm-scroller")
+      .evaluate(async (editor) => {
+        const preview = document.querySelector<HTMLElement>("#preview");
+        if (preview === null) throw new Error("Preview is missing");
+        const editorFrames: number[] = [];
+        const previewFrames: number[] = [];
+        const maximum = editor.scrollHeight - editor.clientHeight;
         for (let index = 0; index < 30; index += 1) {
-          const start = performance.now();
-          element.scrollTop = index * 100;
-          element.dispatchEvent(new Event("scroll"));
+          const editorStart = performance.now();
+          editor.scrollTop = maximum * ((index + 1) / 30);
+          editor.dispatchEvent(new Event("scroll"));
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-          samples.push(performance.now() - start);
+          editorFrames.push(performance.now() - editorStart);
+          const previewStart = performance.now();
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          previewFrames.push(performance.now() - previewStart);
         }
-        return samples.sort((left, right) => left - right);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const editorTop = editor.getBoundingClientRect().top;
+        const editorLines = [...editor.querySelectorAll<HTMLElement>(".cm-line")];
+        const firstEditorLine = editorLines.findIndex((line) =>
+          line.getBoundingClientRect().bottom > editorTop);
+        const editorText = editorLines.slice(firstEditorLine, firstEditorLine + 3)
+          .map((line) => line.textContent ?? "");
+        const previewTop = preview.getBoundingClientRect().top;
+        const previewLine = Number([...preview.querySelectorAll<HTMLElement>(".preview-block")]
+          .find((block) => block.getBoundingClientRect().bottom > previewTop)
+          ?.dataset["line"] ?? -1) + 1;
+        return { editorFrames, previewFrames, editorText, previewLine };
       });
-    expect(durations[Math.ceil(durations.length * 0.95) - 1]).toBeLessThan(32);
+    const editorLine = sourceLineForText(
+      (await fs.readFile(large20, "utf8")).split("\n"),
+      measurements.editorText,
+    );
+    console.log(
+      `AC-R3-05 frames: editor max ${Math.max(...measurements.editorFrames).toFixed(2)} ms, ` +
+      `preview max ${Math.max(...measurements.previewFrames).toFixed(2)} ms`,
+    );
+    expect(Math.max(...measurements.editorFrames)).toBeLessThanOrEqual(32);
+    expect(Math.max(...measurements.previewFrames)).toBeLessThanOrEqual(32);
+    expect(Math.abs(measurements.previewLine - editorLine)).toBeLessThanOrEqual(2);
   } finally {
     await closeEditor(application, page);
   }

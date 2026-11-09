@@ -12,6 +12,31 @@ import {
   repositoryRoot,
 } from "./helpers";
 
+interface PreviewPosition {
+  readonly blockId: string;
+  readonly line: string;
+}
+
+async function settledPreviewPosition(
+  preview: import("@playwright/test").Locator,
+): Promise<PreviewPosition> {
+  return preview.evaluate(async (element) => {
+    const read = (): PreviewPosition => {
+      const top = element.getBoundingClientRect().top;
+      const block = [...element.querySelectorAll<HTMLElement>(".preview-block")]
+        .find((candidate) => candidate.getBoundingClientRect().bottom > top);
+      return { blockId: block?.dataset["blockId"] ?? "", line: block?.dataset["line"] ?? "" };
+    };
+    const before = read();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const after = read();
+    if (before.blockId !== after.blockId || before.line !== after.line) {
+      throw new Error("Preview layout did not settle");
+    }
+    return after;
+  });
+}
+
 test("AC-R2-01: the View menu switches all pane modes", async () => {
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -116,19 +141,20 @@ test("AC-R2-05: continuous resize preserves the preview block and frame budget",
   const { application, page } = await launchEditor(largeFixture);
   try {
     const preview = page.getByTestId("preview");
-    await expect(preview.locator(".preview-block").first()).toBeAttached({ timeout: 10_000 });
+    await expect.poll(() => preview.evaluate((element) => element.dataset["renderComplete"]), {
+      timeout: 30_000,
+    }).toBe("true");
     await preview.evaluate((element) => { element.scrollTop = element.scrollHeight / 2; });
-    const topBlock = await preview.evaluate((element) => {
-      const top = element.getBoundingClientRect().top;
-      return [...element.querySelectorAll<HTMLElement>(".preview-block")]
-        .find((block) => block.getBoundingClientRect().bottom > top)?.dataset["blockId"];
-    });
+    const topBlock = await settledPreviewPosition(preview);
     const [measurements] = await Promise.all([
       page.evaluate(async () => {
         const frames: number[] = [];
-        let longTasks = 0;
-        const observer = new PerformanceObserver((list) => { longTasks += list.getEntries().length; });
-        observer.observe({ type: "longtask", buffered: true });
+        const longTaskStarts: number[] = [];
+        const observer = new PerformanceObserver((list) => {
+          longTaskStarts.push(...list.getEntries().map((entry) => entry.startTime));
+        });
+        observer.observe({ type: "longtask" });
+        const windowStart = performance.now();
         let previous = performance.now();
         for (let index = 0; index < 120; index += 1) {
           await new Promise<void>((resolve) => requestAnimationFrame((now) => {
@@ -137,7 +163,11 @@ test("AC-R2-05: continuous resize preserves the preview block and frame budget",
             resolve();
           }));
         }
+        const windowEnd = performance.now();
+        longTaskStarts.push(...observer.takeRecords().map((entry) => entry.startTime));
         observer.disconnect();
+        const longTasks = longTaskStarts.filter((start) =>
+          start >= windowStart && start <= windowEnd).length;
         return { frames: frames.sort((left, right) => left - right), longTasks };
       }),
       application.evaluate(async ({ BrowserWindow }) => {
@@ -159,12 +189,8 @@ test("AC-R2-05: continuous resize preserves the preview block and frame budget",
     console.log(`resize frame distribution: p95 ${p95.toFixed(2)} ms, max ${String(Math.max(...measurements.frames))} ms`);
     expect(p95).toBeLessThanOrEqual(32);
     expect(measurements.longTasks).toBe(0);
-    const topBlockAfter = await preview.evaluate((element) => {
-      const top = element.getBoundingClientRect().top;
-      return [...element.querySelectorAll<HTMLElement>(".preview-block")]
-        .find((block) => block.getBoundingClientRect().bottom > top)?.dataset["blockId"];
-    });
-    expect(topBlockAfter).toBe(topBlock);
+    const topBlockAfter = await settledPreviewPosition(preview);
+    expect(topBlockAfter).toEqual(topBlock);
   } finally {
     await closeEditor(application, page);
   }
