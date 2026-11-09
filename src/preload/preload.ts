@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- The sandboxed preload can import only Electron and types. */
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type {
@@ -15,6 +16,7 @@ import type {
   DetachDocumentMessage,
   DraftDocumentInput,
   IO_PORT_CHANNEL as SharedIoPortChannel,
+  IO_PORT_LOST_CHANNEL as SharedIoPortLostChannel,
   ListDraftsResponse,
   ReadDocumentResponse,
   SaveDocumentInput,
@@ -43,6 +45,8 @@ const FILE_CHANNELS = {
   openRequest: "file:open-request",
 } as const satisfies typeof SharedFileChannels;
 const IO_PORT_CHANNEL = "io:port" as const satisfies typeof SharedIoPortChannel;
+const IO_PORT_LOST_CHANNEL = "io:port-lost" as const satisfies
+  typeof SharedIoPortLostChannel;
 const LINK_CHANNELS = {
   openExternal: "link:open-external",
 } as const satisfies typeof SharedLinkChannels;
@@ -196,15 +200,13 @@ export class IoPortClient {
   private readonly pending = new Map<string, PendingRequest>();
   private queued: unknown[] = [];
   private port: RendererPort | null = null;
-  private receivedPort = false;
   private nextId = 1;
 
   attach(port: RendererPort): void {
-    if (this.receivedPort) {
+    if (this.port) {
       this.failPending();
-      this.port?.close();
+      this.port.close();
     }
-    this.receivedPort = true;
     this.port = port;
     port.onmessage = (event) => this.receive(event.data);
     port.start();
@@ -212,6 +214,15 @@ export class IoPortClient {
       port.postMessage(message);
     }
     this.queued = [];
+  }
+
+  portLost(): void {
+    if (!this.port) {
+      return;
+    }
+    this.failPending();
+    this.port.close();
+    this.port = null;
   }
 
   request<T>(operation: PortOperation): Promise<Result<T>> {
@@ -325,6 +336,7 @@ ipcRenderer.on(IO_PORT_CHANNEL, (event: Electron.IpcRendererEvent) => {
     ioClient.attach(port);
   }
 });
+ipcRenderer.on(IO_PORT_LOST_CHANNEL, () => ioClient.portLost());
 
 const api: Api = {
   openFile: () => ipcRenderer.invoke(FILE_CHANNELS.openFile, {}) as Promise<

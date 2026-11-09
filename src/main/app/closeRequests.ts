@@ -14,6 +14,12 @@ interface PendingClose {
   windowId: number;
 }
 
+const KEEPALIVE_GRANT = "session-close:keepalive";
+
+function isKeepalive(result: SessionCloseResult): boolean {
+  return !result.allow && result.documents[0]?.grant === KEEPALIVE_GRANT;
+}
+
 // Main asks the renderer before it closes a window with unsaved documents.
 // A renderer that never answers must not wedge shutdown, so the request times
 // out and the window closes without a session snapshot.
@@ -43,11 +49,7 @@ export class CloseRequestBroker {
     const id = this.nextId;
     this.nextId += 1;
     return new Promise((resolve) => {
-      const timer = this.setTimer(() => {
-        if (this.pending.delete(id)) {
-          resolve(true);
-        }
-      }, this.timeoutMilliseconds);
+      const timer = this.startTimer(id);
       this.pending.set(id, { resolve, timer, windowId });
       this.send(windowId, id);
     });
@@ -56,6 +58,11 @@ export class CloseRequestBroker {
   async settle(result: SessionCloseResult, windowId: number): Promise<void> {
     const pending = this.pending.get(result.id);
     if (!pending || pending.windowId !== windowId) {
+      return;
+    }
+    if (isKeepalive(result)) {
+      this.clearTimer(pending.timer);
+      pending.timer = this.startTimer(result.id);
       return;
     }
     this.pending.delete(result.id);
@@ -69,5 +76,17 @@ export class CloseRequestBroker {
     } finally {
       pending.resolve(result.allow);
     }
+  }
+
+  private startTimer(id: number): TimerHandle {
+    let timer: TimerHandle;
+    timer = this.setTimer(() => {
+      const pending = this.pending.get(id);
+      if (pending && pending.timer === timer) {
+        this.pending.delete(id);
+        pending.resolve(true);
+      }
+    }, this.timeoutMilliseconds);
+    return timer;
   }
 }

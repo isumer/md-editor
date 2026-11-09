@@ -53,6 +53,11 @@ interface SaveSnapshot {
   version: ReplicatedVersion;
 }
 
+const CLOSE_KEEPALIVE = {
+  allow: false,
+  documents: [{ grant: "session-close:keepalive", name: "", savedText: "", text: "" }],
+} as const;
+
 export function sessionSnapshot(documents: readonly DocumentRecord[]): {
   grant: string;
   name: string;
@@ -132,8 +137,10 @@ export class DocumentLifecycle {
       if (resolution === "cancel") {
         return;
       }
-      if (resolution === "save" && !(await this.save(document, false))) {
-        return;
+      if (resolution === "save") {
+        if (!(await this.save(document, false)) || document.dirty) {
+          return;
+        }
       }
     }
     this.options.remove(document);
@@ -177,14 +184,24 @@ export class DocumentLifecycle {
 
   async handleSessionClose(request: SessionCloseRequest): Promise<void> {
     this.options.flushDirty();
-    const dirty = this.options.registry.all().filter((document) => document.dirty);
-    const allow = await this.confirmClose(dirty);
-    const result = await respondSessionClose({
-      allow,
-      documents: allow ? sessionSnapshot(this.options.registry.all()) : [],
-      id: request.id,
-    });
-    this.value(result);
+    const keepalive = () => respondSessionClose({ ...CLOSE_KEEPALIVE, id: request.id });
+    const sendKeepalive = (): void => {
+      void keepalive().then((result) => this.value(result))
+        .catch((error: unknown) => this.unexpected(error));
+    };
+    sendKeepalive();
+    const timer = window.setInterval(sendKeepalive, 5_000);
+    try {
+      const dirty = this.options.registry.all().filter((document) => document.dirty);
+      const allow = await this.confirmClose(dirty);
+      this.value(await respondSessionClose({
+        allow,
+        documents: allow ? sessionSnapshot(this.options.registry.all()) : [],
+        id: request.id,
+      }));
+    } finally {
+      window.clearInterval(timer);
+    }
   }
 
   async recover(): Promise<boolean> {

@@ -7,7 +7,7 @@ import {
   type MessagePortMain,
 } from "electron";
 
-import { IO_PORT_CHANNEL } from "../shared/ipc/io";
+import { IO_PORT_CHANNEL, IO_PORT_LOST_CHANNEL } from "../shared/ipc/io";
 import { errorMessage } from "../shared/ipc/result";
 
 import {
@@ -128,13 +128,22 @@ function createApplicationWindow(): void {
 }
 
 async function attachIoPort(window: BrowserWindow): Promise<void> {
-  await ioWorker.attachWindow(window.id, (port: MessagePortMain) => {
-    if (window.isDestroyed() || window.webContents.mainFrame.url !== APP_ENTRY_URL) {
-      port.close();
-      return;
-    }
-    window.webContents.postMessage(IO_PORT_CHANNEL, null, [port]);
-  });
+  await ioWorker.attachWindow(
+    window.id,
+    (port: MessagePortMain) => {
+      if (window.isDestroyed() || window.webContents.mainFrame.url !== APP_ENTRY_URL) {
+        port.close();
+        return;
+      }
+      window.webContents.postMessage(IO_PORT_CHANNEL, null, [port]);
+    },
+    () => {
+      if (window.isDestroyed() || window.webContents.mainFrame.url !== APP_ENTRY_URL) {
+        return;
+      }
+      window.webContents.send(IO_PORT_LOST_CHANNEL);
+    },
+  );
 }
 
 registerFileIpcHandlers(fileService);

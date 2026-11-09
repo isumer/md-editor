@@ -19,7 +19,7 @@ When the merge view opens
 Then left and right are read-only, the centre starts from the base (or from left when there is no base) and is editable
 
 ### AC-R15-04 — Chunk arrows accept left, right or both
-status: planned
+status: implemented
 Given a conflict chunk
 When the user accepts left, then undoes and accepts both (left then right)
 Then the centre holds the left text, then the left text followed by the right text, and the counter updates
@@ -31,7 +31,7 @@ When the user applies all non-conflicting changes
 Then the five are in the centre, "2 conflicts left" is shown, and one Undo removes all five
 
 ### AC-R15-06 — A file with conflict markers opens as a merge
-status: planned
+status: implemented
 Given a file containing `<<<<<<<`, `=======` and `>>>>>>>` blocks
 When it is opened as a merge
 Then the sides are split from the markers and each block is a conflict
