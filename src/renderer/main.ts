@@ -22,6 +22,7 @@ import {
   createEditorState,
   type EditorCallbacks,
 } from "./editor/editor";
+import { MergeView } from "./features/merge/mergeView";
 import {
   wirePreviewLinks,
 } from "./features/preview/preview";
@@ -52,6 +53,7 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 }
 
 const editorHost = requiredElement<HTMLElement>("#editor");
+const workspace = requiredElement<HTMLElement>("#workspace");
 const preview = requiredElement<HTMLElement>("#preview");
 const previewError = requiredElement<HTMLElement>("#preview-error");
 const status = requiredElement<HTMLElement>("#status");
@@ -145,6 +147,16 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
+const mergeView = new MergeView({
+  editorHost,
+  preview,
+  workspace,
+  editor: {
+    replaceText: (text) => {
+      editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
+    },
+  },
+});
 
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
@@ -203,6 +215,7 @@ function activateDocument(document: DocumentRecord): void {
   updateTitle();
   tabStrip.render();
   showPreviewError();
+  mergeView.activate(document.id, document.state.doc.toString());
   renderController.activate(document);
   editor.focus();
 }
@@ -279,6 +292,7 @@ function removeDocument(document: DocumentRecord): void {
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
+  mergeView.forget(document.id);
   dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderController.detach(document.id);
