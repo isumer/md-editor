@@ -3,7 +3,7 @@
 ## File compare
 
 ### AC-R14-01 — Two files open in a side-by-side compare
-status: implemented
+status: planned
 Given two text files that differ in added, deleted and modified lines
 When the user compares them (tab menu Compare with…, two sidebar selections, or `--diff a b`)
 Then both are shown side by side, aligned, with each changed line marked added, deleted or modified
