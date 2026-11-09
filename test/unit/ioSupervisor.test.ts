@@ -424,6 +424,8 @@ describe("io-worker supervisor lifecycle", () => {
     harness.children[0]?.emit("exit", 1);
     harness.children[1]?.emit("exit", 1);
 
+    // Let the rejected replacement generation settle before asserting the stale port count.
+    await Promise.resolve();
     expect(received).toHaveLength(1);
     harness.children[2]?.emit("spawn");
     await vi.waitFor(() => expect(received).toHaveLength(2));

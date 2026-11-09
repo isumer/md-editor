@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- The sandboxed preload can import only Electron and types. */
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import type {
