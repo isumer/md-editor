@@ -15,6 +15,7 @@ class FakeWorker {
   onmessage: ((event: MessageEvent<CompareWorkerResponse>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   readonly requests: CompareWorkerRequest[] = [];
+  readonly terminate = vi.fn();
 
   postMessage(request: CompareWorkerRequest): void {
     this.requests.push(request);
@@ -164,6 +165,7 @@ describe("compare controller", () => {
 
     controller.open();
     first.fail();
+    expect(first.terminate).toHaveBeenCalledOnce();
     controller.open();
     const request = second.requests[0];
     expect(request).toBeDefined();
@@ -175,6 +177,63 @@ describe("compare controller", () => {
     });
 
     expect(workspace.querySelector(".compare-view")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("opening compare twice preserves the original hidden states", () => {
+    const workspace = document.createElement("main");
+    const editor = document.createElement("section");
+    const preview = document.createElement("section");
+    preview.setAttribute("hidden", "until-found");
+    workspace.append(editor, preview);
+    const controller = new CompareController({
+      documents: () => [record("left.txt", "left"), record("right.txt", "right")],
+      editor,
+      preview,
+      showStatus: vi.fn(),
+      workerFactory: () => new FakeWorker(),
+      workspace,
+    });
+
+    controller.open();
+    controller.open();
+    controller.close();
+
+    expect(editor.hasAttribute("hidden")).toBe(false);
+    expect(preview.getAttribute("hidden")).toBe("until-found");
+  });
+
+  it("F7 keeps rows outside the moved selection", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const workspace = document.createElement("main");
+    const worker = new FakeWorker();
+    new CompareController({
+      documents: () => [
+        record("left.txt", "one\nsame\ntwo\nsame again\nthree"),
+        record("right.txt", "ONE\nsame\nTWO\nsame again\nTHREE"),
+      ],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      showStatus: vi.fn(),
+      workerFactory: () => worker,
+      workspace,
+    }).open();
+    worker.respond({
+      id: 1,
+      ok: true,
+      state: createCompareState(
+        "one\nsame\ntwo\nsame again\nthree",
+        "ONE\nsame\nTWO\nsame again\nTHREE",
+        "words",
+      ),
+    });
+    const stableRows = [...workspace.querySelectorAll<HTMLElement>(".compare-row")]
+      .filter((row) => row.dataset.changeIndex !== "0" && row.dataset.changeIndex !== "1");
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
+
+    const currentRows = [...workspace.querySelectorAll<HTMLElement>(".compare-row")];
+    expect(stableRows.length).toBeGreaterThan(0);
+    expect(stableRows.every((row) => currentRows.includes(row))).toBe(true);
   });
 
   it("restores the surface and shows a rejected response message", () => {
@@ -201,6 +260,7 @@ describe("compare controller", () => {
     expect(preview.hasAttribute("hidden")).toBe(false);
     expect(workspace.classList.contains("compare-open")).toBe(false);
     expect(showStatus).toHaveBeenCalledWith("Compare failed.");
+    expect(worker.terminate).toHaveBeenCalledOnce();
   });
 
   it("creates a browser worker from the configured URL", () => {

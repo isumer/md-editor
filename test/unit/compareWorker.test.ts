@@ -78,6 +78,12 @@ describe("compare worker", () => {
       right: "right",
       highlight: "words",
     });
+    handler.handle({
+      id: 2,
+      left: "left",
+      right: half + half,
+      highlight: "words",
+    });
 
     expect(responses).toEqual([]);
   });

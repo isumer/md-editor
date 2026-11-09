@@ -13,6 +13,7 @@ interface WorkerPort {
   onmessage: ((event: MessageEvent<CompareWorkerResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
   postMessage(request: CompareWorkerRequest): void;
+  terminate(): void;
 }
 
 export interface CompareControllerOptions {
@@ -59,7 +60,7 @@ export class CompareController {
     }
     this.pair = [documents[documents.length - 2] as DocumentRecord,
       documents[documents.length - 1] as DocumentRecord];
-    this.hiddenState = {
+    this.hiddenState ??= {
       editor: this.options.editor.getAttribute("hidden"),
       preview: this.options.preview.getAttribute("hidden"),
     };
@@ -134,6 +135,7 @@ export class CompareController {
     this.options.showStatus(message);
     this.worker.onmessage = null;
     this.worker.onerror = null;
+    this.worker.terminate();
     this.worker = createWorker(this.options);
     this.bindWorker();
   }

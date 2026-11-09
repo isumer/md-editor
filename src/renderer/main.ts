@@ -78,10 +78,23 @@ let editor: EditorView;
 let mergeView: MergeView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
+let compareController: CompareController | null = null;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
   status.textContent = message;
+}
+
+function openCompare(): void {
+  compareController ??= new CompareController({
+    documents: () => registry.all(),
+    editor: editorHost,
+    preview,
+    showStatus,
+    workspace,
+    workerUrl: new URL(compareWorkerUrl, window.location.href),
+  });
+  compareController.open();
 }
 
 // A successful render clears only the preview's own error, never a file failure.
@@ -165,15 +178,6 @@ mergeView = new MergeView({
   preview,
   workspace,
   editor,
-});
-
-const compareController = new CompareController({
-  documents: () => registry.all(),
-  editor: editorHost,
-  preview,
-  showStatus,
-  workspace,
-  workerUrl: new URL(compareWorkerUrl, window.location.href),
 });
 
 const drafts = new DraftScheduler({
@@ -373,7 +377,7 @@ lifecycle = new DocumentLifecycle({
   syncDirty,
 });
 documentCommands = new DocumentCommands({
-  compare: () => compareController.open(),
+  compare: openCompare,
   editor,
   onError: showUnexpectedError,
   onResult: (result) => {
