@@ -740,7 +740,8 @@ describe("main process", () => {
     await vi.waitFor(() => expect(worker?.pid).toBeDefined());
 
     if (window) {
-      window.mainFrame.url = "https://example.com/";
+      // A same-prefix URL must be refused too: the check is exact match, not startsWith.
+      window.mainFrame.url = "app://bundle/index.html/extra";
     }
     window?.webHandlers.get("did-finish-load")?.();
     await vi.waitFor(() => expect(worker?.posts).toContainEqual(expect.objectContaining({
@@ -754,6 +755,7 @@ describe("main process", () => {
       code: 9,
       signal: null,
     }));
+    expect(window?.webContents.send).not.toHaveBeenCalledWith("io:port-lost");
     const replacement = electron.UtilityProcessMock.instances[1];
     await vi.waitFor(() => expect(replacement?.pid).toBeDefined());
     if (replacement) {
@@ -772,6 +774,24 @@ describe("main process", () => {
 
     electron.appHandlers.get("will-quit")?.();
     expect(replacement?.kill).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R5-17: tells the window when its io-worker port is lost", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    const worker = electron.UtilityProcessMock.instances[0];
+    await vi.waitFor(() => expect(worker?.pid).toBeDefined());
+    window?.webHandlers.get("did-finish-load")?.();
+    await vi.waitFor(() => expect(worker?.posts).toContainEqual(expect.objectContaining({
+      message: { type: "attachPort", windowId: window?.id },
+    })));
+
+    worker?.emit("exit", 9);
+
+    expect(window?.webContents.send).toHaveBeenCalledWith("io:port-lost");
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"io-worker-exit"'));
   });
 
   it("AC-R4-06: asks the renderer before closing and writes the allowed session", async () => {

@@ -260,6 +260,32 @@ describe("document lifecycle", () => {
     });
   });
 
+  it("AC-R4-06: an open close prompt keeps the request acknowledged", async () => {
+    vi.useFakeTimers();
+    try {
+      const dirty = record({ grant: "one", name: "one.md", text: "changed" });
+      const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
+      const context = fixture([dirty]);
+
+      const closing = new DocumentLifecycle(context.options).handleSessionClose({ id: 6 });
+      expect(api.respondSessionClose).toHaveBeenCalledWith({
+        allow: false,
+        documents: [{
+          grant: "session-close:keepalive", name: "", savedText: "", text: "",
+        }],
+        id: 6,
+      });
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.respondSessionClose).toHaveBeenCalledTimes(3);
+      context.host.querySelector<HTMLButtonElement>('[data-action="cancel"]')?.click();
+      await closing;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("AC-R4-07: recovers untitled and file drafts", async () => {
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture();

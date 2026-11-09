@@ -93,6 +93,39 @@ describe("close request broker", () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
+  it("AC-R4-06: an acknowledged open prompt stays pending after 15 seconds", async () => {
+    const { instance, persist, timers, fireTimeout } = broker();
+    const pending = instance.request(7);
+    const initialTimeout = [...timers.values()][0];
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+
+    await instance.settle({
+      allow: false,
+      documents: [{
+        grant: "session-close:keepalive",
+        name: "",
+        savedText: "",
+        text: "",
+      }],
+      id: 1,
+    }, 7);
+    if (!initialTimeout) {
+      throw new Error("The close timeout was not scheduled");
+    }
+    initialTimeout();
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(persist).not.toHaveBeenCalled();
+    expect(timers.size).toBe(1);
+
+    fireTimeout();
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("AC-R4-06: ignores a result for a request that already settled", async () => {
     const { instance, persist } = broker();
 

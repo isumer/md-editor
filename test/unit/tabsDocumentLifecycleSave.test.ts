@@ -373,4 +373,23 @@ describe("document lifecycle saves", () => {
     expect(context.options.remove).not.toHaveBeenCalled();
     expect(api.saveDocument).toHaveBeenCalledTimes(2);
   });
+
+  it("AC-R5-03: an edit during close save keeps the dirty tab open", async () => {
+    const dirty = record({ grant: "one", name: "one.md", text: "changed" });
+    const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
+    const context = fixture([dirty]);
+    const write = deferred<Awaited<ReturnType<Window["api"]["saveDocument"]>>>();
+    api.saveDocument.mockImplementationOnce(() => write.promise);
+
+    const closing = new DocumentLifecycle(context.options).closeTab(dirty);
+    context.host.querySelector<HTMLButtonElement>('[data-action="save"]')?.click();
+    await vi.waitFor(() => expect(api.saveDocument).toHaveBeenCalledOnce());
+    dirty.state = EditorState.create({ doc: "typed during save" });
+    dirty.dirty = true;
+    write.resolve(ok({ name: "one.md", version: 0 }));
+    await closing;
+
+    expect(dirty.dirty).toBe(true);
+    expect(context.options.remove).not.toHaveBeenCalled();
+  });
 });

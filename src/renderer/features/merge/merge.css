@@ -1,0 +1,89 @@
+#workspace.merge-active {
+  display: block;
+}
+
+.merge-view {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.merge-toolbar {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  padding: 5px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid #d0d7de;
+  background: #f6f8fa;
+  white-space: nowrap;
+}
+
+.merge-conflict-controls {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.merge-choice,
+.merge-undo {
+  padding: 3px 7px;
+  border: 1px solid #afb8c1;
+  border-radius: 4px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.merge-choice:disabled,
+.merge-undo:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.merge-counter {
+  font-weight: 600;
+}
+
+.merge-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid #d0d7de;
+}
+
+.merge-pane:last-child {
+  border-right: 0;
+}
+
+.merge-pane-title {
+  height: 28px;
+  margin: 0;
+  padding: 5px 10px;
+  border-bottom: 1px solid #d0d7de;
+  color: #57606a;
+  background: #f6f8fa;
+  font-size: 13px;
+}
+
+.merge-side-content {
+  margin: 0;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.merge-pane-result {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.merge-pane-result #editor {
+  height: 100%;
+  border-right: 0;
+}
