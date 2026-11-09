@@ -14,9 +14,7 @@ import {
 } from "./core/document";
 import { DocumentRegistry } from "./core/documentRegistry";
 import { FrameCoalescer } from "./core/frameCoalescer";
-import {
-  DocumentReplication,
-} from "./core/replication";
+import { DocumentReplication } from "./core/replication";
 import {
   createEditor,
   createEditorState,
@@ -29,10 +27,10 @@ import {
   markerMergeExtension,
   type MarkerMergeState,
 } from "./features/merge/markerMergeState";
-import {
-  wirePreviewLinks,
-} from "./features/preview/preview";
+import { blockLine, wirePreviewLinks } from "./features/preview/preview";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
+import { SyncScrollController } from "./features/sync-scroll/controller";
+import { installViews } from "./features/views/install";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
@@ -61,6 +59,7 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 const editorHost = requiredElement<HTMLElement>("#editor");
 const workspace = requiredElement<HTMLElement>("#workspace");
 const preview = requiredElement<HTMLElement>("#preview");
+const divider = requiredElement<HTMLElement>("#divider");
 const previewError = requiredElement<HTMLElement>("#preview-error");
 const status = requiredElement<HTMLElement>("#status");
 const tabsHost = requiredElement<HTMLElement>("#tabs");
@@ -164,6 +163,26 @@ mergeView = new MergeView({
   editor,
 });
 
+const syncScroll = new SyncScrollController({
+  blockLine,
+  editorScroll: editor.scrollDOM,
+  preview,
+  sourceLineAtEditorTop: () => editor.state.doc.lineAt(
+    editor.lineBlockAtHeight(Math.max(0, -editor.documentTop)).from,
+  ).number,
+  scrollEditorToLine: (line) => {
+    const safeLine = Math.min(editor.state.doc.lines, Math.max(1, line));
+    const block = editor.lineBlockAt(editor.state.doc.line(safeLine).from);
+    editor.scrollDOM.scrollTop = block.top + editor.documentPadding.top;
+  },
+});
+installViews({
+  divider,
+  onError: showUnexpectedError,
+  onModeChange: () => requestAnimationFrame(() => syncScroll.refreshAnchors()),
+  toggleSync: () => syncScroll.toggle(),
+  workspace,
+});
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
 });
