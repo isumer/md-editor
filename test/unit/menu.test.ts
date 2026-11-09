@@ -438,6 +438,7 @@ describe("menu:contribute contract", () => {
         item,
         { ...item, id: "file-save" },
         { ...item, id: "file-save-as" },
+        { ...item, id: "file-compare-open" },
         { ...item, id: "file-open" },
       ],
     })).toBe(false);

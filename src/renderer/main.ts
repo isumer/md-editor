@@ -22,6 +22,9 @@ import {
   createEditorState,
   type EditorCallbacks,
 } from "./editor/editor";
+import { CompareController } from "./features/compare/controller";
+import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
+import "./features/compare/compare.css";
 import {
   wirePreviewLinks,
 } from "./features/preview/preview";
@@ -52,6 +55,7 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 }
 
 const editorHost = requiredElement<HTMLElement>("#editor");
+const workspace = requiredElement<HTMLElement>("#workspace");
 const preview = requiredElement<HTMLElement>("#preview");
 const previewError = requiredElement<HTMLElement>("#preview-error");
 const status = requiredElement<HTMLElement>("#status");
@@ -145,6 +149,15 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
+
+const compareController = new CompareController({
+  documents: () => registry.all(),
+  editor: editorHost,
+  preview,
+  showStatus,
+  workspace,
+  workerUrl: new URL(compareWorkerUrl, window.location.href),
+});
 
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
@@ -324,6 +337,7 @@ lifecycle = new DocumentLifecycle({
   syncDirty,
 });
 documentCommands = new DocumentCommands({
+  compare: () => compareController.open(),
   editor,
   onError: showUnexpectedError,
   onResult: (result) => {

@@ -1,0 +1,134 @@
+.compare-view {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.compare-view[hidden] {
+  display: none;
+}
+
+#workspace.compare-open {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.compare-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 12px;
+  border-bottom: 1px solid #d0d7de;
+  background: #f6f8fa;
+}
+
+.compare-highlight-label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-right: auto;
+  font-size: 12px;
+}
+
+.compare-button,
+.compare-highlight {
+  padding: 4px 8px;
+  border: 1px solid #afb8c1;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.compare-headings,
+.compare-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.compare-heading {
+  padding: 6px 12px;
+  border-bottom: 1px solid #d0d7de;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-heading:first-child,
+.compare-cell:first-child {
+  border-right: 1px solid #d0d7de;
+}
+
+.compare-rows {
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
+
+.compare-cell {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 48px minmax(max-content, 1fr);
+  min-height: 22px;
+  line-height: 22px;
+  white-space: pre;
+}
+
+.compare-line-number {
+  padding: 0 8px;
+  color: #656d76;
+  background: #f6f8fa;
+  text-align: right;
+  user-select: none;
+}
+
+.compare-line-content {
+  padding: 0 8px;
+}
+
+.compare-added,
+.compare-deleted,
+.compare-modified {
+  background: #fff8c5;
+}
+
+.compare-added {
+  background: #dafbe1;
+}
+
+.compare-deleted {
+  background: #ffebe9;
+}
+
+.compare-changed {
+  border-radius: 2px;
+  background: #ffb3ad;
+}
+
+.compare-added .compare-changed {
+  background: #aceebb;
+}
+
+.compare-selected {
+  outline: 2px solid #0969da;
+  outline-offset: -2px;
+}
+
+.compare-overview {
+  position: absolute;
+  top: 84px;
+  right: 2px;
+  bottom: 4px;
+  width: 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  pointer-events: none;
+}
+
+.compare-overview-marker {
+  height: 4px;
+  background: #bf8700;
+}

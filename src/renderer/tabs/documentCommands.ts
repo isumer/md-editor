@@ -27,6 +27,11 @@ export function menuContribution(): MenuContribution {
         title: formatMessage("menu.saveAs", {}),
         accelerator: "CmdOrCtrl+Shift+S",
       },
+      {
+        id: "file-compare-open",
+        title: formatMessage("menu.compareOpen", {}),
+        accelerator: "CmdOrCtrl+Alt+C",
+      },
     ],
   };
 }
@@ -35,6 +40,7 @@ export interface DocumentCommandsOptions {
   editor: EditorView;
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
+  compare(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
 }
@@ -47,6 +53,7 @@ export class DocumentCommands {
     "file-open": "file.open",
     "file-save": "file.save",
     "file-save-as": "file.saveAs",
+    "file-compare-open": "file.compareOpen",
   };
 
   constructor(private readonly options: DocumentCommandsOptions) {
@@ -85,6 +92,11 @@ export class DocumentCommands {
       id: "file.saveAs",
       titleKey: "menu.saveAs",
       run: () => this.options.save(true),
+    });
+    this.commands.register({
+      id: "file.compareOpen",
+      titleKey: "menu.compareOpen",
+      run: this.options.compare,
     });
     this.commands.register({
       id: "undo",
