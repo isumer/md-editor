@@ -20,6 +20,22 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
+export interface LaunchEditorOptions {
+  // Runs after the first window exists and before the argv document is applied.
+  // userDataDir is the profile launchEditor created and must remove on failure.
+  onPage?: (editor: {
+    application: ElectronApplication;
+    page: Page;
+    userDataDir: string;
+  }) => void;
+  // Test-only override; the real bound is ARGV_TITLE_TIMEOUT_MS.
+  titleTimeoutMs?: number;
+}
+
+// Bound by the 15_000 ms test timeout (the 2_000 ms expect timeout is separate):
+// 10_000 ms leaves the cold-Windows margin that the old 2_000 ms setup wait lost.
+const ARGV_TITLE_TIMEOUT_MS = 10_000;
+
 export interface LaunchedEditor {
   application: ElectronApplication;
   page: Page;
@@ -30,16 +46,44 @@ export async function createUserDataDirectory(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-userdata-"));
 }
 
-export async function launchEditor(
-  filePath?: string,
-  userDataDir?: string,
-): Promise<LaunchedEditor> {
+function launchEnvironment(): Record<string, string> {
   const environment: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (name !== "ELECTRON_RUN_AS_NODE" && value !== undefined) {
       environment[name] = value;
     }
   }
+  return environment;
+}
+
+async function waitForArgvDocument(
+  page: Page,
+  filePath: string,
+  timeout: number,
+): Promise<void> {
+  const waitStarted = Date.now();
+  await expect.poll(
+    () => page.title(),
+    {
+      message: `argv document did not open: ${path.basename(filePath)}`,
+      timeout,
+    },
+  ).toContain(path.basename(filePath));
+  console.log(
+    `argv title wait: ${String(Date.now() - waitStarted)} ms (${path.basename(filePath)})`,
+  );
+}
+
+export async function launchEditor(
+  filePath?: string,
+  optionsOrUserDataDir: LaunchEditorOptions | string = {},
+): Promise<LaunchedEditor> {
+  const options = typeof optionsOrUserDataDir === "string"
+    ? {}
+    : optionsOrUserDataDir;
+  const userDataDir = typeof optionsOrUserDataDir === "string"
+    ? optionsOrUserDataDir
+    : undefined;
   // A unique profile per launch keeps session.json and Chromium state out of
   // other tests; a second launch for session restore passes the same path.
   const profileDirectory = userDataDir ?? await createUserDataDirectory();
@@ -52,13 +96,33 @@ export async function launchEditor(
         ...(filePath ? [filePath] : []),
       ],
       cwd: repositoryRoot,
-      env: environment,
+      env: launchEnvironment(),
     });
   } catch (error) {
     await removeProfileDirectory(profileDirectory);
     throw error;
   }
-  return { application, page: await application.firstWindow(), userDataDir: profileDirectory };
+  try {
+    const page = await application.firstWindow();
+    // Runs before the argv document is applied, so startup traffic is observable.
+    options.onPage?.({ application, page, userDataDir: profileDirectory });
+    if (filePath) {
+      await waitForArgvDocument(
+        page,
+        filePath,
+        options.titleTimeoutMs ?? ARGV_TITLE_TIMEOUT_MS,
+      );
+    }
+    return { application, page, userDataDir: profileDirectory };
+  } catch (error) {
+    try {
+      await application.close();
+    } catch {
+      // Best effort: the original failure is the one the caller must see.
+    }
+    await removeProfileDirectory(profileDirectory);
+    throw error;
+  }
 }
 
 const PROFILE_PREFIX = "mdeditor-userdata-";

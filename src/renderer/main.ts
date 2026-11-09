@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Application composition stays in one entry module. */
 import { Text, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
@@ -36,6 +37,7 @@ import {
   wirePreviewLinks,
 } from "./features/preview/preview";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
+import { WorkspaceSidebar } from "./features/workspace/workspaceSidebar";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
@@ -69,6 +71,13 @@ const status = requiredElement<HTMLElement>("#status");
 const tabsHost = requiredElement<HTMLElement>("#tabs");
 const closePrompt = requiredElement<HTMLElement>("#close-prompt");
 const closePromptMessage = requiredElement<HTMLElement>("#close-prompt-message");
+const workspaceElements = {
+  empty: requiredElement<HTMLElement>("#workspace-empty"),
+  filter: requiredElement<HTMLInputElement>("#workspace-filter"),
+  open: requiredElement<HTMLButtonElement>("#workspace-open"),
+  title: requiredElement<HTMLElement>("#workspace-title"),
+  tree: requiredElement<HTMLElement>("#workspace-tree"),
+};
 const documentState = createDocumentState();
 const registry = new DocumentRegistry();
 let activeDocument: DocumentRecord | null = null;
@@ -375,6 +384,11 @@ lifecycle = new DocumentLifecycle({
   removePristineUntitled,
   showStatus,
   syncDirty,
+});
+new WorkspaceSidebar({
+  elements: workspaceElements,
+  openDocument: (reference) => lifecycle.openReference(reference),
+  showStatus,
 });
 documentCommands = new DocumentCommands({
   compare: openCompare,

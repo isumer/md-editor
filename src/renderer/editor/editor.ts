@@ -94,6 +94,35 @@ const editorSetup = [
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
+// Lezer cannot yield while parsing a line, so cap inline work for pathological lines.
+const MARKDOWN_INLINE_MAX_LENGTH = 64 * 1024;
+const markdownSupport = markdown();
+const boundedMarkdownSupport = markdown({
+  extensions: {
+    defineNodes: [{ name: "LongLine", block: true }],
+    parseBlock: [
+      {
+        name: "LongLine",
+        before: "LinkReference",
+        parse(context, line) {
+          if (line.text.length <= MARKDOWN_INLINE_MAX_LENGTH) return false;
+          const from = context.lineStart;
+          const to = from + line.text.length;
+          context.nextLine();
+          context.addElement(context.elt("LongLine", from, to));
+          return true;
+        },
+      },
+    ],
+  },
+});
+
+function markdownExtension(documentLength: number) {
+  if (documentLength > MARKDOWN_LANGUAGE_MAX_LENGTH) return [];
+  return [documentLength > MARKDOWN_INLINE_MAX_LENGTH
+    ? boundedMarkdownSupport
+    : markdownSupport];
+}
 
 export function dispatchUndo(view: EditorView): void {
   undo(view);
@@ -131,7 +160,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...markdownExtension(document.length),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);

@@ -35,6 +35,13 @@ import type {
   SessionCloseResult,
   SessionLoadResponse,
 } from "../shared/ipc/session";
+import type {
+  ChooseWorkspaceRootResponse,
+  ListWorkspaceChildrenResponse,
+  OpenWorkspaceFileResponse,
+  WORKSPACE_CHANNELS as SharedWorkspaceChannels,
+  WorkspacePathRequest,
+} from "../shared/ipc/workspace";
 
 const FILE_CHANNELS = {
   openFile: "file:open",
@@ -59,6 +66,11 @@ const SESSION_CHANNELS = {
   requestClose: "session:request-close",
   closeResult: "session:close-result",
 } as const satisfies typeof SharedSessionChannels;
+const WORKSPACE_CHANNELS = {
+  chooseRoot: "workspace:choose-root",
+  listChildren: "workspace:list-children",
+  openFile: "workspace:open-file",
+} as const satisfies typeof SharedWorkspaceChannels;
 
 interface RendererPort {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -289,6 +301,13 @@ interface Api {
   loadSession(): Promise<Result<SessionLoadResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
+  chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;
+  listWorkspaceChildren(request: WorkspacePathRequest): Promise<
+    Result<ListWorkspaceChildrenResponse>
+  >;
+  openWorkspaceFile(request: WorkspacePathRequest): Promise<
+    Result<OpenWorkspaceFileResponse>
+  >;
 }
 
 const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
@@ -434,6 +453,18 @@ const api: Api = {
     ipcRenderer.on(SESSION_CHANNELS.requestClose, handler);
     return () => ipcRenderer.removeListener(SESSION_CHANNELS.requestClose, handler);
   },
+  chooseWorkspaceRoot: () => ipcRenderer.invoke(
+    WORKSPACE_CHANNELS.chooseRoot,
+    {},
+  ) as Promise<Result<ChooseWorkspaceRootResponse>>,
+  listWorkspaceChildren: (request) => ipcRenderer.invoke(
+    WORKSPACE_CHANNELS.listChildren,
+    request,
+  ) as Promise<Result<ListWorkspaceChildrenResponse>>,
+  openWorkspaceFile: (request) => ipcRenderer.invoke(
+    WORKSPACE_CHANNELS.openFile,
+    request,
+  ) as Promise<Result<OpenWorkspaceFileResponse>>,
 };
 
 const dropTarget = globalThis as unknown as Partial<DropTarget>;

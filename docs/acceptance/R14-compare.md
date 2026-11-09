@@ -45,7 +45,7 @@ When the user presses F7 three times and Shift+F7 once
 Then the selection moves to the next change each time and back once, and the gutter overview marks every change
 
 ### AC-R14-08 — Ignore options change what counts as a difference
-status: planned
+status: implemented
 Given files differing only in trailing whitespace, in case and in line endings
 When the matching ignore option is on
 Then those lines are not reported as changes, and with it off they are
@@ -71,7 +71,7 @@ Then a coarser line diff is shown with a notice, and the window never freezes
 ## Folder compare
 
 ### AC-R14-12 — Every entry of two folders is classified correctly
-status: planned
+status: implemented
 Given two generated folder trees with a precomputed answer
 When they are compared by contents
 Then each entry is marked same, changed, only left, only right, binary differs or error exactly as the answer says
@@ -83,13 +83,13 @@ When they are compared
 Then the first results appear within 300 ms, the window stays responsive, and Cancel stops the work within 200 ms
 
 ### AC-R14-14 — Size-and-timestamp mode skips hashing
-status: planned
+status: implemented
 Given two trees whose files differ in content but match in size and timestamp
 When they are compared in size + timestamp mode
 Then those files are marked same and no file content is read
 
 ### AC-R14-15 — Filters and exclusions
-status: planned
+status: implemented
 Given trees containing `.git`, `node_modules` and differing files
 When the folder compare is shown with "only differences" and a name pattern
 Then excluded folders never appear, and only matching differing entries are listed
