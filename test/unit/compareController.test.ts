@@ -53,7 +53,7 @@ describe("compare controller", () => {
       editor,
       preview,
       showStatus,
-      worker,
+      workerFactory: () => worker,
       workspace,
     });
 
@@ -105,7 +105,7 @@ describe("compare controller", () => {
       editor,
       preview,
       showStatus,
-      worker: new FakeWorker(),
+      workerFactory: () => new FakeWorker(),
       workspace,
     });
 
@@ -246,7 +246,7 @@ describe("compare controller", () => {
       editor: document.createElement("section"),
       preview: document.createElement("section"),
       showStatus: vi.fn(),
-      worker,
+      workerFactory: () => worker,
       workspace,
     });
 

@@ -21,14 +21,12 @@ export interface CompareControllerOptions {
   preview: HTMLElement;
   showStatus(message?: string): void;
   workspace: HTMLElement;
-  worker?: WorkerPort;
   workerFactory?: () => WorkerPort;
   workerUrl?: URL;
 }
 
 function createWorker(options: CompareControllerOptions): WorkerPort {
   if (options.workerFactory) return options.workerFactory();
-  if (options.worker) return options.worker;
   if (!options.workerUrl) throw new Error("A compare worker URL is required.");
   return new Worker(options.workerUrl, { type: "module" });
 }
