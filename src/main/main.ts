@@ -36,8 +36,10 @@ import { registerFileIpcHandlers } from "./ipc/file";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
 import { registerMenuIpcHandler } from "./ipc/menu";
 import { registerSessionIpcHandler } from "./ipc/session";
+import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
+import { WorkspaceService } from "./services/workspace";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
@@ -61,7 +63,9 @@ const ioWorker = createIoWorkerSupervisor(
   grants,
   logIoWorkerExit,
 );
-const fileService = new DocumentGrantService(grants, new FileDialogs(), ioWorker);
+const fileDialogs = new FileDialogs();
+const fileService = new DocumentGrantService(grants, fileDialogs, ioWorker);
+const workspaceService = new WorkspaceService(fileDialogs, fileService);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
 let sessionStore: SessionStore | null = null;
@@ -150,6 +154,7 @@ registerFileIpcHandlers(fileService);
 registerLinkIpcHandler();
 registerOpenRequestIpcHandler(openRequests);
 registerMenuIpcHandler(menuContributions);
+registerWorkspaceIpcHandlers(workspaceService);
 const applicationEvents = registerApplicationEvents(
   createApplicationWindow,
   logProcessEvent,

@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
+- A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
 
 ### Changed
 

@@ -459,6 +459,9 @@ describe("main process", () => {
       "link:open-external",
       "file:open-requests-ready",
       "menu:contribute",
+      "workspace:choose-root",
+      "workspace:list-children",
+      "workspace:open-file",
       "session:load",
       "session:close-result",
     ]);

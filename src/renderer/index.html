@@ -12,6 +12,20 @@
   <body>
     <div id="tabs" data-testid="tabs" role="tablist" aria-label="Open documents"></div>
     <main id="workspace">
+      <aside id="workspace-sidebar" aria-label="Workspace">
+        <div class="workspace-sidebar-header">
+          <strong id="workspace-title">Workspace</strong>
+          <button id="workspace-open" type="button">Open Folder</button>
+        </div>
+        <input
+          id="workspace-filter"
+          type="search"
+          aria-label="Filter workspace"
+          placeholder="Filter"
+        />
+        <div id="workspace-tree" data-testid="workspace-tree" role="tree"></div>
+        <p id="workspace-empty" hidden>No matching files.</p>
+      </aside>
       <section id="editor" data-testid="editor" aria-label="Markdown editor"></section>
       <section id="preview" data-testid="preview" aria-label="Markdown preview"></section>
       <div id="preview-error" data-testid="preview-error" role="alert" hidden></div>

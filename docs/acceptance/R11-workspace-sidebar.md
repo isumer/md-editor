@@ -1,25 +1,25 @@
 # R11 — Workspace sidebar
 
 ### AC-R11-01 — Open Folder shows the folder as a lazy tree
-status: planned
+status: implemented
 Given the user chooses a folder with Open Folder
 When the sidebar shows it
 Then the panel lists the folder's subfolders and `.md` files with folders first, hides `node_modules` and names starting with `.`, and loads a folder's children only when the folder is expanded
 
 ### AC-R11-02 — A second expand reuses the loaded children
-status: planned
+status: implemented
 Given a folder's children are already loaded
 When the user collapses and expands that folder again
 Then no new listing is requested, and a 5,000-file folder lists in under 500 ms while the editor still accepts typing
 
 ### AC-R11-03 — The filter narrows the tree by name
-status: planned
+status: implemented
 Given a workspace tree is shown
 When the user types a filter
 Then only entries whose name matches case-insensitively are shown, a matching file keeps its ancestor folders visible, and a filter with no match shows an empty message
 
 ### AC-R11-04 — Clicking a file opens it in a tab
-status: planned
+status: implemented
 Given the workspace tree is shown
 When the user clicks a `.md` file
 Then its tab opens and is editable within 100 ms for a 100 KB file, and clicking a path that is already open focuses its existing tab
