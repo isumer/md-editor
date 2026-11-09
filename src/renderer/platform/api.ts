@@ -25,6 +25,12 @@ import type {
   SessionCloseResult,
   SessionLoadResponse,
 } from "../../shared/ipc/session";
+import type {
+  ChooseWorkspaceRootResponse,
+  ListWorkspaceChildrenResponse,
+  OpenWorkspaceFileResponse,
+  WorkspacePathRequest,
+} from "../../shared/ipc/workspace";
 
 const api = window.api;
 
@@ -114,4 +120,20 @@ export function onOpenRequest(
   listener: (request: Result<DocumentReference>) => void,
 ): () => void {
   return api.onOpenRequest(listener);
+}
+
+export function chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>> {
+  return api.chooseWorkspaceRoot();
+}
+
+export function listWorkspaceChildren(
+  request: WorkspacePathRequest,
+): Promise<Result<ListWorkspaceChildrenResponse>> {
+  return api.listWorkspaceChildren(request);
+}
+
+export function openWorkspaceFile(
+  request: WorkspacePathRequest,
+): Promise<Result<OpenWorkspaceFileResponse>> {
+  return api.openWorkspaceFile(request);
 }
