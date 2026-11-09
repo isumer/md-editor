@@ -301,9 +301,11 @@ export function wireRenderWorker(
     response: RenderResult,
     requestFill: boolean,
   ): boolean => {
+    performance.clearMarks("preview-apply-start");
+    performance.clearMarks("preview-apply-end");
+    performance.mark("preview-apply-start");
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
     const documentWiring = { ...wiring, preview: documentPreview.container };
-    performance.mark("preview-apply-start");
     const applied = applyRenderResult(
       response,
       documentPreview.shifts,

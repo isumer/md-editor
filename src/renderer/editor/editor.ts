@@ -72,6 +72,9 @@ const editorSetup = [
   ]),
 ];
 
+// Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
+export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
+
 export function dispatchUndo(view: EditorView): void {
   undo(view);
 }
@@ -106,7 +109,7 @@ export function createEditorState(
     doc: document,
     extensions: [
       editorSetup,
-      markdown(),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);
