@@ -50,6 +50,17 @@ describe("sync scroll mapping", () => {
     expect(previewTopForLine(anchors, 50, 500)).toBe(500);
   });
 
+  it("AC-R3-01: clamps every result to the top bound", () => {
+    const clampAnchors: readonly SyncAnchor[] = [
+      { sourceLine: 10, blockTop: 50, blockHeight: 40 },
+      { sourceLine: 20, blockTop: 400, blockHeight: 40 },
+    ];
+
+    expect(previewTopForLine(clampAnchors, 5, 10)).toBe(10);
+    expect(previewTopForLine(clampAnchors, 15, 100)).toBe(100);
+    expect(previewTopForLine(clampAnchors, 30, 100)).toBe(100);
+  });
+
   it("AC-R3-01: interpolates inside one tall block", () => {
     const tallBlock = [
       { sourceLine: 1, blockTop: 0, blockHeight: 1_000 },
