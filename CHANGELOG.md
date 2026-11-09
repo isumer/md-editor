@@ -16,8 +16,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A set of ten sample documents (README, notes, raw HTML, CRLF, Turkish and CJK text, very long lines) whose preview output is checked against reviewed snapshots, so rendering changes show up as visible diffs.
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
-- Two open files can be compared side by side from File > Compare Open Files (Ctrl+Alt+C; Cmd+Alt+C on macOS). Changed lines are marked and changed words are highlighted. You can also highlight characters, whole lines or nothing. F7 and Shift+F7 move to the next and previous difference, and a bar shows where the differences are. The files stay unchanged.
-
 ### Changed
 
 - Documents above 4 MiB now open without Markdown syntax highlighting, Markdown indentation on input and fold markers, so they open without a long freeze. Bracket matching still works.
