@@ -29,7 +29,7 @@ class FakeWorker {
   }
 }
 
-function record(name: string, text: string): DocumentRecord {
+function record(name: string | null, text: string): DocumentRecord {
   return {
     name,
     saved: { text: Text.of(text.split("\n")) },
@@ -59,6 +59,7 @@ describe("compare controller", () => {
 
     controller.open();
     expect(worker.requests[0]).toMatchObject({ id: 1, highlight: "words" });
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
     worker.respond({ id: 0, ok: true, state: createCompareState("x", "y", "words") });
     expect(workspace.querySelector(".compare-view")?.hasAttribute("hidden")).toBe(true);
     worker.respond({
@@ -84,7 +85,11 @@ describe("compare controller", () => {
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7", ctrlKey: true }));
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7", shiftKey: true }));
+    workspace.querySelector<HTMLButtonElement>(".compare-button")?.click();
     workspace.querySelector<HTMLButtonElement>(".compare-button:last-child")?.click();
+    if (select) select.dispatchEvent(new Event("change"));
+    controller.close();
     expect(editor.hidden).toBe(false);
     expect(preview.hidden).toBe(false);
   });
@@ -196,5 +201,63 @@ describe("compare controller", () => {
     expect(preview.hasAttribute("hidden")).toBe(false);
     expect(workspace.classList.contains("compare-open")).toBe(false);
     expect(showStatus).toHaveBeenCalledWith("Compare failed.");
+  });
+
+  it("creates a browser worker from the configured URL", () => {
+    const created: Array<{ options: WorkerOptions; url: URL }> = [];
+    class BrowserWorker extends FakeWorker {
+      constructor(url: URL, options: WorkerOptions) {
+        super();
+        created.push({ options, url });
+      }
+    }
+    vi.stubGlobal("Worker", BrowserWorker);
+    const workspace = document.createElement("main");
+    const workerUrl = new URL("https://example.test/compare.js");
+
+    new CompareController({
+      documents: () => [],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      showStatus: vi.fn(),
+      workerUrl,
+      workspace,
+    });
+
+    expect(created).toEqual([{ options: { type: "module" }, url: workerUrl }]);
+    vi.unstubAllGlobals();
+  });
+
+  it("requires a worker or worker URL", () => {
+    expect(() => new CompareController({
+      documents: () => [],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      showStatus: vi.fn(),
+      workspace: document.createElement("main"),
+    })).toThrow("A compare worker URL is required.");
+  });
+
+  it("labels unnamed compare documents", () => {
+    const workspace = document.createElement("main");
+    const worker = new FakeWorker();
+    const controller = new CompareController({
+      documents: () => [record(null, "left"), record(null, "right")],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      showStatus: vi.fn(),
+      worker,
+      workspace,
+    });
+
+    controller.open();
+    worker.respond({
+      id: 1,
+      ok: true,
+      state: createCompareState("left", "right", "words"),
+    });
+
+    expect(workspace.querySelector(".compare-headings")?.textContent)
+      .toBe("UntitledUntitled");
   });
 });

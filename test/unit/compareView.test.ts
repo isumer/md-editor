@@ -33,4 +33,22 @@ describe("compare view", () => {
     expect(view.root.querySelector('[data-change-index="1"]')?.classList
       .contains("compare-selected")).toBe(true);
   });
+
+  it("shows empty sides and dispatches both navigation buttons", () => {
+    const move = vi.fn();
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move });
+    const state = createCompareState(
+      "same\ndeleted\nend",
+      "same\nend\nadded",
+      "words",
+    );
+    view.show("left.txt", "right.txt", state);
+    const buttons = view.root.querySelectorAll<HTMLButtonElement>(".compare-button");
+
+    buttons[0]?.click();
+    buttons[1]?.click();
+
+    expect(view.root.querySelectorAll(".compare-empty").length).toBeGreaterThan(0);
+    expect(move.mock.calls).toEqual([[-1], [1]]);
+  });
 });

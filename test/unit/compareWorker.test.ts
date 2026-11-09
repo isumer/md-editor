@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CompareWorkerHandler } from "../../src/renderer/features/compare/worker";
 import {
@@ -52,6 +52,21 @@ describe("compare worker", () => {
     expect(responses).toEqual([]);
   });
 
+  it("rejects accessors and hostile request objects", () => {
+    const responses: CompareWorkerResponse[] = [];
+    const handler = new CompareWorkerHandler((response) => responses.push(response));
+    const accessor = { id: 1, right: "right", highlight: "words" };
+    Object.defineProperty(accessor, "left", { enumerable: true, get: () => "left" });
+    const hostile = new Proxy({}, {
+      ownKeys: () => { throw new Error("hostile keys"); },
+    });
+
+    handler.handle(accessor);
+    handler.handle(hostile);
+
+    expect(responses).toEqual([]);
+  });
+
   it("rejects oversized compare text", () => {
     const responses: CompareWorkerResponse[] = [];
     const handler = new CompareWorkerHandler((response) => responses.push(response));
@@ -77,5 +92,42 @@ describe("compare worker", () => {
     handler.handle({ id: 8, left: "left", right: "right", highlight: "words" });
 
     expect(responses).toEqual([{ id: 8, ok: false, message: "failed" }]);
+  });
+
+  it("returns a string for a non-error compare failure", () => {
+    const responses: CompareWorkerResponse[] = [];
+    const handler = new CompareWorkerHandler(
+      (response) => responses.push(response),
+      () => { throw "failed"; },
+    );
+
+    handler.handle({ id: 9, left: "left", right: "right", highlight: "words" });
+
+    expect(responses).toEqual([{ id: 9, ok: false, message: "failed" }]);
+  });
+
+  it("validates and dispatches messages at the worker entry", async () => {
+    const workerScope = {
+      onmessage: null as ((event: MessageEvent<unknown>) => void) | null,
+      postMessage: vi.fn(),
+    };
+    vi.stubGlobal("self", workerScope);
+    vi.resetModules();
+    await import("../../src/renderer/features/compare/compare.worker");
+
+    workerScope.onmessage?.({ data: "invalid" } as MessageEvent<unknown>);
+    workerScope.onmessage?.({ data: {
+      id: 2,
+      left: "old",
+      right: "new",
+      highlight: "words",
+    } } as MessageEvent<unknown>);
+
+    expect(workerScope.postMessage).toHaveBeenCalledOnce();
+    expect(workerScope.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      id: 2,
+      ok: true,
+      state: expect.objectContaining({ changeCount: 1 }),
+    }));
   });
 });

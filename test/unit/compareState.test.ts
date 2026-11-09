@@ -71,4 +71,22 @@ describe("compare view state", () => {
     expect(moveDifference(moveDifference(state, 1), 1).selectedChange).toBe(0);
     expect(moveDifference(state, -1).selectedChange).toBe(1);
   });
+
+  it("keeps empty text and unchanged selection stable", () => {
+    const state = createCompareState("", "", "words");
+
+    expect(state.rows[0]?.left?.spans).toEqual([]);
+    expect(state.selectedChange).toBe(-1);
+    expect(moveDifference(state, 1)).toBe(state);
+  });
+
+  it("uses unchanged spans for added and deleted lines in none mode", () => {
+    const deleted = createCompareState("same\ndeleted\nend", "same\nend", "none");
+    const added = createCompareState("same\nend", "same\nadded\nend", "none");
+
+    expect(deleted.rows.find((row) => row.kind === "deleted")?.left?.spans)
+      .toEqual([{ kind: "same", text: "deleted" }]);
+    expect(added.rows.find((row) => row.kind === "added")?.right?.spans)
+      .toEqual([{ kind: "same", text: "added" }]);
+  });
 });
