@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Documents above 4 MiB now omit editor syntax highlighting, bracket matching, indentation on input, and fold markers.
 - Typing in a large document now updates only the preview blocks you changed. Other blocks stay as they are.
 - The preview keeps up with typing on 50 KB and 500 KB documents. The scroll stays smooth.
 - Opening a 20 MB document shows the first screen quickly. The rest of the preview fills in without freezing the editor.
