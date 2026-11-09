@@ -1,27 +1,39 @@
 import type { ChunkChoice } from "../../../shared/merge/mergeChunks";
 import { mergeCounts } from "../../../shared/merge/mergeChunks";
 import { formatMessage } from "../../../shared/messages/en";
+import type {
+  MergeEditorState,
+  MergeTransactionSpec,
+} from "../../editor/editor";
 import {
   createMarkerMergeState,
+  markerMergeState,
   resolveMarkerConflict,
-  undoMarkerConflict,
   type MarkerMergeState,
 } from "./markerMergeState";
-import "./merge.css";
 
 export interface MergeEditor {
-  replaceText(text: string): void;
+  readonly state: MergeEditorState;
+  dispatch(spec: MergeTransactionSpec): void;
 }
 
 export interface MergeViewOptions {
   readonly editorHost: HTMLElement;
   readonly editor: MergeEditor;
+  readonly parse?: typeof createMarkerMergeState;
   readonly preview: HTMLElement;
   readonly workspace: HTMLElement;
 }
 
 interface MergeSession {
-  state: MarkerMergeState;
+  readonly hasMarkers: boolean;
+  readonly shell: MergeShell | null;
+}
+
+interface MergeShell {
+  readonly buttons: HTMLButtonElement[][];
+  readonly root: HTMLElement;
+  readonly counter: HTMLElement;
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(
@@ -35,51 +47,92 @@ function element<K extends keyof HTMLElementTagNameMap>(
 
 export class MergeView {
   private readonly sessions = new Map<string, MergeSession>();
+  private readonly parse: typeof createMarkerMergeState;
   private activeId: string | null = null;
-  private root: HTMLElement | null = null;
 
-  constructor(private readonly options: MergeViewOptions) {}
+  constructor(private readonly options: MergeViewOptions) {
+    this.parse = options.parse ?? createMarkerMergeState;
+  }
 
-  activate(documentId: string, text: string): void {
-    this.hide();
-    let session = this.sessions.get(documentId);
-    if (session === undefined) {
-      const state = createMarkerMergeState(text);
-      if (state === null) return;
-      session = { state };
-      this.sessions.set(documentId, session);
-      this.options.editor.replaceText(state.text);
+  detect(
+    documentId: string,
+    text: string,
+    install: (merge: MarkerMergeState) => void,
+  ): void {
+    if (this.sessions.has(documentId)) return;
+    const merge = this.parse(text);
+    this.sessions.set(documentId, this.emptySession(merge !== null));
+    if (merge !== null) install(merge);
+  }
+
+  activate(documentId: string, state: MergeEditorState): void {
+    const session = this.sessions.get(documentId);
+    const merge = markerMergeState(state);
+    if (session === undefined || !session.hasMarkers || merge === null) {
+      this.hide();
+      return;
     }
-    this.activeId = documentId;
-    this.show(session);
+    if (this.activeId === documentId && session.shell !== null) {
+      this.refresh(session.shell, merge);
+      return;
+    }
+    this.hide();
+    const shell = session.shell ?? this.build(documentId, merge);
+    this.sessions.set(documentId, { ...session, shell });
+    this.show(documentId, shell);
+    this.refresh(shell, merge);
+  }
+
+  stateChanged(documentId: string | null, state: MergeEditorState): void {
+    if (documentId === null || documentId !== this.activeId) return;
+    const session = this.sessions.get(documentId);
+    const merge = markerMergeState(state);
+    if (session?.shell !== null && session?.shell !== undefined && merge !== null) {
+      this.refresh(session.shell, merge);
+    }
   }
 
   forget(documentId: string): void {
-    this.sessions.delete(documentId);
     if (this.activeId === documentId) this.hide();
+    this.sessions.delete(documentId);
   }
 
-  private show(session: MergeSession): void {
+  private emptySession(hasMarkers: boolean): MergeSession {
+    return { hasMarkers, shell: null };
+  }
+
+  private build(documentId: string, merge: MarkerMergeState): MergeShell {
     const root = element("section", "merge-view");
     root.dataset["testid"] = "merge-view";
-    const toolbar = this.toolbar(session);
-    root.append(toolbar, this.pane("left", session.state.left));
+    const toolbar = element("div", "merge-toolbar");
+    const counter = element("span", "merge-counter");
+    counter.dataset["testid"] = "merge-conflicts-left";
+    toolbar.append(counter);
+    const buttons = merge.merge.chunks.map((_chunk, index) =>
+      this.conflictControls(toolbar, documentId, index));
+    root.append(toolbar, this.pane("left", merge.left));
     const centre = this.pane("result", "");
     centre.append(this.options.editorHost);
-    root.append(centre, this.pane("right", session.state.right));
+    root.append(centre, this.pane("right", merge.right));
+    return { buttons, counter, root };
+  }
+
+  private show(documentId: string, shell: MergeShell): void {
+    const centre = shell.root.querySelector<HTMLElement>(".merge-pane-result");
+    centre?.append(this.options.editorHost);
     this.options.workspace.classList.add("merge-active");
     this.options.preview.hidden = true;
-    this.options.workspace.append(root);
-    this.root = root;
+    this.options.workspace.append(shell.root);
+    this.activeId = documentId;
   }
 
   private hide(): void {
-    if (this.root === null) return;
+    if (this.activeId === null) return;
+    const root = this.sessions.get(this.activeId)?.shell?.root;
     this.options.workspace.classList.remove("merge-active");
     this.options.preview.hidden = false;
     this.options.workspace.insertBefore(this.options.editorHost, this.options.preview);
-    this.root.remove();
-    this.root = null;
+    root?.remove();
     this.activeId = null;
   }
 
@@ -98,46 +151,25 @@ export class MergeView {
     return pane;
   }
 
-  private toolbar(session: MergeSession): HTMLElement {
-    const toolbar = element("div", "merge-toolbar");
-    toolbar.append(this.counter(session));
-    session.state.merge.chunks.forEach((_chunk, index) => {
-      toolbar.append(this.conflictControls(session, index));
-    });
-    const undo = element("button", "merge-undo");
-    undo.type = "button";
-    undo.textContent = formatMessage("merge.undo", {});
-    undo.disabled = session.state.history.length === 0;
-    undo.addEventListener("click", () => this.undo(session));
-    toolbar.append(undo);
-    return toolbar;
-  }
-
-  private counter(session: MergeSession): HTMLElement {
-    const count = mergeCounts(session.state.merge).conflictsLeft;
-    const counter = element("span", "merge-counter");
-    counter.dataset["testid"] = "merge-conflicts-left";
-    counter.textContent = formatMessage(
-      count === 1 ? "merge.conflictLeft" : "merge.conflictsLeft",
-      { count: String(count) },
-    );
-    return counter;
-  }
-
-  private conflictControls(session: MergeSession, index: number): HTMLElement {
+  private conflictControls(
+    toolbar: HTMLElement,
+    documentId: string,
+    index: number,
+  ): HTMLButtonElement[] {
     const controls = element("div", "merge-conflict-controls");
     controls.dataset["testid"] = `merge-conflict-${String(index + 1)}`;
     const label = element("span", "merge-conflict-label");
     label.textContent = formatMessage("merge.conflict", { number: String(index + 1) });
     controls.append(label);
-    for (const choice of ["left", "right", "both"] as const) {
-      controls.append(this.choiceButton(session, index, choice));
-    }
-    return controls;
+    const buttons = (["left", "right", "both"] as const).map((choice) =>
+      this.choiceButton(documentId, index, choice));
+    controls.append(...buttons);
+    toolbar.append(controls);
+    return buttons;
   }
 
   private choiceButton(
-    session: MergeSession,
+    documentId: string,
     index: number,
     choice: ChunkChoice,
   ): HTMLButtonElement {
@@ -145,26 +177,29 @@ export class MergeView {
     button.type = "button";
     button.dataset["testid"] = `merge-conflict-${String(index + 1)}-${choice}`;
     button.textContent = formatMessage(`merge.accept.${choice}`, {});
-    button.disabled = session.state.merge.resolved[index] ?? true;
-    button.addEventListener("click", () => this.resolve(session, index, choice));
+    button.addEventListener("click", () => this.resolve(documentId, index, choice));
     return button;
   }
 
-  private resolve(session: MergeSession, index: number, choice: ChunkChoice): void {
-    session.state = resolveMarkerConflict(session.state, index, choice);
-    this.options.editor.replaceText(session.state.text);
-    this.rerender(session);
+  private resolve(documentId: string, index: number, choice: ChunkChoice): void {
+    if (documentId !== this.activeId) return;
+    const transaction = resolveMarkerConflict(this.options.editor.state, index, choice);
+    if (transaction === null) {
+      this.stateChanged(documentId, this.options.editor.state);
+      return;
+    }
+    this.options.editor.dispatch(transaction);
   }
 
-  private undo(session: MergeSession): void {
-    session.state = undoMarkerConflict(session.state);
-    this.options.editor.replaceText(session.state.text);
-    this.rerender(session);
-  }
-
-  private rerender(session: MergeSession): void {
-    this.hide();
-    this.activeId = [...this.sessions].find(([, value]) => value === session)?.[0] ?? null;
-    this.show(session);
+  private refresh(shell: MergeShell, merge: MarkerMergeState): void {
+    const count = mergeCounts(merge.merge).conflictsLeft;
+    shell.counter.textContent = formatMessage(
+      count === 1 ? "merge.conflictLeft" : "merge.conflictsLeft",
+      { count: String(count) },
+    );
+    shell.buttons.forEach((buttons, index) => {
+      const disabled = merge.merge.resolved[index] === true || merge.valid[index] !== true;
+      for (const button of buttons) button.disabled = disabled;
+    });
   }
 }

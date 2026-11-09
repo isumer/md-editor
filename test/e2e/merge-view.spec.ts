@@ -8,6 +8,7 @@ import {
   clickMenuItem,
   closeEditor,
   launchEditor,
+  PRIMARY_MODIFIER,
   readTextOrNull,
   repositoryRoot,
 } from "./helpers";
@@ -41,8 +42,13 @@ test("a conflict-marker file resolves each conflict and saves the result", {
 
     await page.getByTestId("merge-conflict-1-left").click();
     await expect(page.getByTestId("merge-conflicts-left")).toHaveText("1 conflict left");
-    await page.getByRole("button", { name: "Undo merge choice" }).click();
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
     await expect(page.getByTestId("merge-conflicts-left")).toHaveText("2 conflicts left");
+    await expect(page.getByTestId("merge-conflict-1-both")).toBeEnabled();
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+z`);
+    await expect(page.getByTestId("merge-conflicts-left")).toHaveText("1 conflict left");
+    await expect(page.getByTestId("merge-conflict-1-both")).toBeDisabled();
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
     await page.getByTestId("merge-conflict-1-both").click();
     await page.getByTestId("merge-conflict-2-right").click();
 

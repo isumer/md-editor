@@ -32,7 +32,6 @@ export type MessageKey =
   | "merge.accept.left"
   | "merge.accept.right"
   | "merge.accept.both"
-  | "merge.undo"
   | "tab.close"
   | "tab.unsaved"
   | "close.cancel"
@@ -77,7 +76,6 @@ export const messages: Readonly<Record<MessageKey, string>> = {
   "merge.accept.left": "← Left",
   "merge.accept.right": "Right →",
   "merge.accept.both": "Both",
-  "merge.undo": "Undo merge choice",
   "tab.close": "Close {file}",
   "tab.unsaved": "Unsaved changes",
   "close.cancel": "Cancel",
