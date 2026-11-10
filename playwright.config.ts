@@ -2,8 +2,6 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "test/e2e",
-  // Temporary owner order 2026-11-08. Remove with the perf fix.
-  ...(process.env.MDEDITOR_SKIP_PERF === "1" ? { grepInvert: /@AC-PERF/ } : {}),
   timeout: 15_000,
   expect: {
     timeout: 2_000,

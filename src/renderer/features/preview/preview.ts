@@ -47,6 +47,9 @@ const BLOCK_CLASS = "preview-block";
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
 const APPEND_TASK_BLOCK_LIMIT = 4;
+// Worker fills have at most eight blocks; only the larger initial batch is
+// frame-paced.
+const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -294,8 +297,40 @@ export function wireRenderWorker(
   let shown: { docId: string; epoch: number; version: number } | null = null;
   let pendingAppend: {
     response: RenderResult & { ok: true; mode: "append" };
+    frame: number;
     timer: number;
   } | null = null;
+  const queuedResponses: RenderResponse[] = [];
+  let queuedResponseTimer = 0;
+
+  function scheduleQueuedResponse(): void {
+    if (queuedResponses.length === 0 || queuedResponseTimer !== 0) {
+      return;
+    }
+    queuedResponseTimer = window.setTimeout(() => {
+      queuedResponseTimer = 0;
+      const response = queuedResponses.shift();
+      if (response !== undefined) {
+        handleResponse(response);
+      }
+      if (pendingAppend === null) {
+        scheduleQueuedResponse();
+      }
+    }, 0);
+  }
+
+  const deferAppend = (
+    pending: NonNullable<typeof pendingAppend>,
+    waitForFrame: boolean,
+  ): void => {
+    if (waitForFrame) {
+      pending.frame = requestAnimationFrame(() => {
+        pending.timer = window.setTimeout(flushAppend, 0);
+      });
+    } else {
+      pending.timer = window.setTimeout(flushAppend, 0);
+    }
+  };
 
   const applyAccepted = (
     response: RenderResult,
@@ -334,19 +369,39 @@ export function wireRenderWorker(
     if (pending === null) {
       return;
     }
+    cancelAnimationFrame(pending.frame);
     window.clearTimeout(pending.timer);
     pendingAppend = null;
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
       pending.response.epoch !== current.epoch) {
+      scheduleQueuedResponse();
       return;
     }
-    applyAccepted(pending.response, true);
+    if (pending.response.blocks.length <= APPEND_TASK_BLOCK_LIMIT) {
+      applyAccepted(pending.response, true);
+      scheduleQueuedResponse();
+      return;
+    }
+    const next = {
+      ...pending.response,
+      blocks: pending.response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
+      complete: false,
+    };
+    if (!applyAccepted(next, false)) {
+      scheduleQueuedResponse();
+      return;
+    }
+    const remainder = {
+      ...pending.response,
+      blocks: pending.response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
+    };
+    const nextPending = { response: remainder, frame: 0, timer: 0 };
+    pendingAppend = nextPending;
+    deferAppend(nextPending, true);
   };
 
-  renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
-    flushAppend();
-    const response = event.data;
+  function handleResponse(response: RenderResponse): void {
     const current = wiring.currentVersion();
     if ("op" in response) {
       if (response.op === "resync" &&
@@ -379,13 +434,27 @@ export function wireRenderWorker(
         ...response,
         blocks: response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
       };
-      pendingAppend = {
+      const pending = {
         response: remainder,
-        timer: window.setTimeout(flushAppend, 0),
+        frame: 0,
+        timer: 0,
       };
+      pendingAppend = pending;
+      deferAppend(pending, response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD);
       return;
     }
     applyAccepted(response, true);
+  }
+
+  renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
+    if (pendingAppend !== null) {
+      flushAppend();
+      if (pendingAppend !== null || queuedResponses.length > 0) {
+        queuedResponses.push(event.data);
+        return;
+      }
+    }
+    handleResponse(event.data);
   };
 
   renderWorker.onerror = (event) => {

@@ -149,6 +149,35 @@ describe("close request broker", () => {
     await expect(pending).resolves.toBe(true);
   });
 
+  it("AC-R4-06: a stalled session write cannot wedge shutdown", async () => {
+    let finishPersist: (() => void) | undefined;
+    const timerDurations: number[] = [];
+    const persist = vi.fn(() => new Promise<void>((resolve) => {
+      finishPersist = resolve;
+    }));
+    const timers = new Map<TimerHandle, () => void>();
+    const instance = new CloseRequestBroker(vi.fn(), persist, {
+      setTimer: (callback, milliseconds) => {
+        timerDurations.push(milliseconds);
+        timers.set(1, callback);
+        return 1;
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle);
+      },
+    });
+    const pending = instance.request(7);
+    const settling = instance.settle(result, 7);
+    await Promise.resolve();
+
+    expect(timers.size).toBe(1);
+    expect(timerDurations).toEqual([15_000, 5_000]);
+    timers.get(1)?.();
+    await expect(settling).resolves.toBeUndefined();
+    await expect(pending).resolves.toBe(true);
+    finishPersist?.();
+  });
+
   it("AC-R4-06: uses the system timers when none are injected", async () => {
     const send = vi.fn();
     const persist = vi.fn(async () => undefined);
