@@ -138,3 +138,31 @@ back.
 - Item 3's same-machine comparison written to the `docs/reviews` note.
 - The report lists every AC-PERF-02/-09/-11 number it saw, per leg,
   and names anything you could not check.
+
+## Review lane 2 notes (job 1274, 2026-11-10)
+
+The branch tip is now `02c7906` (a sync-main job). The lane sent it back; this item stays the fix owner.
+
+- Sync commit `02c7906` went beyond conflict resolution. It replaced fix-3's
+  `parseInline` batch extension in `src/renderer/editor/editor.ts` with a
+  `ParseContext.getSkippingParser()` support, and added a geometry-cache
+  redesign in `src/renderer/features/sync-scroll/controller.ts` (+208 lines)
+  plus three cache tests. Keep or replace that work; it inherits item 1's
+  proof burden.
+- Item 1 is open. `onPreviewScroll`'s frame callback still calls
+  `refreshAnchors` when `pendingPages` is non-empty
+  (`src/renderer/features/sync-scroll/controller.ts:133`). Evidence:
+  deleting that call kept all 23 tests in
+  `test/unit/syncScrollController.test.ts` green; forcing the plain Markdown
+  parser in `editor.ts` kept `test/unit/editor.test.ts` green. The
+  counter-host zero-layout-call test and any long-line unit evidence are
+  missing.
+- `test/unit/renderScheduler.test.ts` passes `maximumWaitMilliseconds: 100`
+  explicitly. Gatefix2's default 100 -> 50 was dropped by merge `596bf9c`.
+  Do not re-add it without a test that pins the default.
+- AC-R3-02 (functional) went red once on this Pi at `02c7906`: after a
+  preview scroll the editor held `## Heading 01` for 2000 ms, expected
+  `/Heading (19|20|21)/`; the same code was green in the 20:26 precheck.
+  The new `pendingPages`/refresh path must not feed this race.
+- Item 6 applies now: AC-R2-04, AC-R2-05 and AC-R3-03 still read
+  `implemented` on the branch.
