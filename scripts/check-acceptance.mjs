@@ -69,7 +69,6 @@ export function buildAcceptanceReport(
   criteria,
   tests,
   platform = process.platform,
-  skipPerf = false,
 ) {
   const knownIds = new Set(criteria.map((criterion) => criterion.id));
   const unknown = new Map();
@@ -88,15 +87,9 @@ export function buildAcceptanceReport(
     const matchingTests = tests.filter((test) => test.ids.includes(criterion.id));
     const passingTests = matchingTests.filter((test) => test.passed);
     const applies = criterion.platforms === null || criterion.platforms.includes(platform);
-    // Temporary owner order 2026-11-08: the perf e2e tests are filtered out, so their criteria cannot pass.
-    const perfSkipped = skipPerf
-      && criterion.status === "implemented"
-      && criterion.id.startsWith("AC-PERF-");
     const required = criterion.status === "implemented" && applies;
     const result = !applies
       ? `not applicable on ${platform}`
-      : perfSkipped
-      ? passingTests.length > 0 ? "pass" : "skipped (perf temporary)"
       : required
       ? passingTests.length > 0 ? "pass" : "missing"
       : passingTests.length > 0 ? "planned (tested)" : "planned";
@@ -149,12 +142,7 @@ export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
     path.join(repositoryRoot, "reports", "unit-junit.xml"),
   ];
   const tests = (await Promise.all(junitPaths.map(readJUnitFile))).flat();
-  const report = buildAcceptanceReport(
-    criteria,
-    tests,
-    process.platform,
-    process.env.MDEDITOR_SKIP_PERF === "1",
-  );
+  const report = buildAcceptanceReport(criteria, tests, process.platform);
 
   console.log(report.markdown);
   if (process.env.GITHUB_STEP_SUMMARY) {
