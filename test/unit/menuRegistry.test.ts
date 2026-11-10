@@ -4,12 +4,31 @@ vi.mock("electron", () => ({ app: {}, Menu: {} }));
 
 import { buildContributionTemplate } from "../../src/main/app/menu";
 import {
+  MENU_COMMAND_IDS,
   MENU_ITEM_IDS,
+  type MenuCommandId,
   type MenuContribution,
+  type MenuItemId,
   isMenuItemId,
   registerMenuDeclarations,
 } from "../../src/shared/ipc/menu";
 import { fileMenu } from "../../src/shared/ipc/menu/file";
+
+const registryTestMenu = {
+  menuTitleKey: "menu.registryTest",
+  items: [{
+    id: "registry-test-item",
+    titleKey: "menu.registryTest",
+    accelerator: "CmdOrCtrl+T",
+    commandId: "registry.test",
+  }],
+} as const;
+
+declare global {
+  interface SharedMenuDeclarations {
+    registryTest: typeof registryTestMenu;
+  }
+}
 
 interface TemplateShape {
   id?: string;
@@ -132,10 +151,24 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
     `);
 });
 
-it("keeps each declared menu item id in the shared id list", () => {
+it("composes every declared item id and command id from the registry", () => {
   expect(fileMenu.items.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
-  expect(new Set(fileMenu.items.map((item) => item.commandId)).size)
-    .toBe(fileMenu.items.length);
+  expect(fileMenu.items.map((item) => item.commandId))
+    .toEqual([...MENU_COMMAND_IDS]);
+});
+
+it("adds a registered feature id to the type union and validator", () => {
+  const itemId: MenuItemId = "registry-test-item";
+  const commandId: MenuCommandId = "registry.test";
+
+  registerMenuDeclarations([fileMenu, registryTestMenu]);
+  try {
+    expect(isMenuItemId(itemId)).toBe(true);
+    expect(MENU_ITEM_IDS).toContain(itemId);
+    expect(MENU_COMMAND_IDS).toContain(commandId);
+  } finally {
+    registerMenuDeclarations([fileMenu]);
+  }
 });
 
 it("rejects an item id that is missing from its declaration", () => {

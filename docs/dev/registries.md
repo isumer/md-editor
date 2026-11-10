@@ -14,7 +14,9 @@ Declare each item ID and command ID in that feature file.
 
 Add the feature once to `src/main/app/menu/registry.ts`.
 
-The shared menu types and validators derive IDs from those declarations.
+The registry composes each item ID and command ID from those declarations.
+
+The shared menu types and validators derive IDs from that composition.
 
 Shared menu declarations must not import another project file.
 

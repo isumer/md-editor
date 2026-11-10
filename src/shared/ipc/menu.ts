@@ -20,18 +20,30 @@ export type MenuCommandId = MenuFeatureItem extends {
 } ? Id : never;
 
 interface MenuDeclaration {
-  readonly items: readonly { readonly id: MenuItemId }[];
+  readonly items: readonly {
+    readonly id: MenuItemId;
+    readonly commandId: MenuCommandId;
+  }[];
 }
 
 const registeredMenuItemIds: MenuItemId[] = [];
+const registeredMenuCommandIds: MenuCommandId[] = [];
 export const MENU_ITEM_IDS: readonly MenuItemId[] = registeredMenuItemIds;
+export const MENU_COMMAND_IDS: readonly MenuCommandId[] =
+  registeredMenuCommandIds;
 
 export function registerMenuDeclarations(
   declarations: readonly MenuDeclaration[],
 ): void {
-  const ids = new Set(declarations.flatMap((feature) =>
-    feature.items.map((item) => item.id)));
-  registeredMenuItemIds.splice(0, registeredMenuItemIds.length, ...ids);
+  const items = declarations.flatMap((feature) => feature.items);
+  const itemIds = new Set(items.map((item) => item.id));
+  const commandIds = new Set(items.map((item) => item.commandId));
+  registeredMenuItemIds.splice(0, registeredMenuItemIds.length, ...itemIds);
+  registeredMenuCommandIds.splice(
+    0,
+    registeredMenuCommandIds.length,
+    ...commandIds,
+  );
 }
 
 export interface MenuContributionItem {
