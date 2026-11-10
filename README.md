@@ -27,7 +27,9 @@ and never loses your work.
 > menus, themes, file comparison and more — are still being built. See
 > [What's next](#whats-next).
 
-_Screenshots coming soon._
+<p align="center">
+  <img src="assets/screenshots/main.png" alt="SolidMD with a folder open in the sidebar, three tabs, and a Markdown document beside its live preview" width="900">
+</p>
 
 ## Why SolidMD
 
