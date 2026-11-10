@@ -27,4 +27,8 @@ describe("editor language size threshold", () => {
   it("AC-PERF-10: a document at the threshold has the Markdown language", () => {
     expect(editorLanguage("x".repeat(MARKDOWN_LANGUAGE_MAX_LENGTH))).toBe("markdown");
   });
+
+  it("AC-PERF-10: keeps Markdown behavior through four MiB", () => {
+    expect(editorLanguage("x".repeat(4 * 1024 * 1024))).toBe("markdown");
+  });
 });
