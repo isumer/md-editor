@@ -18,9 +18,9 @@
 ---
 
 SolidMD is a desktop editor for Markdown and plain-text files. You write on the
-left and see the rendered page on the right as you type. The goal is a
-Notepad++-class everyday editor in which Markdown is a first-class citizen:
-it opens instantly, handles very large files and never loses your work.
+left and see the rendered page on the right as you type. It opens instantly,
+handles very large files, keeps several documents and whole folders at hand,
+and never loses your work.
 
 > **Status: early development (pre-release).** The editor, the preview, tabs,
 > saving and crash recovery work today. Several planned features — export
@@ -46,7 +46,7 @@ _Screenshots coming soon._
 
 ### Writing and preview
 - Side-by-side editor and live preview.
-- GitHub-flavoured Markdown: tables, task lists, strikethrough and automatic links.
+- Markdown with tables, task lists, strikethrough and automatic links.
 - Code blocks highlighted for [36 languages](docs/languages.md).
 - Relative images load from the document's own folder, and nowhere else.
 - Links in the preview never navigate the app window, and unsupported link types are blocked.
@@ -138,13 +138,47 @@ Platform packages are built with `npm run dist:linux`, `npm run dist:win` or
 
 Planned for the first release (details in [PLAN.md](PLAN.md)):
 
-- Export the preview as a self-contained HTML file or a PDF (the engine exists;
-  the menu is coming).
-- Scroll sync between editor and preview, and editor-only or preview-only views.
-- Light, dark and follow-system themes, and a custom background colour.
-- Plain text and source files with language-aware highlighting.
-- Everyday Notepad++-style tools.
-- Compare files and folders, and a three-way merge view.
+**Views**
+- Split, editor-only and preview-only views, with a draggable divider,
+  full screen and a focus mode.
+- Scroll sync in both directions: the same heading stays at the top of the
+  editor and the preview.
+- A second editor view: move, clone or drag tabs between the two views, with
+  synchronised scrolling. An edit in a cloned tab shows in both views at once.
+
+**Export**
+- Save the preview as a self-contained HTML file or as a PDF that looks exactly
+  like the preview. The engine is built; the menu is coming.
+
+**Text and code files**
+- Open any text or source file in a tab, with highlighting chosen by file
+  type, code folding and comment toggling.
+- Find and replace, and Find in Files across a whole folder, with results
+  streaming in as they are found.
+- Encodings and line endings are kept exactly as they were (for example a
+  Windows-1254 file or a CRLF file saves back byte for byte).
+- A notice when an open file changes on disk.
+
+**Editing tools**
+- Line operations: sort, remove duplicates and more, each undoable in one step.
+- Replace in Files with a preview before anything is written.
+- Column editing, macro recording and replay, and word completion.
+- A document outline and a document map for fast navigation.
+- Formatters, a print command, a follow mode for growing log files,
+  a command palette and fully rebindable shortcuts.
+
+**Compare and merge**
+- Compare two files side by side or in one column, down to single words.
+  Both sides stay editable; arrows copy a change across; whitespace and
+  case can be ignored.
+- Compare two folders, with copy and sync actions.
+- A three-pane merge view: left, editable result, right. Non-conflicting
+  changes apply in one click, conflict-marker files open directly, and
+  it can serve as the merge and diff tool for git.
+
+**Appearance**
+- Light, dark and follow-system themes, your own background colour for the
+  editor and the preview, and adjustable font size.
 
 Not planned for v1: live collaboration, plugins, Vim mode and cloud sync.
 
