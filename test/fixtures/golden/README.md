@@ -29,3 +29,9 @@ bytes on every checkout. `empty.html` is a 0-byte file.
 | `readme-project.md` | Badge images inside links, a table, four language-tagged fences (js, python, rust, bash), a blockquote and a bullet list | Image-in-link markup, table cells, `hljs language-*` classes on fences, quote and list markup |
 | `sanitise-html.md` | Raw `script`, `style`, `iframe` and `form`, an `img` with `onerror`, a `javascript:` link, and a safe `div` with `style` and `data-line` | Active content is removed; safe elements and attributes remain; normal Markdown after the raw HTML still renders |
 | `unicode-turkish-cjk.md` | Turkish, Chinese, Japanese and Korean text, emoji, a Turkish heading and list, and a blockquote | UTF-8 characters pass through unchanged, including emoji |
+| `reference-after-use.md` | A reference link used before its definition | Reference defined after its use resolves correctly |
+| `loose-list.md` | A loose list with blank lines between items | Each item wrapped in `<p>` tags, blank lines preserved as list separators |
+| `indented-code-blank-line.md` | Indented code block containing a blank line | The blank line is kept inside the code block, not split into two blocks |
+| `unclosed-fence-end.md` | A fenced code block not closed before document end | The fence content renders as code block despite missing closing fence |
+| `nested-list-block.md` | A list with a nested sub-list as a block | Nested list renders as child `<ul>` inside parent `<li>` |
+| `table-after-paragraph.md` | A table immediately following a paragraph with no blank line | Table renders correctly after paragraph; no extra paragraph wrapping |
