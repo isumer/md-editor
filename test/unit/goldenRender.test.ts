@@ -20,6 +20,12 @@ const fixtures = [
   "long-lines",
   "changelog",
   "api-reference",
+  "reference-after-use",
+  "loose-list",
+  "indented-code-blank-line",
+  "unclosed-fence-end",
+  "nested-list-block",
+  "table-after-paragraph",
 ] as const;
 
 describe("golden render corpus", () => {
