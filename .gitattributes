@@ -1,5 +1,6 @@
 * text=auto eol=lf
 test/fixtures/encodings/** -text
+test/fixtures/export/crlf-document.md -text
 *.png binary
 *.ico binary
 *.icns binary
