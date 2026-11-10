@@ -62,7 +62,7 @@ describe("preview render flow", () => {
       return frames.length;
     });
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 36 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -131,10 +131,7 @@ describe("preview render flow", () => {
 
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]);
-    expect(frames).toHaveLength(1);
-    for (const frame of [...frames.values()]) {
-      frame(16);
-    }
+    expect(frames).toHaveLength(0);
     vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(renderedBlocks.map((block) => block.id));
@@ -171,7 +168,7 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
 
     expect(blocks(preview)).toHaveLength(8);
-    expect(frames).toHaveLength(1);
+    expect(frames).toHaveLength(0);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -455,9 +452,14 @@ describe("preview render flow", () => {
     });
   });
 
-  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
+  it("AC-PERF-09: prewarms bounded sections before showing a completed preview", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 201 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -476,9 +478,43 @@ describe("preview render flow", () => {
     });
 
     const sections = [...preview.querySelectorAll(".preview-section")];
-    expect(sections).toHaveLength(2);
+    expect(preview.dataset["renderComplete"]).toBe("false");
+    expect(sections).toHaveLength(3);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([100, 1]);
+      .toEqual([100, 100, 1]);
+    expect(sections.every((section) =>
+      section.classList.contains("preview-section-prewarm"))).toBe(true);
+    frames.shift()?.(16);
+    frames.shift()?.(32);
+    expect(preview.dataset["renderComplete"]).toBe("true");
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-09: uses wider sections after the first four thousand blocks", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 4_001 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "replace", blocks: renderedBlocks, complete: true,
+    });
+
+    const sections = [...preview.querySelectorAll(".preview-section")];
+    expect(sections).toHaveLength(41);
+    expect(sections[39]?.classList.contains("preview-section-wide")).toBe(false);
+    expect(sections[40]?.classList.contains("preview-section-wide")).toBe(true);
+    expect(sections[40]?.querySelectorAll(".preview-block")).toHaveLength(1);
+    vi.unstubAllGlobals();
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

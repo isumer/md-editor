@@ -26,3 +26,23 @@ export function sanitizeRenderedHtml(html: string): string {
     FORBID_TAGS: ["style", "link", "meta", "base", "form"],
   });
 }
+
+export function sanitizeRenderedHtmlBatch(html: readonly string[]): string[] {
+  const batch = document.createElement("div");
+  const containers = html.map((value) => {
+    const container = document.createElement("div");
+    const template = document.createElement("template");
+    template.innerHTML = value;
+    container.append(template.content);
+    batch.append(container);
+    return container;
+  });
+  DOMPurify.sanitize(batch, {
+    ALLOW_DATA_ATTR: true,
+    ADD_ATTR: ["data-line"],
+    ALLOWED_URI_REGEXP: ALLOWED_URI,
+    FORBID_TAGS: ["style", "link", "meta", "base", "form"],
+    IN_PLACE: true,
+  });
+  return containers.map((container) => container.innerHTML);
+}
