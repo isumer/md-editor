@@ -57,19 +57,19 @@ Then the file opens in a new tab
 ## Side-by-side views (the Notepad++ "Other View")
 
 ### AC-R4-10 — A tab moves or is cloned to the other view
-status: planned
+status: implemented
 Given one view with two tabs
 When the user picks Move to Other View on one tab and Clone to Other View on the other
 Then a second view opens holding the moved tab and a clone, and the first view keeps only the cloned tab
 
 ### AC-R4-11 — An edit in a clone appears in the other view in the same frame
-status: planned
+status: implemented
 Given a document cloned into both views
 When the user types in one view
 Then the other view shows the change in the same animation frame, keeps its own cursor and scroll, and both tabs share one dirty state
 
 ### AC-R4-12 — A clone shares one undo history
-status: planned
+status: implemented
 Given an edit made in view 1 of a cloned document
 When the user presses Undo in view 2
 Then the edit is undone once in both views, and Redo in view 1 restores it
