@@ -87,6 +87,10 @@ describe('AC-R13-04: word completion', () => {
       expect(completeWord(text, 1)).toEqual([]);
     });
 
+    it('AC-R13-04: counts word characters instead of UTF-16 code units', () => {
+      expect(completeWord('𐐀 𐐀word', 2)).toEqual([]);
+    });
+
     it('AC-R13-04: does not suggest a word no longer than the prefix', () => {
       const text = 'hello Hello hell';
       // cursor after the first "hello"; the later "Hello" is equal and "hell" is shorter
@@ -103,6 +107,11 @@ describe('AC-R13-04: word completion', () => {
       const text = 'Ärztin Ärger';
       // cursor at offset 2 in "Ärztin", prefix "Är"
       expect(completeWord(text, 2)).toEqual(['Ärger']);
+    });
+
+    it('AC-R13-04: treats numbers and underscores as word characters', () => {
+      expect(completeWord('a1 a123', 2)).toEqual(['a123']);
+      expect(completeWord('a_ a_word', 2)).toEqual(['a_word']);
     });
   });
 });
