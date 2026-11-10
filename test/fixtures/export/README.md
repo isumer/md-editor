@@ -17,6 +17,11 @@ plain Markdown with LF line endings and UTF-8, so a test reads them as text.
 | `unicode.md` | Turkish case pairs, CJK text, emoji, non-Latin code | 1 × h1, 8 × h2, 1 × h3, 1 table, 1 fenced block |
 | `unsafe-html.md` | Raw HTML that the sanitiser must clean | see below |
 | `long-document.md` | A long document for a multi-page PDF and export speed | 2000 lines, 166 `## Section N:` headings, 166 tables, 166 fenced blocks |
+| `front-matter.md` | Leading YAML front matter with `title:` and `tags:` | 1 × h1, 1 × h2; 2 `---` delimiters; 1 `tags:` key; open question: whether a leading fence-like block is treated as text |
+| `crlf-document.md` | Same content as `images.md` with CRLF line endings | 20 lines; needs `.gitattributes` review — not edited here |
+| `html-comments.md` | Markdown comments between paragraphs, raw `<img>` with `onerror` | 1 × h1; 3 comments; 1 `<img onerror>` the sanitiser must clean |
+| `nested-lists.md` | Three nesting levels, mixed ordered/unordered, loose items | 1 × h1, 3 × h2; 5 level-1 unordered, 4 level-2 unordered, 2 level-3 unordered, 2 level-4 unordered; 3 level-1 ordered, 3 level-2 ordered; 2 loose items each with a paragraph and a code span |
+| `entity-code.md` | HTML entities in text and fenced code that must stay literal | 1 × h1, 4 × h2; 1 fenced block; 5 entities (`&`, `<script>`, `>`, `&copy;`, `&reg;`) in text, 3 entities (`&`, `<script>`, `>`) in fenced block, 2 more entities (`&nbsp;`, `&mdash;`) in text |
 | `assets/diagram.png` | The image of `images.md` | 24 × 24, blue `#1F4FD8` |
 | `assets/badge.png` | The badge of `images.md` | 16 × 16, orange `#E8590C` |
 
