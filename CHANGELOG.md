@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
+- A second editor view sits beside the first. Move to Other View and Clone to Other View open it, and a clone shares its text, undo history, cursor and scroll with its partner.
 
 ### Changed
 
@@ -39,6 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Save now acts on the view you last used, and the title bar and unsaved dot follow the active view instead of always showing the first one.
 - Opening a very large document no longer copies its whole text twice before the preview starts, so the first screen appears sooner.
 - A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".

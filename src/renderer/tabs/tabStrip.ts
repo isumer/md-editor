@@ -1,6 +1,8 @@
 import { formatMessage } from "../../shared/messages/en";
 import type { DocumentRecord } from "../core/document";
 
+export type TabViewCommand = "tab.cloneToOtherView" | "tab.moveToOtherView";
+
 export function tabLabel(document: Pick<DocumentRecord, "name">): string {
   return document.name ?? "Untitled";
 }
@@ -18,6 +20,8 @@ export interface TabStripOptions {
   documents(): readonly DocumentRecord[];
   host: HTMLElement;
   select(document: DocumentRecord): void;
+  commandTarget?(document: DocumentRecord): string;
+  runCommand?(id: TabViewCommand, target: string): void;
 }
 
 export class TabStrip {
@@ -81,6 +85,37 @@ export class TabStrip {
         this.options.close(document);
       }
     });
+    element.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      this.openContextMenu(element, document);
+    });
+  }
+
+  private openContextMenu(anchor: HTMLElement, document: DocumentRecord): void {
+    window.document.querySelectorAll(".tab-context-menu").forEach((menu) => menu.remove());
+    const menu = window.document.createElement("div");
+    menu.className = "tab-context-menu";
+    menu.setAttribute("role", "menu");
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    const actions: readonly [TabViewCommand, "tab.moveToOtherView" | "tab.cloneToOtherView"][] = [
+      ["tab.moveToOtherView", "tab.moveToOtherView"],
+      ["tab.cloneToOtherView", "tab.cloneToOtherView"],
+    ];
+    for (const [commandId, titleKey] of actions) {
+      const button = window.document.createElement("button");
+      button.type = "button";
+      button.textContent = formatMessage(titleKey, {});
+      button.addEventListener("click", () => {
+        menu.remove();
+        const target = this.options.commandTarget?.(document);
+        if (target !== undefined) {
+          this.options.runCommand?.(commandId, target);
+        }
+      });
+      menu.append(button);
+    }
+    anchor.append(menu);
+    window.document.addEventListener("pointerdown", () => menu.remove(), { once: true });
   }
 
   private configureClose(close: HTMLButtonElement, document: DocumentRecord): void {

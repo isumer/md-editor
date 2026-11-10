@@ -28,6 +28,22 @@ beforeEach(() => {
 });
 
 describe("document commands", () => {
+  it("selects the primary document when the second editor is not focused", async () => {
+    const { selectFocusedDocument } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(selectFocusedDocument("primary", "secondary", false)).toBe("primary");
+  });
+
+  it("selects the secondary document when the second editor is focused", async () => {
+    const { selectFocusedDocument } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(selectFocusedDocument("primary", "secondary", true)).toBe("secondary");
+  });
+
   it("AC-R5-08 AC-R5-15: publishes fixed menu ids and dispatches each command", async () => {
     const { DocumentCommands } = await import(
       "../../src/renderer/tabs/documentCommands"
@@ -39,12 +55,14 @@ describe("document commands", () => {
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
     const onResult = vi.fn();
+    const otherView = vi.fn();
     const commands = new DocumentCommands({
       compare,
-      editor,
+      editor: () => editor,
       onError: vi.fn(),
       onResult,
       open,
+      otherView,
       save,
     });
     await Promise.resolve();
@@ -85,6 +103,13 @@ describe("document commands", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, key: "y",
     }));
+    commands.run("tab.moveToOtherView", "2:document-one");
+    commands.run("tab.cloneToOtherView", "1:document-two");
+    await Promise.resolve();
+    expect(otherView.mock.calls).toEqual([
+      ["2:document-one", "move"],
+      ["1:document-two", "clone"],
+    ]);
     editor.contentDOM.blur();
     editor.destroy();
   });
