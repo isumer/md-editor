@@ -98,7 +98,14 @@ describe("document commands", () => {
     const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
-    new DocumentCommands({ editor, onError: vi.fn(), onResult: vi.fn(), open, save });
+    new DocumentCommands({
+      compare: vi.fn(),
+      editor,
+      onError: vi.fn(),
+      onResult: vi.fn(),
+      open,
+      save,
+    });
     await Promise.resolve();
 
     menuListener?.("view-split");

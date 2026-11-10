@@ -37,6 +37,45 @@ async function settledPreviewPosition(
   });
 }
 
+async function nativeFullScreen(
+  application: import("@playwright/test").ElectronApplication,
+): Promise<boolean> {
+  return application.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false);
+}
+
+async function measureInputAfterTransition(
+  page: import("@playwright/test").Page,
+  transition: string,
+): Promise<void> {
+  const editor = page.getByTestId("editor").locator(".cm-content");
+  const heading = page.getByTestId("preview").locator("h1").first();
+  await editor.click();
+  await page.keyboard.press(DOCUMENT_START);
+  await page.keyboard.press("End");
+  for (let index = 0; index < 5; index += 1) {
+    const before = await heading.textContent();
+    await page.keyboard.type("w");
+    await expect.poll(() => heading.textContent()).not.toBe(before);
+  }
+  const samples: number[] = [];
+  for (let index = 0; index < 30; index += 1) {
+    const character = String.fromCharCode(97 + (index % 26));
+    const before = await heading.textContent();
+    await page.evaluate(() => performance.clearMeasures("preview-latency"));
+    await page.keyboard.type(character);
+    await expect.poll(() => heading.textContent(), { timeout: 10_000 }).not.toBe(before);
+    const durations = await page.evaluate(() =>
+      performance.getEntriesByName("preview-latency", "measure")
+        .map((entry) => entry.duration));
+    samples.push(durations.at(-1) ?? Infinity);
+  }
+  samples.sort((left, right) => left - right);
+  const p95 = samples[Math.ceil(samples.length * 0.95) - 1] ?? Infinity;
+  console.log(`${transition} input distribution: p95 ${p95.toFixed(2)} ms`);
+  expect(p95).toBeLessThan(100);
+}
+
 test("AC-R2-01: the View menu switches all pane modes", async () => {
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -131,6 +170,7 @@ test("AC-R2-04: focus mode hides chrome and Escape restores it", async () => {
     await expect.poll(() => application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)).toBe(true);
     await page.keyboard.press("Escape");
+    await expect.poll(() => nativeFullScreen(application)).toBe(false);
     await expect(page.getByTestId("tabs")).toBeVisible();
     await expect(workspaceSidebar).toBeVisible();
     await expect(page.getByTestId("status")).toBeVisible();
@@ -215,41 +255,26 @@ test("AC-R2-05: continuous resize preserves the preview block and frame budget",
   }
 });
 
-test("AC-R2-06: full screen keeps editor input below 100 milliseconds", async () => {
+test("AC-R2-06: full screen and focus transitions keep input below 100 milliseconds", async () => {
   test.setTimeout(60_000);
-  const { application, page } = await launchEditor(fixturePath);
+  const largeFixture = path.join(repositoryRoot, "test/fixtures/big/large-500kb.md");
+  const { application, page } = await launchEditor(largeFixture);
   try {
     await clickMenuItem(application, "view-full-screen");
-    await expect.poll(() => application.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)).toBe(true);
-    const editor = page.getByTestId("editor").locator(".cm-content");
-    const heading = page.getByTestId("preview").locator("h1").first();
-    await editor.click();
-    await page.keyboard.press(DOCUMENT_START);
-    await page.keyboard.press("End");
-    let suffix = "";
-    for (let index = 0; index < 5; index += 1) {
-      suffix += "w";
-      await page.keyboard.type("w");
-      await expect(heading).toContainText(suffix);
-    }
-    const samples: number[] = [];
-    for (let index = 0; index < 30; index += 1) {
-      const character = String.fromCharCode(97 + (index % 26));
-      suffix += character;
-      await page.evaluate(() => performance.clearMeasures("preview-latency"));
-      await page.keyboard.type(character);
-      await expect(heading).toContainText(suffix, { timeout: 10_000 });
-      const durations = await page.evaluate(() =>
-        performance.getEntriesByName("preview-latency", "measure")
-          .map((entry) => entry.duration));
-      samples.push(durations.at(-1) ?? Infinity);
-    }
-    samples.sort((left, right) => left - right);
-    const p95 = samples[Math.ceil(samples.length * 0.95) - 1] ?? Infinity;
-    console.log(`full-screen input distribution: p95 ${p95.toFixed(2)} ms`);
-    expect(p95).toBeLessThan(100);
+    await expect.poll(() => nativeFullScreen(application)).toBe(true);
+    await measureInputAfterTransition(page, "enter full screen");
+
     await clickMenuItem(application, "view-full-screen");
+    await expect.poll(() => nativeFullScreen(application)).toBe(false);
+    await measureInputAfterTransition(page, "leave full screen");
+
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+F`);
+    await expect.poll(() => nativeFullScreen(application)).toBe(true);
+    await measureInputAfterTransition(page, "enter focus mode");
+
+    await page.keyboard.press("Escape");
+    await expect.poll(() => nativeFullScreen(application)).toBe(false);
+    await measureInputAfterTransition(page, "leave focus mode");
   } finally {
     await closeEditor(application, page);
   }
