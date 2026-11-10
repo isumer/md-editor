@@ -95,6 +95,60 @@ const editorSetup = [
 ];
 const callbacksCompartment = new Compartment();
 
+const plainMarkdownTemplate = markdown().language.parser.parse("x");
+const plainMarkdownParagraph = plainMarkdownTemplate.topNode.firstChild?.type;
+const plainMarkdownPattern = /^[A-Za-z0-9]+$/;
+// Lezer otherwise scans an entire unbroken line before honoring its parse budget.
+type MarkdownTree = typeof plainMarkdownTemplate;
+const MarkdownTree = plainMarkdownTemplate.constructor as new (
+  type: MarkdownTree["type"],
+  children: readonly MarkdownTree[],
+  positions: readonly number[],
+  length: number,
+) => MarkdownTree;
+
+function plainMarkdownParse(length: number) {
+  let stoppedAt: number | null = null;
+  return {
+    advance: () => {
+      const parsedLength = stoppedAt ?? length;
+      const children =
+        plainMarkdownParagraph === undefined
+          ? []
+          : [new MarkdownTree(plainMarkdownParagraph, [], [], parsedLength)];
+      const positions = children.length === 0 ? [] : [0];
+      return new MarkdownTree(
+        plainMarkdownTemplate.type,
+        children,
+        positions,
+        parsedLength,
+      );
+    },
+    get parsedPos() {
+      return stoppedAt ?? length;
+    },
+    stopAt: (position: number) => {
+      stoppedAt = position;
+    },
+    get stoppedAt() {
+      return stoppedAt;
+    },
+  };
+}
+
+const markdownSupport = markdown({
+  extensions: {
+    wrap: (inner, input) => {
+      const text = input.chunk(0);
+      return text.length === input.length &&
+        text.length > 64 * 1024 &&
+        plainMarkdownPattern.test(text)
+        ? plainMarkdownParse(input.length)
+        : inner;
+    },
+  },
+});
+
 function callbacksExtension(
   documentState: DocumentState,
   callbacks: EditorCallbacks,
@@ -152,7 +206,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
       callbacksCompartment.of(callbacksExtension(documentState, callbacks)),
     ],
