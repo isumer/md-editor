@@ -47,6 +47,7 @@ const BLOCK_CLASS = "preview-block";
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
 const APPEND_TASK_BLOCK_LIMIT = 4;
+const APPEND_FRAME_HTML_LIMIT = 8 * 1024;
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -294,6 +295,7 @@ export function wireRenderWorker(
   let shown: { docId: string; epoch: number; version: number } | null = null;
   let pendingAppend: {
     response: RenderResult & { ok: true; mode: "append" };
+    frame: number;
     timer: number;
   } | null = null;
 
@@ -334,6 +336,7 @@ export function wireRenderWorker(
     if (pending === null) {
       return;
     }
+    cancelAnimationFrame(pending.frame);
     window.clearTimeout(pending.timer);
     pendingAppend = null;
     const current = wiring.currentVersion();
@@ -379,10 +382,23 @@ export function wireRenderWorker(
         ...response,
         blocks: response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
       };
-      pendingAppend = {
+      const pending = {
         response: remainder,
-        timer: window.setTimeout(flushAppend, 0),
+        frame: 0,
+        timer: 0,
       };
+      pendingAppend = pending;
+      const htmlLength = response.blocks.reduce(
+        (length, block) => length + block.html.length,
+        0,
+      );
+      if (htmlLength > APPEND_FRAME_HTML_LIMIT) {
+        pending.frame = requestAnimationFrame(() => {
+          pending.timer = window.setTimeout(flushAppend, 0);
+        });
+      } else {
+        pending.timer = window.setTimeout(flushAppend, 0);
+      }
       return;
     }
     applyAccepted(response, true);
