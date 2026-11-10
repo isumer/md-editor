@@ -28,6 +28,15 @@ test("opens an argv file and renders its heading", {
   }
 });
 
+test("window title uses the SolidMD product name", async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page).toHaveTitle("sample.md — SolidMD");
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
 test("a failed argv open fails clearly and closes the application", {
   tag: "@AC-R5-01",
   annotation: { type: "AC-R5-01" },
