@@ -28,7 +28,9 @@ and never loses your work.
 > [What's next](#whats-next).
 
 <p align="center">
-  <img src="assets/screenshots/main.png" alt="SolidMD with a folder open in the sidebar, three tabs, and a Markdown document beside its live preview" width="900">
+  <img src="assets/screenshots/solidmd.png" alt="SolidMD with a folder open in the sidebar, three tabs, and a long Markdown document beside its live preview" width="900">
+  <br>
+  <sub>Shown with the planned dark theme.</sub>
 </p>
 
 ## Why SolidMD
