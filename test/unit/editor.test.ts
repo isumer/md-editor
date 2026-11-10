@@ -1,4 +1,4 @@
-import { language } from "@codemirror/language";
+import { ensureSyntaxTree, language } from "@codemirror/language";
 import { describe, expect, it, vi } from "vitest";
 
 import { createDocumentState } from "../../src/renderer/core/document";
@@ -7,12 +7,16 @@ import {
   MARKDOWN_LANGUAGE_MAX_LENGTH,
 } from "../../src/renderer/editor/editor";
 
-function editorLanguage(document: string) {
+function editorState(document: string) {
   return createEditorState(document, createDocumentState(), {
     onDocumentChanged: vi.fn(),
     onChanges: vi.fn(),
     updateTitle: vi.fn(),
-  }).facet(language)?.name ?? null;
+  });
+}
+
+function editorLanguage(document: string) {
+  return editorState(document).facet(language)?.name ?? null;
 }
 
 describe("editor language size threshold", () => {
@@ -26,5 +30,12 @@ describe("editor language size threshold", () => {
 
   it("AC-PERF-10: a document at the threshold has the Markdown language", () => {
     expect(editorLanguage("x".repeat(MARKDOWN_LANGUAGE_MAX_LENGTH))).toBe("markdown");
+  });
+
+  it("AC-PERF-10: a long line keeps Markdown tokens around plain text", () => {
+    const document = "& invalid *emphasis* " + "x".repeat(64 * 1024);
+    const tree = ensureSyntaxTree(editorState(document), document.length, 1_000);
+
+    expect(tree?.toString()).toContain("Emphasis");
   });
 });

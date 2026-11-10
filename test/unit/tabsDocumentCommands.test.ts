@@ -28,6 +28,22 @@ beforeEach(() => {
 });
 
 describe("document commands", () => {
+  it("selects the primary document when the second editor is not focused", async () => {
+    const { selectFocusedDocument } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(selectFocusedDocument("primary", "secondary", false)).toBe("primary");
+  });
+
+  it("selects the secondary document when the second editor is focused", async () => {
+    const { selectFocusedDocument } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(selectFocusedDocument("primary", "secondary", true)).toBe("secondary");
+  });
+
   it("AC-R5-08 AC-R5-15: publishes fixed menu ids and dispatches each command", async () => {
     const { DocumentCommands } = await import(
       "../../src/renderer/tabs/documentCommands"
@@ -40,7 +56,7 @@ describe("document commands", () => {
     const onResult = vi.fn();
     const otherView = vi.fn();
     const commands = new DocumentCommands({
-      editor,
+      editor: () => editor,
       onError: vi.fn(),
       onResult,
       open,

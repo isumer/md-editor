@@ -113,6 +113,25 @@ export function editorCallbacksEffect(
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
 
+const LONG_INLINE_BATCH_MIN_LENGTH = 64 * 1024;
+// Lezer otherwise visits every plain character; stop only where its stock parsers may match.
+const markdownTokenStart = /[\\&`<*_[\]! ]/g;
+
+const markdownSupport = markdown({
+  extensions: {
+    parseInline: [{
+      name: "LongPlainText",
+      parse(context, _next, position) {
+        if (context.text.length < LONG_INLINE_BATCH_MIN_LENGTH) return -1;
+        markdownTokenStart.lastIndex = position - context.offset;
+        const token = markdownTokenStart.exec(context.text);
+        if (token?.index === position - context.offset) return -1;
+        return token === null ? context.end : context.offset + token.index;
+      },
+    }],
+  },
+});
+
 export function dispatchUndo(view: EditorView): void {
   undo(view);
 }
@@ -149,7 +168,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
       callbacksCompartment.of(callbacksExtension(documentState, callbacks)),
     ],

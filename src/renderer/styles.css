@@ -153,11 +153,12 @@ body {
 }
 
 #workspace.has-document-view-two {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
 }
 
 #workspace.has-document-view-two #workspace-sidebar {
-  display: none;
+  position: static;
+  width: auto;
 }
 
 #workspace.has-document-view-two #preview {

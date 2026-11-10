@@ -16,6 +16,14 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
   return platform.startsWith("Win") ? "win32" : "linux";
 }
 
+export function selectFocusedDocument<T>(
+  primary: T,
+  secondary: T,
+  secondaryHasFocus: boolean,
+): T {
+  return secondaryHasFocus ? secondary : primary;
+}
+
 export function menuContribution(): MenuContribution {
   return {
     fileMenuTitle: formatMessage("menu.file", {}),
@@ -32,7 +40,7 @@ export function menuContribution(): MenuContribution {
 }
 
 export interface DocumentCommandsOptions {
-  editor: EditorView | (() => EditorView);
+  editor(): EditorView;
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   open(): Promise<void>;
@@ -61,10 +69,6 @@ export class DocumentCommands {
       platform: platformName(navigator.platform),
     });
     this.refresh();
-    if (typeof options.editor !== "function") {
-      options.editor.contentDOM.addEventListener("focus", () => this.refresh());
-      options.editor.contentDOM.addEventListener("blur", () => this.refresh());
-    }
     void this.publish().catch(options.onError);
   }
 
@@ -119,9 +123,7 @@ export class DocumentCommands {
   }
 
   private editor(): EditorView {
-    return typeof this.options.editor === "function"
-      ? this.options.editor()
-      : this.options.editor;
+    return this.options.editor();
   }
 
   private runUndo(): void {

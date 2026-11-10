@@ -145,10 +145,15 @@ test("AC-R4-12: view two undoes a view one edit and view one redoes it", {
     await editor(page, 1).click();
     await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type("HISTORY-EDIT");
+    await editor(page, 2).focus();
+    await page.keyboard.press(DOCUMENT_END);
     await expect(editor(page, 2)).toContainText("HISTORY-EDIT");
 
-    await editor(page, 2).focus();
     await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
+    await editor(page, 1).focus();
+    await page.keyboard.press(DOCUMENT_END);
+    await editor(page, 2).focus();
+    await page.keyboard.press(DOCUMENT_END);
     await expect(editor(page, 1)).not.toContainText("HISTORY-EDIT");
     await expect(editor(page, 2)).not.toContainText("HISTORY-EDIT");
 
@@ -156,6 +161,53 @@ test("AC-R4-12: view two undoes a view one edit and view one redoes it", {
     await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+z`);
     await expect(editor(page, 1)).toContainText("HISTORY-EDIT");
     await expect(editor(page, 2)).toContainText("HISTORY-EDIT");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("view two saves its document without changing view one", async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const alphaBefore = await fs.readFile(alpha, "utf8");
+  const betaBefore = await fs.readFile(beta, "utf8");
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, beta);
+    await tabIn(page, "tabs", "beta.md").click({ button: "right" });
+    await page.getByRole("button", { name: "Move to Other View" }).click();
+    await tabIn(page, "tabs", "alpha.md").click();
+    await editor(page, 2).click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("VIEW-TWO-SAVE");
+
+    await clickMenuItem(application, "file-save");
+
+    await expect.poll(() => fs.readFile(beta, "utf8")).toBe(`${betaBefore}VIEW-TWO-SAVE`);
+    expect(await fs.readFile(alpha, "utf8")).toBe(alphaBefore);
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a view two edit keeps the clean view one document clean", async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, beta);
+    await tabIn(page, "tabs", "beta.md").click({ button: "right" });
+    await page.getByRole("button", { name: "Move to Other View" }).click();
+    await tabIn(page, "tabs", "alpha.md").click();
+    await editor(page, 2).click();
+    await page.keyboard.press(DOCUMENT_END);
+
+    await page.keyboard.type("VIEW-TWO-DIRTY");
+
+    await expect(page).toHaveTitle(/^\u2022 beta\.md/);
+    await expect(tabIn(page, "tabs", "alpha.md").getByTestId("tab-dirty")).toBeHidden();
+    await editor(page, 1).click();
+    await expect(page).toHaveTitle(/^alpha\.md/);
   } finally {
     await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });

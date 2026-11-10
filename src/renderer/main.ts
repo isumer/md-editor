@@ -49,7 +49,7 @@ import {
   sendChanges,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
-import { DocumentCommands } from "./tabs/documentCommands";
+import { DocumentCommands, selectFocusedDocument } from "./tabs/documentCommands";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
@@ -85,6 +85,7 @@ const workspaceElements = {
   tree: requiredElement<HTMLElement>("#workspace-tree"),
 };
 const documentState = createDocumentState();
+const secondaryDocumentState = createDocumentState();
 const registry = new DocumentRegistry();
 let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
@@ -117,23 +118,35 @@ function showPreviewError(message = ""): void {
 }
 
 function updateTitle(): void {
-  document.title = documentTitle(documentState);
+  const state = selectFocusedDocument(
+    documentState,
+    secondaryDocumentState,
+    editorTwo.hasFocus,
+  );
+  document.title = documentTitle(state);
 }
 
-function syncDocumentState(document: DocumentRecord): void {
-  documentState.currentGrant = document.grant;
-  documentState.currentName = document.name;
-  documentState.saved = document.saved.text;
-  documentState.dirty = document.dirty;
+function syncDocumentState(document: DocumentRecord, state = documentState): void {
+  state.currentGrant = document.grant;
+  state.currentName = document.name;
+  state.saved = document.saved.text;
+  state.dirty = document.dirty;
+}
+
+function focusedDocument(): DocumentRecord | null {
+  return selectFocusedDocument(activeDocument, secondaryDocument, editorTwo.hasFocus);
 }
 
 function syncDirty(document: DocumentRecord): void {
   tabStrip.update(document);
   tabStripTwo.update(document);
-  if (document !== activeDocument) {
+  if (document !== focusedDocument()) {
     return;
   }
-  syncDocumentState(document);
+  syncDocumentState(
+    document,
+    editorTwo.hasFocus ? secondaryDocumentState : documentState,
+  );
   updateTitle();
 }
 
@@ -177,6 +190,7 @@ const callbacks: EditorCallbacks = {
   },
   updateTitle,
   onStateChanged: (state) => {
+    if (mirroring) return;
     documentCommands?.refresh();
     mergeView?.stateChanged(activeDocument?.id ?? null, state);
   },
@@ -205,9 +219,11 @@ const secondaryCallbacks: EditorCallbacks = {
     dirtyFrame.changed(document);
   },
   updateTitle,
-  onStateChanged: () => documentCommands?.refresh(),
+  onStateChanged: () => {
+    if (!mirroring) documentCommands?.refresh();
+  },
 };
-editorTwo = createEditor(editorTwoHost, documentState, secondaryCallbacks);
+editorTwo = createEditor(editorTwoHost, secondaryDocumentState, secondaryCallbacks);
 
 function hydrateEditor(view: DocumentViewId): void {
   const target = view === 1 ? editor : editorTwo;
@@ -219,8 +235,17 @@ function hydrateEditor(view: DocumentViewId): void {
   target.scrollDOM.scrollTop = scrollTop;
 }
 
-editor.contentDOM.addEventListener("focus", () => hydrateEditor(1));
-editorTwo.contentDOM.addEventListener("focus", () => hydrateEditor(2));
+function focusEditor(view: DocumentViewId): void {
+  hydrateEditor(view);
+  const document = view === 1 ? activeDocument : secondaryDocument;
+  if (document) {
+    syncDocumentState(document, view === 1 ? documentState : secondaryDocumentState);
+    updateTitle();
+  }
+}
+
+editor.contentDOM.addEventListener("focus", () => focusEditor(1));
+editorTwo.contentDOM.addEventListener("focus", () => focusEditor(2));
 
 function saveEditorViewState(
   document: DocumentRecord,
@@ -242,7 +267,7 @@ function editorStateForView(
   return document.state.update({
     annotations: Transaction.addToHistory.of(false),
     effects: editorCallbacksEffect(
-      documentState,
+      view === 1 ? documentState : secondaryDocumentState,
       view === 1 ? callbacks : secondaryCallbacks,
     ),
     selection,
@@ -272,7 +297,9 @@ function syncPeerEditor(
     selection: peer.state.selection.map(changes),
   });
   const scrollTop = peer.scrollDOM.scrollTop;
+  const peerDocumentState = peerView === 1 ? documentState : secondaryDocumentState;
   mirroring = true;
+  peerDocumentState.applyingDocument = true;
   try {
     peer.dispatch({
       annotations: Transaction.addToHistory.of(false),
@@ -281,6 +308,7 @@ function syncPeerEditor(
     saveEditorViewState(document, peerView, peer);
     peer.scrollDOM.scrollTop = scrollTop;
   } finally {
+    peerDocumentState.applyingDocument = false;
     mirroring = false;
   }
 }
@@ -380,6 +408,7 @@ function activateSecondaryDocument(document: DocumentRecord): void {
     saveEditorViewState(secondaryDocument, 2, editorTwo);
   }
   secondaryDocument = document;
+  syncDocumentState(document, secondaryDocumentState);
   const state = documentViews.state(document.id, 2);
   editorTwo.setState(editorStateForView(document, 2));
   editorTwo.scrollDOM.scrollTop = state?.scrollTop ?? 0;
@@ -578,7 +607,10 @@ documentCommands = new DocumentCommands({
   open: () => lifecycle.open(),
   otherView: runDocumentViewCommand,
   redo: () => runHistory("redo"),
-  save: (saveAs) => lifecycle.saveActive(saveAs),
+  save: async (saveAs) => {
+    const document = focusedDocument();
+    if (document) await lifecycle.save(document, saveAs);
+  },
   undo: () => runHistory("undo"),
 });
 
@@ -613,6 +645,7 @@ async function initialize(): Promise<void> {
     if (ready) {
       windowId = ready.windowId;
       documentState.productName = ready.productName;
+      secondaryDocumentState.productName = ready.productName;
       updateTitle();
       const recovered = await lifecycle.recover();
       if (!recovered) {
