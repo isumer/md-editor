@@ -99,7 +99,7 @@ describe("compare view state", () => {
     const row = state.rows[0];
     expect(state.limited).toBe(true);
     expect(row?.kind).toBe("modified");
-    expect(row?.kind === "modified" && row.left.spans).toEqual([{ kind: "same", text: left }]);
-    expect(row?.kind === "modified" && row.right.spans).toEqual([{ kind: "same", text: right }]);
+    expect(row?.left?.spans).toEqual([{ kind: "same", text: left }]);
+    expect(row?.right?.spans).toEqual([{ kind: "same", text: right }]);
   });
 });
