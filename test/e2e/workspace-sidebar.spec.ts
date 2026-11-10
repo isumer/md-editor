@@ -72,7 +72,7 @@ test("a second expand reuses loaded children and keeps editing responsive", {
   tag: "@AC-R11-02",
   annotation: { type: "AC-R11-02" },
 }, async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-large-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-large-"));
   const bulk = path.join(root, "bulk");
   await fs.mkdir(bulk);
   await writeNumberedFiles(bulk, 5_000, () => "# Entry\n");
@@ -133,7 +133,7 @@ test("clicking a workspace file opens and reuses its tab", {
   tag: "@AC-R11-04",
   annotation: { type: "AC-R11-04" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-"));
   await writeNumberedFiles(temporaryDirectory, 31, (index) => {
     const heading = `# Workspace note ${String(index)}\n`;
     return (heading + "workspace text\n".repeat(8_000)).slice(0, 100 * 1024);
