@@ -1,6 +1,11 @@
 import type { EditorView } from "@codemirror/view";
 
-import type { MenuCommandMessage, MenuContribution, MenuItemId } from "../../shared/ipc/menu";
+import {
+  isMenuItemId,
+  type MenuCommandMessage,
+  type MenuContribution,
+  type MenuItemId,
+} from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
 import { formatMessage } from "../../shared/messages/en";
 import { createCommandRegistry } from "../core/commands";
@@ -111,6 +116,7 @@ export class DocumentCommands {
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {
+    if (!isMenuItemId(menuItemId)) return;
     const commandId = this.menuCommands[menuItemId];
     if (commandId !== undefined) {
       void this.commands.run(commandId, this.commandContext, undefined, "menu");

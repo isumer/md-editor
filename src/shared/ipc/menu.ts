@@ -11,6 +11,14 @@ export const MENU_ITEM_IDS = [
   "file-compare-open",
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+export const VIEW_MENU_ITEM_IDS = [
+  "view-split",
+  "view-editor",
+  "view-preview",
+  "view-sync-scroll",
+  "view-focus-mode",
+] as const;
+export type ViewMenuItemId = (typeof VIEW_MENU_ITEM_IDS)[number];
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -28,7 +36,7 @@ export interface MenuContribution {
 export type MenuContributionResponse = void;
 
 // What main sends back when a contributed item is clicked: the menu item id.
-export type MenuCommandMessage = MenuItemId;
+export type MenuCommandMessage = MenuItemId | ViewMenuItemId;
 
 function exactData(
   value: unknown,

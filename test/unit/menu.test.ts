@@ -395,6 +395,72 @@ describe("menu IPC contributions in main", () => {
   });
 });
 
+describe("view menu", () => {
+  it("AC-R2-01: view items send view ids and Full Screen toggles the window state", () => {
+    const webContents = { send: vi.fn() };
+    const setFullScreen = vi.fn();
+    setMainWindow({
+      isDestroyed: () => false,
+      isFullScreen: () => false,
+      setFullScreen,
+      webContents,
+    } as unknown as Parameters<typeof setMainWindow>[0]);
+
+    const template = asShape(
+      buildContributionTemplate("linux", "MD Editor", contribution, vi.fn()),
+    );
+    expect(template.map((item) => item.label ?? item.role)).toEqual([
+      "File", "Edit", "View", "windowMenu", "help",
+    ]);
+    const view = template[2]?.submenu ?? [];
+    expect(view.map((item) => item.id ?? item.type)).toEqual([
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "separator",
+      "view-sync-scroll",
+      "separator",
+      "view-full-screen",
+      "view-focus-mode",
+    ]);
+    const item = (id: string): TemplateShape | undefined =>
+      view.find((entry) => entry.id === id);
+    for (const id of [
+      "view-split", "view-editor", "view-preview", "view-sync-scroll", "view-focus-mode",
+    ]) {
+      expect(item(id)?.registerAccelerator).toBe(false);
+      item(id)?.click?.();
+      expect(webContents.send).toHaveBeenCalledWith(MENU_CHANNELS.command, id);
+    }
+    expect(item("view-split")?.accelerator).toBe("CmdOrCtrl+1");
+    expect(item("view-editor")?.accelerator).toBe("CmdOrCtrl+2");
+    expect(item("view-preview")?.accelerator).toBe("CmdOrCtrl+3");
+    expect(item("view-sync-scroll")?.accelerator).toBe("CmdOrCtrl+Shift+L");
+    expect(item("view-focus-mode")?.accelerator).toBe("CmdOrCtrl+Shift+F");
+    expect(item("view-full-screen")?.accelerator).toBe("F11");
+    expect(item("view-full-screen")?.registerAccelerator).toBeUndefined();
+    item("view-full-screen")?.click?.();
+    expect(setFullScreen).toHaveBeenCalledWith(true);
+
+    const darwin = asShape(
+      buildContributionTemplate("darwin", "MD Editor", contribution, vi.fn()),
+    );
+    expect(darwin[3]?.submenu?.find((entry) => entry.id === "view-full-screen")?.accelerator)
+      .toBe("Ctrl+Command+F");
+  });
+
+  it("AC-R2-01: view clicks without a live window change nothing", () => {
+    setMainWindow(null);
+    const view = asShape(
+      buildContributionTemplate("linux", "MD Editor", contribution, vi.fn()),
+    )[2]?.submenu ?? [];
+    expect(view.length).toBeGreaterThan(0);
+    for (const entry of view) {
+      expect(() => entry.click?.()).not.toThrow();
+    }
+  });
+});
+
 function withOwnProto<T extends object>(value: T): T {
   Object.defineProperty(value, "__proto__", {
     configurable: true,
