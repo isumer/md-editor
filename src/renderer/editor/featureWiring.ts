@@ -14,6 +14,7 @@ export interface FeatureContext {
   readonly editorHost: HTMLElement;
   readonly preview: HTMLElement;
   readonly workspace: HTMLElement;
+  documents(): readonly DocumentRecord[];
   hasDocument(documentId: string): boolean;
   isActive(document: DocumentRecord): boolean;
   openDocument(reference: DocumentReference): Promise<void>;
@@ -21,6 +22,7 @@ export interface FeatureContext {
 }
 
 export interface FeatureHooks {
+  readonly commands?: Readonly<Record<string, () => void>>;
   start?(): void;
   documentActivated?(document: DocumentRecord): void;
   documentCreated?(document: DocumentRecord, source: string): void;
@@ -40,4 +42,5 @@ export interface InstalledFeatures {
   documentCreated(document: DocumentRecord, source: string): void;
   documentRemoved(documentId: string): void;
   documentStateChanged(documentId: string | null, state: EditorState): void;
+  runCommand(commandId: string): void;
 }

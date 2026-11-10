@@ -30,6 +30,16 @@ function callHooks(
   for (const hook of hooks) call(hook);
 }
 
+function runCommand(hooks: readonly FeatureHooks[], commandId: string): void {
+  for (const hook of hooks) {
+    const command = hook.commands?.[commandId];
+    if (command !== undefined) {
+      command();
+      return;
+    }
+  }
+}
+
 export function installFeatures(context: FeatureContext): InstalledFeatures {
   const hooks = registrations.map((registration) => registration.create(context));
   return {
@@ -42,5 +52,6 @@ export function installFeatures(context: FeatureContext): InstalledFeatures {
       callHooks(hooks, (hook) => hook.documentRemoved?.(documentId)),
     documentStateChanged: (documentId, state) =>
       callHooks(hooks, (hook) => hook.documentStateChanged?.(documentId, state)),
+    runCommand: (commandId) => runCommand(hooks, commandId),
   };
 }

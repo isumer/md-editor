@@ -154,6 +154,7 @@ const callbacks: EditorCallbacks = {
 
 editor = createEditor(editorHost, documentState, callbacks);
 installedFeatures = installFeatures({
+  documents: () => registry.all(),
   editorHost,
   preview,
   workspace,
@@ -355,6 +356,7 @@ lifecycle = new DocumentLifecycle({
   syncDirty,
 });
 documentCommands = new DocumentCommands({
+  compare: () => installedFeatures.runCommand("file.compareOpen"),
   editor,
   onError: showUnexpectedError,
   onResult: (result) => {

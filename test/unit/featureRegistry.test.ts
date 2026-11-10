@@ -33,8 +33,23 @@ const views: EditorView[] = [];
 afterEach(() => {
   for (const view of views.splice(0)) view.destroy();
   chooseWorkspaceRoot.mockClear();
+  vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
+
+class FeatureWorker {
+  static readonly instances: FeatureWorker[] = [];
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+
+  constructor() {
+    FeatureWorker.instances.push(this);
+  }
+
+  postMessage(): void {}
+
+  terminate(): void {}
+}
 
 function createElements() {
   const workspace = document.createElement("main");
@@ -78,15 +93,17 @@ async function createHarness(active = true, present = true, missingTree = false)
     savedText: Text.of(markedText.split("\n")),
     state: editor.state,
   });
+  const documents = [document];
   const installed = installFeatures({
     ...elements,
+    documents: () => documents,
     editor,
     hasDocument: (documentId) => present && documentId === document.id,
     isActive: (candidate) => active && candidate === document,
     openDocument: vi.fn(async () => undefined),
     showStatus,
   });
-  return { document, editor, installed, showStatus, ...elements };
+  return { document, documents, editor, installed, showStatus, ...elements };
 }
 
 describe("renderer feature registry", () => {
@@ -117,6 +134,45 @@ describe("renderer feature registry", () => {
 
     harness.installed.documentRemoved(harness.document.id);
     expect(document.querySelector('[data-testid="merge-view"]')).toBeNull();
+  });
+
+  it("dispatches a registered feature command", async () => {
+    vi.stubGlobal("Worker", FeatureWorker);
+    const harness = await createHarness();
+
+    harness.installed.runCommand("file.compareOpen");
+
+    expect(harness.showStatus).toHaveBeenCalledWith(
+      "Open two files before you compare them.",
+    );
+  });
+
+  it("loads one compare controller for repeated commands", async () => {
+    vi.stubGlobal("Worker", FeatureWorker);
+    FeatureWorker.instances.length = 0;
+    const harness = await createHarness();
+    harness.documents.push(createDocumentRecord({
+      replication: new DocumentReplication(),
+      savedText: Text.of(["right"]),
+      state: EditorState.create({ doc: "right" }),
+    }));
+
+    harness.installed.runCommand("file.compareOpen");
+    harness.installed.runCommand("file.compareOpen");
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="compare-view"]')).not.toBeNull();
+    });
+    harness.installed.runCommand("file.compareOpen");
+
+    expect(FeatureWorker.instances).toHaveLength(1);
+  });
+
+  it("ignores an unknown feature command", async () => {
+    const harness = await createHarness();
+
+    harness.installed.runCommand("unknown");
+
+    expect(harness.showStatus).not.toHaveBeenCalled();
   });
 
   it("updates an inactive document without changing the active editor", async () => {

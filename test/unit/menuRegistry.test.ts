@@ -35,6 +35,11 @@ const contribution: MenuContribution = {
       enabled: false,
       checked: true,
     },
+    {
+      id: "file-compare-open",
+      title: "Compare Open Files",
+      accelerator: "CmdOrCtrl+Shift+C",
+    },
   ],
 };
 
@@ -84,8 +89,9 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "0.0|file-open|Open|-|-|CmdOrCtrl+O|false|true|false",
           "0.1|file-save|Save|-|-|CmdOrCtrl+S|false|true|false",
           "0.2|file-save-as|Save As|-|-|CmdOrCtrl+Shift+S|false|false|true",
-          "0.3|-|-|-|separator|-|-|-|-",
-          "0.4|-|-|quit|-|-|-|-|-",
+          "0.3|file-compare-open|Compare Open Files|-|-|CmdOrCtrl+Shift+C|false|true|false",
+          "0.4|-|-|-|separator|-|-|-|-",
+          "0.5|-|-|quit|-|-|-|-|-",
           "1|-|Edit|-|-|-|-|-|-",
           "1.0|-|-|cut|-|-|-|-|-",
           "1.1|-|-|copy|-|-|-|-|-",
@@ -112,6 +118,7 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "1.0|file-open|Open|-|-|CmdOrCtrl+O|false|true|false",
           "1.1|file-save|Save|-|-|CmdOrCtrl+S|false|true|false",
           "1.2|file-save-as|Save As|-|-|CmdOrCtrl+Shift+S|false|false|true",
+          "1.3|file-compare-open|Compare Open Files|-|-|CmdOrCtrl+Shift+C|false|true|false",
           "2|-|Edit|-|-|-|-|-|-",
           "2.0|-|-|cut|-|-|-|-|-",
           "2.1|-|-|copy|-|-|-|-|-",

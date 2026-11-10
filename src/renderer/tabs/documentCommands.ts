@@ -32,6 +32,7 @@ export interface DocumentCommandsOptions {
   editor: EditorView;
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
+  compare(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
 }
@@ -76,6 +77,11 @@ export class DocumentCommands {
       id: "file.saveAs",
       titleKey: "menu.saveAs",
       run: () => this.options.save(true),
+    });
+    this.commands.register({
+      id: "file.compareOpen",
+      titleKey: "menu.compareOpen",
+      run: this.options.compare,
     });
     this.commands.register({
       id: "undo",
