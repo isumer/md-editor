@@ -54,7 +54,7 @@ Given the app is running
 When a file is dragged and dropped onto the window
 Then the file opens in a new tab
 
-## Side-by-side views (the Notepad++ "Other View")
+## Side-by-side views (the second view)
 
 ### AC-R4-10 — A tab moves or is cloned to the other view
 status: planned

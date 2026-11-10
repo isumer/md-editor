@@ -1,4 +1,4 @@
-# R13 — The Notepad++ toolset
+# R13 — Power tools
 
 ### AC-R13-01 — The outline lists every heading with its level and line
 status: implemented
