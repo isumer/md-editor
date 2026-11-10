@@ -19,7 +19,7 @@ When the user inserts text or an increasing number at that column
 Then the inserted value starts at the same column on every line in the range, a shorter line is padded with spaces up to that column, the numbers rise by the step, and the input is never changed
 
 ### AC-R13-04 — Word completion suggests words from the document
-status: planned
+status: implemented
 Given a document and a cursor in a word
 When the user has typed at least two word characters
 Then the words elsewhere in the document that start with that prefix are suggested once each, case-insensitively, in document order, without the word at the cursor, and the input is never changed
@@ -37,7 +37,7 @@ When the palette filters the list
 Then only commands whose titles contain the query letters in order (ignoring case and spaces) are listed, word starts and consecutive letters rank higher, recent commands win ties, the matched letters are reported for highlighting, and the inputs are never changed
 
 ### AC-R13-07 — The table formatter aligns every column exactly
-status: planned
+status: implemented
 Given a Markdown pipe table with a header row, a delimiter row with alignment colons and body rows of uneven width
 When the user formats the table
 Then every cell is trimmed and padded to its column's widest cell, the delimiter row keeps each column's alignment and has at least three characters, an escaped pipe stays inside its cell, uneven or invalid tables are reported, the result is stable when formatted again, and the input is never changed
