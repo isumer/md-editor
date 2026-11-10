@@ -23,6 +23,9 @@ import {
   createEditorState,
   type EditorCallbacks,
 } from "./editor/editor";
+import { CompareController } from "./features/compare/controller";
+import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
+import "./features/compare/compare.css";
 import { MergeView } from "./features/merge/mergeView";
 import "./features/merge/merge.css";
 import {
@@ -84,10 +87,23 @@ let editor: EditorView;
 let mergeView: MergeView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
+let compareController: CompareController | null = null;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
   status.textContent = message;
+}
+
+function openCompare(): void {
+  compareController ??= new CompareController({
+    documents: () => registry.all(),
+    editor: editorHost,
+    preview,
+    showStatus,
+    workspace,
+    workerUrl: new URL(compareWorkerUrl, window.location.href),
+  });
+  compareController.open();
 }
 
 // A successful render clears only the preview's own error, never a file failure.
@@ -375,6 +391,7 @@ new WorkspaceSidebar({
   showStatus,
 });
 documentCommands = new DocumentCommands({
+  compare: openCompare,
   editor,
   onError: showUnexpectedError,
   onResult: (result) => {

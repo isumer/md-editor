@@ -58,6 +58,7 @@ describe("keymap data", () => {
       "Mod-z": "undo",
       "Mod-Shift-z": "redo",
       "Mod-y": "redo",
+      "Mod-Shift-c": "file.compareOpen",
     });
   });
 });
@@ -137,6 +138,19 @@ describe("bindingForEvent", () => {
       .toBe("file.saveAs");
     expect(bindingForEvent(event("x", { ctrlKey: true }), "linux")).toBeUndefined();
     expect(bindingForEvent(event("x"), "linux")).toBeUndefined();
+  });
+
+  it("AC-R14-01: binds compare on Ctrl+Shift+C, including non-Latin layouts", () => {
+    expect(bindingForEvent(event("c", { ctrlKey: true, shiftKey: true }), "linux"))
+      .toBe("file.compareOpen");
+    expect(bindingForEvent(
+      event("с", { code: "KeyC", ctrlKey: true, shiftKey: true }),
+      "linux",
+    )).toBe("file.compareOpen");
+    expect(bindingForEvent(event("c", { ctrlKey: true, altKey: true }), "linux"))
+      .toBeUndefined();
+    expect(bindingForEvent(event("ć", { ctrlKey: true, altKey: true }), "win32"))
+      .toBeUndefined();
   });
 });
 
