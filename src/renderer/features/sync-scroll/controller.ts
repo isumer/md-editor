@@ -157,8 +157,7 @@ export class SyncScrollController {
     let high = this.pages.length - 1;
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
-      const page = this.pages[middle];
-      if (page === undefined) break;
+      const page = this.pages[middle] as HTMLElement;
       if (this.pageLine(page) <= line) low = middle + 1;
       else high = middle - 1;
     }
@@ -173,8 +172,7 @@ export class SyncScrollController {
     let high = this.pages.length - 1;
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
-      const page = this.pages[middle];
-      if (page === undefined) break;
+      const page = this.pages[middle] as HTMLElement;
       const anchor = this.pageAnchor(page, previewTop, scrollTop)[0];
       if (anchor !== undefined && anchor.blockTop <= top) low = middle + 1;
       else high = middle - 1;
@@ -322,9 +320,8 @@ export class SyncScrollController {
     let high = this.pages.length;
     while (low < high) {
       const middle = Math.floor((low + high) / 2);
-      const current = this.pages[middle];
-      if (current !== undefined &&
-        (current.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
+      const current = this.pages[middle] as HTMLElement;
+      if ((current.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
         low = middle + 1;
       } else {
         high = middle;

@@ -294,12 +294,12 @@ describe("sync scroll controller", () => {
     }
     const inserted = document.createElement("div");
     inserted.className = "preview-page";
-    vi.spyOn(inserted, "getBoundingClientRect").mockReturnValue(rect(-100, 100));
+    vi.spyOn(inserted, "getBoundingClientRect").mockReturnValue(rect(100, 100));
     const block = document.createElement("div");
     block.className = "preview-block";
     block.dataset["line"] = "4";
     inserted.append(block);
-    state.root.insertBefore(inserted, first);
+    state.root.insertBefore(inserted, second);
     state.root.append(third);
     second.remove();
     state.root.append(document.createTextNode("fill"));
@@ -312,12 +312,12 @@ describe("sync scroll controller", () => {
     expect(state.scrollEditorToLine).toHaveBeenCalledWith(1);
   });
 
-  it("skips an empty page while finding an editor line", async () => {
+  it("skips an empty final page while finding an editor line", async () => {
     const state = setup([]);
+    state.addPage({ line: 10, height: 100 });
     const empty = document.createElement("div");
     empty.className = "preview-page";
     state.root.append(empty);
-    state.addPage({ line: 10, height: 100 });
     await Promise.resolve();
 
     state.setEditorLine(10);
