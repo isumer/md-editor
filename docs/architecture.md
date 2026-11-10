@@ -16,7 +16,7 @@ reversal conditions are in [`adr/`](adr/).
 2. **Hostile documents** — a file is untrusted input; the renderer is
    sandboxed, the preview sanitised, and a compromised renderer still
    cannot touch files the user did not choose.
-3. **Notepad++ breadth** — ~100 commands, two views, macros, panels.
+3. **Breadth of tools** — ~100 commands, two views, macros, panels.
 4. **Large files** — work proportional to the change, not the document.
 5. **Testability** — every boundary has a port with a fake.
 
@@ -207,8 +207,7 @@ thread. A test asserts no `doc.toString()` on the UI thread per edit.
   character (AltGr on Turkish, Polish, German layouts) is text input and
   never a command; default bindings avoid Ctrl+Alt chords for this reason.
 - **Macros** record command invocations, with typing recorded as
-  `editor.insertText(text)` relative to the selection (Notepad++
-  semantics). "Play to end of file" runs in cancellable, yielding batches.
+  `editor.insertText(text)` relative to the selection. "Play to end of file" runs in cancellable, yielding batches.
 - **i18n**: titles are message keys in a catalog. Each area exports its
   strings from `shared/messages/en/`; the renderer composes them in
   `renderer/core/messages.ts`. English is the only catalog in v1.

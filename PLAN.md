@@ -1,7 +1,7 @@
 # MD Editor — plan
 
-A standalone **Notepad++-class text editor with first-class Markdown**:
-it should cover everyday text and code editing the way Notepad++ does,
+A standalone **text and code editor with first-class Markdown**:
+it should cover everyday text and code editing,
 and add a live Markdown preview, export and a workspace view on top.
 Windows, macOS and Linux (Linux costs only packaging — development and
 tests already run on Linux). The
@@ -23,18 +23,18 @@ crashes**; every feature below is subordinate to that.
 | R9 | Windows, macOS and Linux | Installer + standalone per platform from CI (Linux added 2026-11-04: same code, packaging only) |
 | R10 | Fast, stable | See "Stability budget" — measured, not asserted |
 | R11 | Workspace sidebar | Open a folder; the left panel lists its folders and `.md` files as a tree; click opens in a tab; toggle the panel; updates when files change on disk |
-| R12 | Plain text and code files, Notepad++-style | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
-| R13 | Notepad++ toolset | The everyday Notepad++ tools listed in "Power tools" |
-| R14 | Compare files and folders, IntelliJ-style | See "Compare files and folders" |
+| R12 | Plain text and code files | `.txt` and source files open in tabs with language-aware highlighting and the editing tools in "Text editing" |
+| R13 | Power tools | The everyday editing tools listed in "Power tools" |
+| R14 | Compare files and folders | See "Compare files and folders" |
 | R15 | Three-way merge view: left · editable result · right | See "Merge view" under R14 |
 
 ## Stack and why
 
 | Layer | Choice | Why |
 |---|---|---|
-| Shell | Electron 45 | Same Chromium on Windows and macOS, so the preview and the PDF render identically on both. `webContents.printToPDF` gives a real PDF of the real preview. VS Code's Markdown preview runs on this stack. Tauri was rejected: it uses WKWebView on macOS and WebView2 on Windows — two engines, two sets of print/PDF behaviour. |
+| Shell | Electron 45 | Same Chromium on Windows and macOS, so the preview and the PDF render identically on both. `webContents.printToPDF` gives a real PDF of the real preview. Tauri was rejected: it uses WKWebView on macOS and WebView2 on Windows — two engines, two sets of print/PDF behaviour. |
 | Editor | CodeMirror 6 | Virtualised rendering: only visible lines are in the DOM, so a 5 MB file edits as fast as a 5 KB one. |
-| Markdown | markdown-it 15 (GFM: tables, task lists, strikethrough, linkify) | Same parser as VS Code; tokens carry source line maps, which sync scroll needs. |
+| Markdown | markdown-it 15 (GFM: tables, task lists, strikethrough, linkify) | Tokens carry source line maps, which sync scroll needs. |
 | Sanitising | DOMPurify | Raw HTML in a document must not run script in the app. |
 | Code highlight | highlight.js | Runs inside the render worker, off the UI thread. |
 | Build | Vite (renderer) + tsc (main, preload), TypeScript 6 | |
@@ -59,7 +59,7 @@ that symptom, each closed by a rule here:
    work and returns a typed error; the renderer shows it. A crashed or
    hung renderer (`render-process-gone`, `unresponsive`) is reported and
    the window reloaded with the recovered drafts.
-5. **Preview errors (seen in VS Code: blank or stuck preview).** → A
+5. **Preview errors (blank or stuck preview).** → A
    render that throws keeps the last good preview and shows an error
    badge with the message; the next edit retries. A worker that crashes
    is restarted and the current text re-rendered. A render running longer
@@ -547,10 +547,10 @@ examples/            sample documents exercising every feature
 scripts/  src/  test/
 ```
 GitHub settings: description, topics (`markdown-editor`, `text-editor`,
-`electron`, `notepad-plus-plus-alternative`), branch protection on
+`electron`), branch protection on
 `main` requiring CI green.
 
-**Licence: GPL-3.0-or-later** (user, 2026-11-04), as Notepad++.
+**Licence: GPL-3.0-or-later** (user, 2026-11-04).
 - `LICENSE.md` is the verbatim GPL-3.0 text; `package.json` `license`
   is `GPL-3.0-or-later`; the README, the About dialog and the Windows
   installer's licence page say so.
@@ -565,7 +565,7 @@ GitHub settings: description, topics (`markdown-editor`, `text-editor`,
   someone means also offering them the source (or making the repo
   public).
 
-## Shell integration ("Edit with …" like Notepad++)
+## Shell integration ("Edit with …")
 **Windows — classic context menu (v0.0.x):** the NSIS installer
 (electron-builder `nsis.include` script) writes per-user keys, no admin
 needed, and the uninstaller removes them:
@@ -583,8 +583,7 @@ needed, and the uninstaller removes them:
 
 **Windows 11 top-level menu (later, needs signing):** an
 `IExplorerCommand` shell extension DLL (small C++ project, built in CI on
-windows-latest) registered through a signed sparse MSIX package — the
-mechanism Notepad++ 8.4+ uses. Blocked on a code-signing certificate;
+windows-latest) registered through a signed sparse MSIX package. Blocked on a code-signing certificate;
 until then the classic entry is the only one.
 
 **macOS:** `fileAssociations` / `CFBundleDocumentTypes` put the app in
