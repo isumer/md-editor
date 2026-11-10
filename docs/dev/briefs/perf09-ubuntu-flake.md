@@ -13,11 +13,24 @@ fixed or deleted, never retried into green. We need the cause.
 
 ## Evidence to start from
 - CI run 42127724347 (ubuntu, full suite): one AC-PERF-09 frame over budget.
+- CI run 42875705947 (ubuntu, candidate 13cb57c, a fixture-only diff that
+  cannot change frame times): 20 MB fling has one 33.3 ms frame, no long
+  task; the 500 KB row in the same run is green (16.8 ms). Main runs just
+  before and after are green with 20 MB maxFrame 16.8 ms (42851180448,
+  42881220898).
 - Branch `bug/perf09-diag` (do not merge it) has a LoAF + Chromium
   contentTracing probe in `expectSmoothScroll` and GPU-info logging. Reuse
   the probe locally; do not land it as it is.
 - On the macOS VM the slow frames were GPU-process waits with idle
   renderer. Check whether Ubuntu shows the same shape or a different one.
+
+## Owner and budget
+- Owner: Vision. The Friday research lane ran one session on 2026-11-06
+  and produced no data; this job supersedes it.
+- The 20 MB tests wait up to 4.4 minutes each for the fill. Cap
+  reproduction at about 30 minutes: use the smallest ordered subset that
+  shows the failure, not N full-suite runs. Proceed with the traces you
+  have when the cap is hit and say so in the note.
 
 ## Questions to answer, with data
 1. Reproduce: run the full e2e suite (or the smallest ordered subset) until
@@ -40,4 +53,6 @@ fixed or deleted, never retried into green. We need the cause.
 ## Deliverable
 `docs/dev/notes/perf09-ubuntu-flake.md`: method, run counts, trace
 findings, the cause or the ranked candidates, and the proposed fix.
-Allowed files: that note, `test/e2e/**`, and `src/**` only for a proven fix.
+Allowed files: that note, `test/e2e/**` except `test/e2e/preview-perf.spec.ts`
+(owned by the queued perf-macos-diagnosis item; work in a copy such as
+`test/e2e/diag-preview-perf.spec.ts`), and `src/**` only for a proven fix.
