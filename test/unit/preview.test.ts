@@ -54,7 +54,7 @@ function blocks(preview: HTMLElement): HTMLElement[] {
 }
 
 describe("preview render flow", () => {
-  it("AC-PERF-10: lays out the split initial append in separate frames", () => {
+  it("AC-PERF-10: limits each frame-paced append to four blocks", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -85,6 +85,10 @@ describe("preview render flow", () => {
     expect(blocks(preview)).toHaveLength(4);
     expect(frames).toHaveLength(1);
     frames.shift()?.(16);
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview)).toHaveLength(8);
+    expect(frames).toHaveLength(1);
+    frames.shift()?.(32);
     vi.runOnlyPendingTimers();
     expect(blocks(preview)).toHaveLength(12);
     vi.useRealTimers();
@@ -169,7 +173,7 @@ describe("preview render flow", () => {
     vi.useFakeTimers();
     const version = { docId: "doc", epoch: 1, version: 1 };
     const { worker, preview } = wiring({ version });
-    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -195,13 +199,16 @@ describe("preview render flow", () => {
       version: 2,
       ok: true,
       mode: "append",
-      blocks: [{ id: "b8", startLine: 8, endLine: 9, html: "<p>8</p>" }],
+      blocks: [{ id: "b12", startLine: 12, endLine: 13, html: "<p>12</p>" }],
       fillToken: 5,
       complete: false,
     });
 
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
-      .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"]);
+      .toEqual([
+        "b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9",
+        "b10", "b11", "b12",
+      ]);
     vi.useRealTimers();
   });
 

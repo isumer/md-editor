@@ -301,6 +301,19 @@ export function wireRenderWorker(
     timer: number;
   } | null = null;
 
+  const deferAppend = (
+    pending: NonNullable<typeof pendingAppend>,
+    waitForFrame: boolean,
+  ): void => {
+    if (waitForFrame) {
+      pending.frame = requestAnimationFrame(() => {
+        pending.timer = window.setTimeout(flushAppend, 0);
+      });
+    } else {
+      pending.timer = window.setTimeout(flushAppend, 0);
+    }
+  };
+
   const applyAccepted = (
     response: RenderResult,
     requestFill: boolean,
@@ -346,11 +359,31 @@ export function wireRenderWorker(
       pending.response.epoch !== current.epoch) {
       return;
     }
-    applyAccepted(pending.response, true);
+    if (pending.response.blocks.length <= APPEND_TASK_BLOCK_LIMIT) {
+      applyAccepted(pending.response, true);
+      return;
+    }
+    const next = {
+      ...pending.response,
+      blocks: pending.response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
+      complete: false,
+    };
+    if (!applyAccepted(next, false)) {
+      return;
+    }
+    const remainder = {
+      ...pending.response,
+      blocks: pending.response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
+    };
+    const nextPending = { response: remainder, frame: 0, timer: 0 };
+    pendingAppend = nextPending;
+    deferAppend(nextPending, true);
   };
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
-    flushAppend();
+    while (pendingAppend !== null) {
+      flushAppend();
+    }
     const response = event.data;
     const current = wiring.currentVersion();
     if ("op" in response) {
@@ -390,13 +423,7 @@ export function wireRenderWorker(
         timer: 0,
       };
       pendingAppend = pending;
-      if (response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD) {
-        pending.frame = requestAnimationFrame(() => {
-          pending.timer = window.setTimeout(flushAppend, 0);
-        });
-      } else {
-        pending.timer = window.setTimeout(flushAppend, 0);
-      }
+      deferAppend(pending, response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD);
       return;
     }
     applyAccepted(response, true);
