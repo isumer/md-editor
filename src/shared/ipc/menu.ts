@@ -1,22 +1,12 @@
-import * as menuFeatures from "./menu/registry";
-
 export const MENU_CHANNELS = {
   command: "menu:command",
   contribute: "menu:contribute",
 } as const;
 
-type MenuFeature = (typeof menuFeatures)[keyof typeof menuFeatures];
-type ContributionFeature = Extract<MenuFeature, { contributes: true }>;
-type MenuFeatureItem = MenuFeature["items"][number];
-
-export type MenuItemId = ContributionFeature["items"][number]["id"];
-export type MenuCommandMessage = MenuFeatureItem["id"];
-
 // Menu item ids are stable across slices: e2e tests address the items by these ids.
-export const MENU_ITEM_IDS: readonly MenuItemId[] = Object.values(menuFeatures)
-  .flatMap((feature) => feature.contributes
-    ? feature.items.map((item) => item.id)
-    : []);
+export const MENU_ITEM_IDS = ["file-open", "file-save", "file-save-as"] as const;
+export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+export type MenuCommandMessage = MenuItemId;
 
 export interface MenuContributionItem {
   id: MenuItemId;

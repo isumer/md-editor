@@ -3,7 +3,7 @@ import { Text, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
-import { formatMessage } from "../shared/messages/en";
+import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
   createDocumentRecord,

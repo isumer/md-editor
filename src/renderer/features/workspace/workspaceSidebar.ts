@@ -1,6 +1,6 @@
 import type { DocumentReference } from "../../../shared/ipc/file";
 import type { ServiceError } from "../../../shared/ipc/result";
-import { formatMessage } from "../../../shared/messages/en";
+import { formatMessage } from "../../core/messages";
 import type { FeatureRegistration } from "../../editor/featureWiring";
 import {
   chooseWorkspaceRoot,

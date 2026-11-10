@@ -3,7 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { fileMenu } from "../../shared/ipc/menu/file";
 import type { MenuCommandMessage, MenuContribution } from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "../core/messages";
 import { createCommandRegistry } from "../core/commands";
 import { createContextKeys } from "../core/contextKeys";
 import { installKeymap } from "../core/keymap";

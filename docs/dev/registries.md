@@ -2,13 +2,17 @@
 
 Add English messages to one area file under `src/shared/messages/en/`.
 
-Export the area once from `src/shared/messages/en/registry.ts`.
+Export the area once from `src/renderer/core/messages/registry.ts`.
 
-The composer rejects duplicate keys during type checking.
+The renderer composer rejects duplicate keys during type checking.
+
+Shared files must not import another project file.
 
 Add menu declarations to one feature file under `src/shared/ipc/menu/`.
 
-Export the feature once from `src/shared/ipc/menu/registry.ts`.
+Add its stable item IDs to `src/shared/ipc/menu.ts`.
+
+Shared menu declarations must not import another project file.
 
 Add main-owned menu sections under `src/main/app/menu/`.
 

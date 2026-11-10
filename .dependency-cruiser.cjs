@@ -20,7 +20,7 @@ module.exports = {
       name: "shared-no-dependencies",
       severity: "error",
       from: { path: `${source}/shared/` },
-      to: { pathNot: `${source}/shared/` },
+      to: {},
     },
     {
       name: "node-shared-boundaries",

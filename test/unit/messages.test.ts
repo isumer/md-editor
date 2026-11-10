@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { messages } from "../../src/shared/messages/en";
+import { messages } from "../../src/renderer/core/messages";
 
 describe("English messages", () => {
   it("keeps every message key mapped to the same text", () => {

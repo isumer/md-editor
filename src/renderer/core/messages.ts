@@ -1,4 +1,4 @@
-import * as messageModules from "./en/registry";
+import * as messageModules from "./messages/registry";
 
 type MessageModules = typeof messageModules;
 type ModuleName = keyof MessageModules;

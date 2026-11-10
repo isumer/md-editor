@@ -15,6 +15,22 @@ function editorLanguage(document: string) {
   }).facet(language)?.name ?? null;
 }
 
+function paragraphCount(document: string): number {
+  const state = createEditorState(document, createDocumentState(), {
+    onDocumentChanged: vi.fn(),
+    onChanges: vi.fn(),
+    updateTitle: vi.fn(),
+  });
+  const tree = state.facet(language)?.parser.parse(document);
+  if (!tree) return 0;
+  const cursor = tree.cursor();
+  let count = 0;
+  do {
+    if (cursor.name === "Paragraph") count += 1;
+  } while (cursor.next());
+  return count;
+}
+
 describe("editor language size threshold", () => {
   it("AC-PERF-10: a small document has the Markdown language", () => {
     expect(editorLanguage("# Small document")).toBe("markdown");
@@ -26,5 +42,9 @@ describe("editor language size threshold", () => {
 
   it("AC-PERF-10: a document at the threshold has the Markdown language", () => {
     expect(editorLanguage("x".repeat(MARKDOWN_LANGUAGE_MAX_LENGTH))).toBe("markdown");
+  });
+
+  it("AC-R11-04: a large multiline paragraph is parsed in bounded chunks", () => {
+    expect(paragraphCount("workspace text\n".repeat(8_000))).toBeGreaterThan(1);
   });
 });
