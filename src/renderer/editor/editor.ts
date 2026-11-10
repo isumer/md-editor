@@ -12,6 +12,9 @@ import {
   foldGutter,
   foldKeymap,
   indentOnInput,
+  Language,
+  LanguageSupport,
+  ParseContext,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
@@ -94,6 +97,42 @@ const editorSetup = [
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
+const MARKDOWN_PARSE_MAX_LINE_LENGTH = 64 * 1024;
+const markdownSupport = markdown();
+// Lezer scans a physical Markdown line in one uninterruptible parser step.
+const longLineMarkdownSupport = new LanguageSupport(
+  new Language(
+    markdownSupport.language.data,
+    ParseContext.getSkippingParser(),
+    [],
+    "markdown",
+  ),
+  markdownSupport.support,
+);
+
+function hasOversizedLine(document: Text | string): boolean {
+  if (document.length <= MARKDOWN_PARSE_MAX_LINE_LENGTH) return false;
+  if (typeof document === "string") {
+    let lineStart = 0;
+    while (lineStart < document.length) {
+      const lineEnd = document.indexOf("\n", lineStart);
+      const contentEnd = lineEnd < 0 ? document.length : lineEnd;
+      if (contentEnd - lineStart > MARKDOWN_PARSE_MAX_LINE_LENGTH) return true;
+      if (lineEnd < 0) return false;
+      lineStart = lineEnd + 1;
+    }
+    return false;
+  }
+  const lines = document.iterLines();
+  for (let line = lines.next(); !line.done; line = lines.next()) {
+    if (line.value.length > MARKDOWN_PARSE_MAX_LINE_LENGTH) return true;
+  }
+  return false;
+}
+
+function markdownFor(document: Text | string): Extension {
+  return hasOversizedLine(document) ? longLineMarkdownSupport : markdownSupport;
+}
 
 export function dispatchUndo(view: EditorView): void {
   undo(view);
@@ -131,7 +170,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownFor(document)] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);

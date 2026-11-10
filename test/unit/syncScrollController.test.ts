@@ -215,7 +215,7 @@ describe("sync scroll controller", () => {
     expect(scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(13);
   });
 
-  it("scroll measures bounded pages and does not measure every block", async () => {
+  it("scroll uses cached page geometry without measuring pages or blocks", async () => {
     const fixtures = Array.from({ length: 64 }, (_, index) => ({
       line: index * 20 + 1,
       height: 100,
@@ -228,8 +228,36 @@ describe("sync scroll controller", () => {
     state.preview.scrollTop = 3_000;
     state.preview.dispatchEvent(new Event("scroll"));
     state.flush();
-    expect(state.pageRects() - pagesBefore).toBeLessThanOrEqual(8);
-    expect(state.blockRects() - blocksBefore).toBeLessThanOrEqual(40);
+    expect(state.pageRects() - pagesBefore).toBe(0);
+    expect(state.blockRects() - blocksBefore).toBe(0);
+  });
+
+  it("a changed cached page shifts the geometry after it", async () => {
+    vi.useFakeTimers();
+    const fixtures = Array.from({ length: 101 }, (_, index) => ({
+      line: index * 10 + 1,
+      height: 100,
+    }));
+    const state = setup([]);
+    for (const fixture of fixtures) state.addPage(fixture);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(100);
+    state.flush();
+    const pages = state.root.querySelectorAll<HTMLElement>(".preview-page");
+    const firstFixture = fixtures[0];
+    const firstPage = pages.item(0);
+    if (firstFixture === undefined || firstPage === null) throw new Error("Missing first page");
+    firstFixture.height = 200;
+    firstPage.append(document.createElement("span"));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(100);
+    state.flush();
+    const pageReads = state.pageRects();
+    firstPage.dispatchEvent(new Event("contentvisibilityautostatechange", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(250);
+    state.flush();
+
+    expect(state.pageRects()).toBeGreaterThan(pageReads);
   });
 
   it("refresh uses visible blocks when the preview has no pages", () => {
@@ -347,6 +375,30 @@ describe("sync scroll controller", () => {
     flush();
 
     expect(scrollEditorToLine).not.toHaveBeenCalled();
+  });
+
+  it("caches empty pages and a hidden final page without anchors", async () => {
+    const state = setup([]);
+    const empty = document.createElement("div");
+    empty.className = "preview-page";
+    vi.spyOn(empty, "getBoundingClientRect").mockReturnValue(rect(0, 100));
+    const hidden = document.createElement("div");
+    hidden.className = "preview-page";
+    vi.spyOn(hidden, "getBoundingClientRect").mockReturnValue(rect(100, 0));
+    for (const line of [9, 19]) {
+      const block = document.createElement("div");
+      block.className = "preview-block";
+      block.dataset["line"] = String(line);
+      vi.spyOn(block, "getBoundingClientRect").mockReturnValue(rect(100, 0));
+      hidden.append(block);
+    }
+    state.root.append(empty, hidden);
+    await Promise.resolve();
+    state.controller.refreshAnchors();
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.scrollEditorToLine).not.toHaveBeenCalled();
   });
 
   it("uses the browser frame and resize observers by default", async () => {

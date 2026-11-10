@@ -6,6 +6,14 @@ import {
 
 const ENABLED_STORAGE_KEY = "syncScroll.enabled";
 
+interface PageGeometry {
+  readonly anchors: readonly SyncAnchor[];
+  readonly height: number;
+  readonly page: HTMLElement;
+  readonly sourceLine: number;
+  readonly top: number;
+}
+
 export interface SyncScrollControllerOptions {
   readonly blockLine: (element: HTMLElement) => number;
   readonly editorScroll: HTMLElement;
@@ -20,13 +28,15 @@ export class SyncScrollController {
   private enabled = localStorage.getItem(ENABLED_STORAGE_KEY) !== "false";
   private editorFrame = false;
   private previewFrame = false;
-  private visibilityFrame = false;
   private suppressEditor = false;
   private suppressPreview = false;
   private anchorTimer: ReturnType<typeof setTimeout> | null = null;
   private documentRoot: Element | null;
   private pages: HTMLElement[] = [];
   private readonly pageSet = new Set<HTMLElement>();
+  private readonly pendingPages = new Set<HTMLElement>();
+  private pageGeometry: PageGeometry[] = [];
+  private previewMaxTop = 0;
   private previewTargetTop: number | null = null;
   private lastPreviewLine: number | null = null;
   private readonly requestFrame: (callback: FrameRequestCallback) => number;
@@ -67,13 +77,16 @@ export class SyncScrollController {
   }
 
   refreshAnchors(): void {
+    const preview = this.options.preview;
+    const previewTop = preview.getBoundingClientRect().top;
+    const scrollTop = preview.scrollTop;
+    this.previewMaxTop = Math.max(0, preview.scrollHeight - preview.clientHeight);
     if (this.pages.length > 0) {
       this.anchors = [];
+      this.refreshPageGeometry(previewTop, scrollTop);
       return;
     }
-    const previewTop = this.options.preview.getBoundingClientRect().top;
-    const scrollTop = this.options.preview.scrollTop;
-    this.anchors = this.blockAnchors(this.options.preview, previewTop, scrollTop).sort((left, right) =>
+    this.anchors = this.blockAnchors(preview, previewTop, scrollTop).sort((left, right) =>
       left.blockTop - right.blockTop || left.sourceLine - right.sourceLine);
   }
 
@@ -97,19 +110,19 @@ export class SyncScrollController {
     this.editorFrame = true;
     this.requestFrame(() => {
       this.editorFrame = false;
-      const maxTop = this.options.preview.scrollHeight - this.options.preview.clientHeight;
       const line = this.options.sourceLineAtEditorTop();
       this.suppressPreview = true;
       this.options.preview.scrollTop = previewTopForLine(
         this.anchorsForLine(line),
         line,
-        Math.max(0, maxTop),
+        this.previewMaxTop,
       );
       this.requestFrame(() => { this.suppressPreview = false; });
     });
   };
 
   private readonly onPreviewScroll = (): void => {
+    if (this.anchorTimer !== null) this.scheduleDelayedRefresh(true, 250);
     if (!this.enabled || this.suppressPreview || this.previewFrame || !this.hasAnchors()) {
       return;
     }
@@ -117,17 +130,18 @@ export class SyncScrollController {
     this.previewFrame = true;
     this.requestFrame(() => {
       this.previewFrame = false;
+      if (this.pendingPages.size > 0 && this.pages.length <= 100) this.refreshAnchors();
       this.applyPreviewTarget(false);
     });
   };
 
-  private readonly onContentVisibilityChange = (): void => {
-    if (this.visibilityFrame) return;
-    this.visibilityFrame = true;
-    this.requestFrame(() => {
-      this.visibilityFrame = false;
-      this.refreshAndReapply();
-    });
+  private readonly onContentVisibilityChange = (event: Event): void => {
+    this.markPagesWithin(event.target);
+    if (event.target === this.options.preview) {
+      this.requestFrame(() => this.refreshAndReapply());
+    } else {
+      this.scheduleDelayedRefresh(true, 250);
+    }
   };
 
   private applyPreviewTarget(skipUnchanged: boolean): void {
@@ -148,92 +162,91 @@ export class SyncScrollController {
   }
 
   private hasAnchors(): boolean {
-    return this.pages.length > 0 || this.anchors.length > 0;
+    return this.pageGeometry.some((geometry) => geometry.anchors.length > 0) ||
+      this.anchors.length > 0;
   }
 
   private anchorsForLine(line: number): readonly SyncAnchor[] {
-    if (this.pages.length === 0) return this.anchors;
+    if (this.pageGeometry.length === 0) return this.anchors;
     let low = 0;
-    let high = this.pages.length - 1;
+    let high = this.pageGeometry.length - 1;
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
-      const page = this.pages[middle] as HTMLElement;
-      if (this.pageLine(page) <= line) low = middle + 1;
+      const geometry = this.pageGeometry[middle] as PageGeometry;
+      if (geometry.sourceLine <= line) low = middle + 1;
       else high = middle - 1;
     }
     return this.nearbyPageAnchors(Math.max(0, high));
   }
 
   private anchorsForTop(top: number): readonly SyncAnchor[] {
-    if (this.pages.length === 0) return this.anchors;
-    const previewTop = this.options.preview.getBoundingClientRect().top;
-    const scrollTop = this.options.preview.scrollTop;
+    if (this.pageGeometry.length === 0) return this.anchors;
     let low = 0;
-    let high = this.pages.length - 1;
+    let high = this.pageGeometry.length - 1;
     while (low <= high) {
       const middle = Math.floor((low + high) / 2);
-      const page = this.pages[middle] as HTMLElement;
-      const anchor = this.pageAnchor(page, previewTop, scrollTop)[0];
-      if (anchor !== undefined && anchor.blockTop <= top) low = middle + 1;
+      const geometry = this.pageGeometry[middle] as PageGeometry;
+      if (geometry.top <= top) low = middle + 1;
       else high = middle - 1;
     }
-    return this.nearbyPageAnchors(Math.max(0, high), previewTop, scrollTop);
+    return this.nearbyPageAnchors(Math.max(0, high));
   }
 
-  private nearbyPageAnchors(
-    index: number,
-    previewTop = this.options.preview.getBoundingClientRect().top,
-    scrollTop = this.options.preview.scrollTop,
-  ): readonly SyncAnchor[] {
+  private nearbyPageAnchors(index: number): readonly SyncAnchor[] {
     const anchors: SyncAnchor[] = [];
     for (let offset = 0; offset < 2; offset += 1) {
-      const page = this.pages[index + offset];
-      if (page !== undefined) anchors.push(...this.pageAnchors(page, previewTop, scrollTop));
+      const geometry = this.pageGeometry[index + offset];
+      if (geometry !== undefined) anchors.push(...geometry.anchors);
     }
     return anchors;
   }
 
-  private pageAnchors(
+  private measurePage(
     page: HTMLElement,
     previewTop: number,
     scrollTop: number,
-  ): readonly SyncAnchor[] {
+  ): PageGeometry {
+    const bounds = page.getBoundingClientRect();
     const blockAnchors = this.blockAnchors(page, previewTop, scrollTop);
-    const anchors = blockAnchors.length > 0
-      ? blockAnchors
-      : this.pageAnchor(page, previewTop, scrollTop);
-    if (blockAnchors.length > 0 || this.pages.at(-1) !== page) return anchors;
-    const terminal = this.pageTerminalAnchor(page, previewTop, scrollTop);
-    const last = anchors.at(-1);
-    return terminal !== null && last !== undefined && terminal.blockTop > last.blockTop
-      ? [...anchors, terminal]
-      : anchors;
+    const blocks = page.querySelectorAll<HTMLElement>(".preview-block");
+    const first = blocks.item(0);
+    const last = blocks.item(blocks.length - 1);
+    const sourceLine = first === null
+      ? Number.MAX_SAFE_INTEGER
+      : this.options.blockLine(first) + 1;
+    const top = bounds.top - previewTop + scrollTop;
+    const fallback = bounds.height > 0 && first !== null
+      ? [{ sourceLine, blockTop: top, blockHeight: bounds.height }]
+      : [];
+    const anchors = blockAnchors.length > 0 ? blockAnchors : fallback;
+    return {
+      anchors: blockAnchors.length > 0
+        ? anchors
+        : this.withTerminalAnchor(page, blocks, last, anchors, bounds.bottom - previewTop + scrollTop),
+      height: bounds.height,
+      page,
+      sourceLine,
+      top,
+    };
   }
 
-  private pageTerminalAnchor(
+  private withTerminalAnchor(
     page: HTMLElement,
-    previewTop: number,
-    scrollTop: number,
-  ): SyncAnchor | null {
-    const blocks = page.querySelectorAll<HTMLElement>(".preview-block");
-    const last = blocks.item(blocks.length - 1);
-    if (last === null) return null;
+    blocks: NodeListOf<HTMLElement>,
+    last: HTMLElement | null,
+    anchors: readonly SyncAnchor[],
+    bottom: number,
+  ): readonly SyncAnchor[] {
+    if (this.pages.at(-1) !== page || last === null) return anchors;
     const previous = blocks.item(blocks.length - 2);
     const lastLine = this.options.blockLine(last) + 1;
     const lineStep = previous === null
       ? 1
       : Math.max(1, lastLine - (this.options.blockLine(previous) + 1));
-    const bounds = page.getBoundingClientRect();
-    return {
-      sourceLine: lastLine + lineStep,
-      blockTop: bounds.bottom - previewTop + scrollTop,
-      blockHeight: 0,
-    };
-  }
-
-  private pageLine(page: HTMLElement): number {
-    const firstBlock = page.querySelector<HTMLElement>(".preview-block");
-    return firstBlock === null ? Number.MAX_SAFE_INTEGER : this.options.blockLine(firstBlock) + 1;
+    const terminal = { sourceLine: lastLine + lineStep, blockTop: bottom, blockHeight: 0 };
+    return anchors.at(-1)?.blockTop !== undefined && bottom > (anchors.at(-1)?.blockTop ?? bottom)
+      ? [...anchors, terminal]
+      : anchors;
   }
 
   private blockAnchors(
@@ -252,20 +265,26 @@ export class SyncScrollController {
       });
   }
 
-  private pageAnchor(
-    page: HTMLElement,
+  private refreshPageGeometry(
     previewTop: number,
     scrollTop: number,
-  ): SyncAnchor[] {
-    const firstBlock = page.querySelector<HTMLElement>(".preview-block");
-    if (firstBlock === null) return [];
-    const bounds = page.getBoundingClientRect();
-    const pageAnchor = {
-      sourceLine: this.options.blockLine(firstBlock) + 1,
-      blockTop: bounds.top - previewTop + scrollTop,
-      blockHeight: bounds.height,
-    };
-    return bounds.height <= 0 ? [] : [pageAnchor];
+  ): void {
+    const previous = new Map(this.pageGeometry.map((geometry) => [geometry.page, geometry]));
+    const next: PageGeometry[] = [];
+    let shift = 0;
+    for (const page of this.pages) {
+      const cached = previous.get(page);
+      if (this.pendingPages.has(page) || cached === undefined) {
+        const measured = this.measurePage(page, previewTop, scrollTop);
+        shift += cached === undefined ? 0 : measured.height - cached.height;
+        next.push(measured);
+      } else {
+        next.push(shift === 0 ? cached : { ...cached, top: cached.top + shift,
+          anchors: cached.anchors.map((anchor) => ({ ...anchor, blockTop: anchor.blockTop + shift })) });
+      }
+    }
+    this.pendingPages.clear();
+    this.pageGeometry = next;
   }
 
   private onPreviewMutation(records: readonly MutationRecord[]): void {
@@ -274,7 +293,9 @@ export class SyncScrollController {
       this.documentRoot = nextRoot;
       this.anchors = [];
       this.pages = [];
+      this.pageGeometry = [];
       this.pageSet.clear();
+      this.pendingPages.clear();
       this.previewTargetTop = null;
       this.lastPreviewLine = null;
     }
@@ -285,7 +306,11 @@ export class SyncScrollController {
         return keep;
       });
     }
+    if (this.pages.length <= 100) {
+      for (const page of this.pages) this.pendingPages.add(page);
+    }
     for (const record of records) {
+      this.markMutationPage(record.target);
       for (const node of record.addedNodes) this.collectPages(node);
     }
     this.scheduleAnchorRefresh();
@@ -309,6 +334,7 @@ export class SyncScrollController {
 
   private insertPage(page: HTMLElement): void {
     if (this.pageSet.has(page)) return;
+    this.pendingPages.add(page);
     const last = this.pages.at(-1);
     if (last === undefined ||
       (last.compareDocumentPosition(page) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
@@ -332,18 +358,40 @@ export class SyncScrollController {
   }
 
   private scheduleAnchorRefresh(): void {
-    if (this.options.preview.dataset["renderComplete"] === "true") {
+    if (this.pages.length <= 100 && this.options.preview.dataset["renderComplete"] === "true") {
       this.requestFrame(() => this.refreshAndReapply());
-    } else {
-      this.scheduleDelayedRefresh();
+      return;
+    }
+    this.scheduleDelayedRefresh();
+  }
+
+  private markPagesWithin(target: EventTarget | Node | null): void {
+    if (!(target instanceof Element)) return;
+    if (target instanceof HTMLElement && target.classList.contains("preview-page")) {
+      this.pendingPages.add(target);
+      return;
+    }
+    for (const page of target.querySelectorAll<HTMLElement>(".preview-page")) {
+      this.pendingPages.add(page);
     }
   }
 
-  private scheduleDelayedRefresh(): void {
-    if (this.anchorTimer !== null) return;
+  private markMutationPage(target: Node): void {
+    if (!(target instanceof Element)) return;
+    const page = target instanceof HTMLElement && target.classList.contains("preview-page")
+      ? target
+      : target.closest<HTMLElement>(".preview-page");
+    if (page !== null) this.pendingPages.add(page);
+  }
+
+  private scheduleDelayedRefresh(restart = false, delay = 100): void {
+    if (this.anchorTimer !== null) {
+      if (!restart) return;
+      clearTimeout(this.anchorTimer);
+    }
     this.anchorTimer = setTimeout(() => {
       this.anchorTimer = null;
       this.requestFrame(() => this.refreshAndReapply());
-    }, 100);
+    }, delay);
   }
 }
