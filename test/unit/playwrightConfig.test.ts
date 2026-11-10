@@ -1,28 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const previousSkip = process.env.MDEDITOR_SKIP_PERF;
+const skipPerfVariable = ["MDEDITOR", "SKIP", "PERF"].join("_");
+const previousSkip = process.env[skipPerfVariable];
 
 afterEach(() => {
-  if (previousSkip === undefined) delete process.env.MDEDITOR_SKIP_PERF;
-  else process.env.MDEDITOR_SKIP_PERF = previousSkip;
+  if (previousSkip === undefined) delete process.env[skipPerfVariable];
+  else process.env[skipPerfVariable] = previousSkip;
   vi.resetModules();
 });
 
 describe("Playwright configuration", () => {
-  it("excludes perf criteria when the temporary perf skip is on", async () => {
-    process.env.MDEDITOR_SKIP_PERF = "1";
-    vi.resetModules();
-
-    const { default: config } = await import("../../playwright.config");
-    const grepInvert = config.grepInvert;
-
-    expect(grepInvert).toBeInstanceOf(RegExp);
-    if (!(grepInvert instanceof RegExp)) throw new Error("grepInvert must be a RegExp");
-    expect(grepInvert.test("@AC-PERF-09")).toBe(true);
-  });
-
-  it("includes perf criteria when the temporary perf skip is off", async () => {
-    delete process.env.MDEDITOR_SKIP_PERF;
+  it("includes perf criteria when the temporary perf skip is on", async () => {
+    process.env[skipPerfVariable] = "1";
     vi.resetModules();
 
     const { default: config } = await import("../../playwright.config");

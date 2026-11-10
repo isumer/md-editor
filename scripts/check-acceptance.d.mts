@@ -33,6 +33,5 @@ export function buildAcceptanceReport(
   criteria: readonly AcceptanceCriterion[],
   tests: readonly AcceptanceTest[],
   platform?: string,
-  skipPerf?: boolean,
 ): AcceptanceReport;
 export function runAcceptanceCheck(repositoryRoot?: string): Promise<AcceptanceReport>;
