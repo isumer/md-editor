@@ -7,6 +7,7 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 import {
   clickMenuItem,
   closeEditor,
+  DOCUMENT_END,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -27,7 +28,7 @@ async function ioWorkerPid(application: ElectronApplication): Promise<number | n
 async function appendEditorText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(DOCUMENT_END);
   await page.keyboard.type(text);
 }
 
@@ -115,7 +116,7 @@ test("an argv file is editable within the cold-start budget", {
     const editor = page.getByTestId("editor").locator(".cm-content");
     await expect(editor).toContainText("Sample document");
     await editor.click();
-    await page.keyboard.press("Control+End");
+    await page.keyboard.press(DOCUMENT_END);
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
 
