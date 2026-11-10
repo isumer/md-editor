@@ -201,7 +201,7 @@ test("switching back resumes an incomplete preview fill", {
   }
 });
 
-test("opening a path that is already open focuses its tab without a duplicate", {
+test("the Open menu focuses an existing path without a duplicate", {
   tag: "@AC-R4-02",
   annotation: { type: "AC-R4-02" },
 }, async () => {
@@ -215,7 +215,21 @@ test("opening a path that is already open focuses its tab without a duplicate", 
     await expect(page.getByTestId("tab")).toHaveCount(2);
     await expect(tab(page, "alpha.md")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("editor")).toContainText("alpha-line-01");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
 
+test("a second instance focuses an existing path without a duplicate", {
+  tag: "@AC-R4-02",
+  annotation: { type: "AC-R4-02" },
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, page, beta);
+    await tab(page, "alpha.md").click();
     await launchSecondInstance(application, beta);
     await expect(page.getByTestId("tab")).toHaveCount(2);
     await expect(tab(page, "beta.md")).toHaveAttribute("aria-selected", "true");
@@ -313,52 +327,51 @@ test("closing a clean tab closes it with no prompt", {
   }
 });
 
-test("closing a dirty tab honours Cancel, Discard and Save", {
-  tag: "@AC-R4-05",
-  annotation: { type: "AC-R4-05" },
-}, async () => {
-  const { directory, alpha } = await copyFixtures();
-  const original = await fs.readFile(alpha, "utf8");
-  const { application, page } = await launchEditor(alpha);
-  try {
-    const editor = page.getByTestId("editor").locator(".cm-content");
-    const prompt = page.getByTestId("close-prompt");
-    await editor.click();
-    await page.keyboard.press(DOCUMENT_END);
-    await page.keyboard.type("DISCARD-ME");
-    await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
+const closeCases = [
+  ["Cancel", false, "CANCEL-ME", "Cancel keeps it open", false],
+  ["Discard", true, "DISCARD-ME", "Discard closes without writing", false],
+  ["Save", true, "SAVE-ME", "Save writes and closes", true],
+] as const;
 
-    await tab(page, "alpha.md").getByTestId("tab-close").click();
-    await expect(prompt).toBeVisible();
-    await expect(page.locator("#close-prompt-message")).toHaveText(
-      "“alpha.md” has unsaved changes. Save before closing?",
-    );
-    await prompt.getByRole("button", { name: "Cancel" }).click();
-    await expect(prompt).toBeHidden();
-    await expect(page.getByTestId("tab")).toHaveCount(1);
-    await expect(editor).toContainText("DISCARD-ME");
-    await expect(page).toHaveTitle(/•/);
-
-    await tab(page, "alpha.md").getByTestId("tab-close").click();
-    await prompt.getByRole("button", { name: "Discard" }).click();
-    await expect(page.getByTestId("tab")).toHaveCount(0);
-    await expect.poll(() => fs.readFile(alpha, "utf8")).toBe(original);
-
-    await openWithMenu(application, page, alpha);
-    await expect(editor).toContainText("alpha-line-01");
-    await editor.click();
-    await page.keyboard.press(DOCUMENT_END);
-    await page.keyboard.type("SAVE-ME");
-    await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
-    await tab(page, "alpha.md").getByTestId("tab-close").click();
-    await prompt.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByTestId("tab")).toHaveCount(0);
-    await expect.poll(() => fs.readFile(alpha, "utf8")).toContain("SAVE-ME");
-  } finally {
-    await closeEditor(application, page);
-    await fs.rm(directory, { recursive: true, force: true });
-  }
-});
+for (const [answer, closes, edit, rule, saves] of closeCases) {
+  test(`closing a dirty tab: ${rule}`, {
+    tag: "@AC-R4-05",
+    annotation: { type: "AC-R4-05" },
+  }, async () => {
+    const { directory, alpha } = await copyFixtures();
+    const original = await fs.readFile(alpha, "utf8");
+    const { application, page } = await launchEditor(alpha);
+    try {
+      const editor = page.getByTestId("editor").locator(".cm-content");
+      const prompt = page.getByTestId("close-prompt");
+      await editor.click();
+      await page.keyboard.press(DOCUMENT_END);
+      await page.keyboard.type(edit);
+      await expect(dirtyMarker(page, "alpha.md")).toBeVisible();
+      await tab(page, "alpha.md").getByTestId("tab-close").click();
+      await expect(prompt).toBeVisible();
+      await expect(page.locator("#close-prompt-message")).toHaveText(
+        "“alpha.md” has unsaved changes. Save before closing?",
+      );
+      await prompt.getByRole("button", { name: answer }).click();
+      await expect(prompt).toBeHidden();
+      await expect(page.getByTestId("tab")).toHaveCount(closes ? 0 : 1);
+      const diskText = await expect.poll(() => fs.readFile(alpha, "utf8"));
+      if (saves) {
+        await diskText.toContain(edit);
+      } else {
+        await diskText.toBe(original);
+      }
+      if (!closes) {
+        await expect(editor).toContainText(edit);
+        await expect(page).toHaveTitle(/•/);
+      }
+    } finally {
+      await closeEditor(application, page);
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 
 test("dropping a file onto the window opens it in a new tab", {
   tag: "@AC-R4-09",

@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type ElectronApplication } from "@playwright/test";
 
 import { readTextOrNull,
   closeEditor,
@@ -25,6 +25,83 @@ test("opens an argv file and renders its heading", {
     );
   } finally {
     await closeEditor(application, page);
+  }
+});
+
+test("a failed argv open fails clearly and closes the application", {
+  tag: "@AC-R5-01",
+  annotation: { type: "AC-R5-01" },
+}, async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-missing-"));
+  const missingPath = path.join(directory, "missing.md");
+  let launched: ElectronApplication | undefined;
+  let launchedProcess: ReturnType<ElectronApplication["process"]> | undefined;
+  let failure: unknown;
+  try {
+    try {
+      await launchEditor(missingPath, {
+        titleTimeoutMs: 500,
+        onPage: ({ application }) => {
+          launched = application;
+          launchedProcess = application.process();
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain("argv document did not open");
+    await expect.poll(
+      () => launchedProcess?.exitCode ?? null,
+      { timeout: 5_000 },
+    ).not.toBeNull();
+  } finally {
+    if (launched) {
+      await launched.close().catch(() => undefined);
+    }
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a throwing page callback closes the application and keeps the error", {
+  tag: "@AC-R5-01",
+  annotation: { type: "AC-R5-01" },
+}, async () => {
+  const callbackFailure = new Error("onPage failed");
+  let launched: ElectronApplication | undefined;
+  let launchedProcess: ReturnType<ElectronApplication["process"]> | undefined;
+  let profileDirectory: string | undefined;
+  try {
+    await expect(
+      launchEditor(fixturePath, {
+        onPage: ({ application, userDataDir }) => {
+          launched = application;
+          launchedProcess = application.process();
+          // The callback payload, not spawnargs parsing: Windows does not expose
+          // the raw --user-data-dir argument on the child process.
+          profileDirectory = userDataDir;
+          throw callbackFailure;
+        },
+      }),
+    ).rejects.toBe(callbackFailure);
+    await expect.poll(
+      () => launchedProcess?.exitCode ?? null,
+      { timeout: 5_000 },
+    ).not.toBeNull();
+    expect(profileDirectory).toBeDefined();
+    await expect.poll(() => fs.stat(profileDirectory ?? "").then(
+      () => "exists",
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT"
+        ? "removed"
+        : Promise.reject(error),
+    )).toBe("removed");
+  } finally {
+    if (launched) {
+      await launched.close().catch(() => undefined);
+    }
+    if (profileDirectory) {
+      await fs.rm(profileDirectory, { recursive: true, force: true });
+    }
   }
 });
 
