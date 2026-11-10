@@ -3,9 +3,36 @@ export const MENU_CHANNELS = {
   contribute: "menu:contribute",
 } as const;
 
-// Menu item ids are stable across slices: e2e tests address the items by these ids.
-export const MENU_ITEM_IDS = ["file-open", "file-save", "file-save-as"] as const;
-export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+declare global {
+  interface SharedMenuDeclarations {}
+}
+
+type MenuFeature = SharedMenuDeclarations[keyof SharedMenuDeclarations];
+type MenuFeatureItem = MenuFeature extends {
+  items: readonly (infer Item)[];
+} ? Item : never;
+
+export type MenuItemId = MenuFeatureItem extends {
+  id: infer Id extends string;
+} ? Id : never;
+export type MenuCommandId = MenuFeatureItem extends {
+  commandId: infer Id extends string;
+} ? Id : never;
+
+interface MenuDeclaration {
+  readonly items: readonly { readonly id: MenuItemId }[];
+}
+
+const registeredMenuItemIds: MenuItemId[] = [];
+export const MENU_ITEM_IDS: readonly MenuItemId[] = registeredMenuItemIds;
+
+export function registerMenuDeclarations(
+  declarations: readonly MenuDeclaration[],
+): void {
+  const ids = new Set(declarations.flatMap((feature) =>
+    feature.items.map((item) => item.id)));
+  registeredMenuItemIds.splice(0, registeredMenuItemIds.length, ...ids);
+}
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -22,7 +49,6 @@ export interface MenuContribution {
 
 export type MenuContributionResponse = void;
 
-// What main sends back when a contributed item is clicked: the menu item id.
 export type MenuCommandMessage = MenuItemId;
 
 function exactData(
@@ -70,7 +96,7 @@ function validAccelerator(value: unknown): value is string {
 
 export function isMenuItemId(value: unknown): value is MenuItemId {
   return typeof value === "string" &&
-    (MENU_ITEM_IDS as readonly string[]).includes(value);
+    registeredMenuItemIds.includes(value as MenuItemId);
 }
 
 export function isMenuContributionItem(

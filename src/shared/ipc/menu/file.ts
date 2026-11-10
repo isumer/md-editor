@@ -21,3 +21,9 @@ export const fileMenu = {
     },
   ],
 } as const;
+
+declare global {
+  interface SharedMenuDeclarations {
+    file: typeof fileMenu;
+  }
+}

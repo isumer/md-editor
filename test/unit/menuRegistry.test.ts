@@ -3,7 +3,12 @@ import { expect, it, vi } from "vitest";
 vi.mock("electron", () => ({ app: {}, Menu: {} }));
 
 import { buildContributionTemplate } from "../../src/main/app/menu";
-import { MENU_ITEM_IDS, type MenuContribution } from "../../src/shared/ipc/menu";
+import {
+  MENU_ITEM_IDS,
+  type MenuContribution,
+  isMenuItemId,
+  registerMenuDeclarations,
+} from "../../src/shared/ipc/menu";
 import { fileMenu } from "../../src/shared/ipc/menu/file";
 
 interface TemplateShape {
@@ -124,4 +129,18 @@ it("keeps each declared menu item id in the shared id list", () => {
   expect(fileMenu.items.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
   expect(new Set(fileMenu.items.map((item) => item.commandId)).size)
     .toBe(fileMenu.items.length);
+});
+
+it("rejects an item id that is missing from its declaration", () => {
+  const declarationWithoutOpen = {
+    ...fileMenu,
+    items: fileMenu.items.filter((item) => item.id !== "file-open"),
+  };
+
+  registerMenuDeclarations([declarationWithoutOpen]);
+  try {
+    expect(isMenuItemId("file-open")).toBe(false);
+  } finally {
+    registerMenuDeclarations([fileMenu]);
+  }
 });

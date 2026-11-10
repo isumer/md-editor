@@ -47,6 +47,9 @@ const BLOCK_CLASS = "preview-block";
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
 const APPEND_TASK_BLOCK_LIMIT = 4;
+// Worker fills have at most eight blocks; only the larger initial batch is
+// frame-paced.
+const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -294,8 +297,22 @@ export function wireRenderWorker(
   let shown: { docId: string; epoch: number; version: number } | null = null;
   let pendingAppend: {
     response: RenderResult & { ok: true; mode: "append" };
+    frame: number;
     timer: number;
   } | null = null;
+
+  const deferAppend = (
+    pending: NonNullable<typeof pendingAppend>,
+    waitForFrame: boolean,
+  ): void => {
+    if (waitForFrame) {
+      pending.frame = requestAnimationFrame(() => {
+        pending.timer = window.setTimeout(flushAppend, 0);
+      });
+    } else {
+      pending.timer = window.setTimeout(flushAppend, 0);
+    }
+  };
 
   const applyAccepted = (
     response: RenderResult,
@@ -329,11 +346,12 @@ export function wireRenderWorker(
     return applied;
   };
 
-  const flushAppend = (): void => {
+  const flushAppend = (blockLimit?: number): void => {
     const pending = pendingAppend;
     if (pending === null) {
       return;
     }
+    cancelAnimationFrame(pending.frame);
     window.clearTimeout(pending.timer);
     pendingAppend = null;
     const current = wiring.currentVersion();
@@ -341,11 +359,29 @@ export function wireRenderWorker(
       pending.response.epoch !== current.epoch) {
       return;
     }
-    applyAccepted(pending.response, true);
+    if (blockLimit === undefined || pending.response.blocks.length <= blockLimit) {
+      applyAccepted(pending.response, true);
+      return;
+    }
+    const next = {
+      ...pending.response,
+      blocks: pending.response.blocks.slice(0, blockLimit),
+      complete: false,
+    };
+    if (!applyAccepted(next, false)) {
+      return;
+    }
+    const remainder = {
+      ...pending.response,
+      blocks: pending.response.blocks.slice(blockLimit),
+    };
+    const nextPending = { response: remainder, frame: 0, timer: 0 };
+    pendingAppend = nextPending;
+    deferAppend(nextPending, true);
   };
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
-    flushAppend();
+    flushAppend(APPEND_TASK_BLOCK_LIMIT);
     const response = event.data;
     const current = wiring.currentVersion();
     if ("op" in response) {
@@ -379,10 +415,13 @@ export function wireRenderWorker(
         ...response,
         blocks: response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
       };
-      pendingAppend = {
+      const pending = {
         response: remainder,
-        timer: window.setTimeout(flushAppend, 0),
+        frame: 0,
+        timer: 0,
       };
+      pendingAppend = pending;
+      deferAppend(pending, response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD);
       return;
     }
     applyAccepted(response, true);

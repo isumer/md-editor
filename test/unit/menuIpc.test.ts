@@ -22,7 +22,11 @@ import {
   unregisterTrustedWindow,
 } from "../../src/main/ipc/handle";
 import type { ContributionPump } from "../../src/main/app/menuContribution";
-import type { MenuContribution } from "../../src/shared/ipc/menu";
+import {
+  type MenuContribution,
+  registerMenuDeclarations,
+} from "../../src/shared/ipc/menu";
+import { fileMenu } from "../../src/shared/ipc/menu/file";
 
 const APP_URL = "app://bundle/index.html";
 const CHANNEL = "menu:contribute";
@@ -70,6 +74,7 @@ function createPump(): ContributionPump & { readonly push: ReturnType<typeof vi.
 }
 
 beforeEach(() => {
+  registerMenuDeclarations([fileMenu]);
   electron.handlers.clear();
   vi.clearAllMocks();
 });

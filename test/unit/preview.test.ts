@@ -134,6 +134,52 @@ describe("preview render flow", () => {
     vi.useRealTimers();
   });
 
+  it("AC-PERF-10: a worker message drains at most four pending blocks", () => {
+    vi.useFakeTimers();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      nextFrame += 1;
+      frames.set(nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    send(worker, { op: "resync", id: 2, docId: "doc", epoch: 1, version: 1 });
+
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]);
+    expect(frames.size).toBe(1);
+    const next = frames.entries().next().value as [number, FrameRequestCallback] | undefined;
+    if (next) {
+      frames.delete(next[0]);
+      next[1](16);
+    }
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(renderedBlocks.map((block) => block.id));
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it("AC-PERF-10: drops a pending append when the document changes", () => {
     vi.useFakeTimers();
     const version = { docId: "doc", epoch: 1, version: 1 };

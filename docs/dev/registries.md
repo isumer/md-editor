@@ -10,7 +10,11 @@ Shared files must not import another project file.
 
 Add menu declarations to one feature file under `src/shared/ipc/menu/`.
 
-Add its stable item IDs to `src/shared/ipc/menu.ts`.
+Declare each item ID and command ID in that feature file.
+
+Add the feature once to `src/main/app/menu/registry.ts`.
+
+The shared menu types and validators derive IDs from those declarations.
 
 Shared menu declarations must not import another project file.
 
