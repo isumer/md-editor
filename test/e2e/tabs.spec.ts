@@ -201,7 +201,7 @@ test("switching back resumes an incomplete preview fill", {
   }
 });
 
-test("opening a path that is already open focuses its tab without a duplicate", {
+test("the Open menu focuses an existing path without a duplicate", {
   tag: "@AC-R4-02",
   annotation: { type: "AC-R4-02" },
 }, async () => {
@@ -215,7 +215,21 @@ test("opening a path that is already open focuses its tab without a duplicate", 
     await expect(page.getByTestId("tab")).toHaveCount(2);
     await expect(tab(page, "alpha.md")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("editor")).toContainText("alpha-line-01");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
 
+test("a second instance focuses an existing path without a duplicate", {
+  tag: "@AC-R4-02",
+  annotation: { type: "AC-R4-02" },
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, page, beta);
+    await tab(page, "alpha.md").click();
     await launchSecondInstance(application, beta);
     await expect(page.getByTestId("tab")).toHaveCount(2);
     await expect(tab(page, "beta.md")).toHaveAttribute("aria-selected", "true");
