@@ -54,7 +54,44 @@ function blocks(preview: HTMLElement): HTMLElement[] {
 }
 
 describe("preview render flow", () => {
-  it("AC-PERF-10: lays out split append parts in separate frames", () => {
+  it("AC-PERF-10: lays out the split initial append in separate frames", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${"x".repeat(1_024)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    vi.runOnlyPendingTimers();
+
+    expect(blocks(preview)).toHaveLength(4);
+    expect(frames).toHaveLength(1);
+    frames.shift()?.(16);
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview)).toHaveLength(12);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-09: keeps an eight-block fill batch off the frame-paced path", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -82,11 +119,8 @@ describe("preview render flow", () => {
     });
     vi.runOnlyPendingTimers();
 
-    expect(blocks(preview)).toHaveLength(4);
-    expect(frames).toHaveLength(1);
-    frames.shift()?.(16);
-    vi.runOnlyPendingTimers();
     expect(blocks(preview)).toHaveLength(8);
+    expect(frames).toHaveLength(1);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });

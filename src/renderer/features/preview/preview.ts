@@ -47,7 +47,9 @@ const BLOCK_CLASS = "preview-block";
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
 const APPEND_TASK_BLOCK_LIMIT = 4;
-const APPEND_FRAME_HTML_LIMIT = 8 * 1024;
+// Worker fills have at most eight blocks; only the larger initial batch is
+// frame-paced.
+const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -388,11 +390,7 @@ export function wireRenderWorker(
         timer: 0,
       };
       pendingAppend = pending;
-      const htmlLength = response.blocks.reduce(
-        (length, block) => length + block.html.length,
-        0,
-      );
-      if (htmlLength > APPEND_FRAME_HTML_LIMIT) {
+      if (response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD) {
         pending.frame = requestAnimationFrame(() => {
           pending.timer = window.setTimeout(flushAppend, 0);
         });
