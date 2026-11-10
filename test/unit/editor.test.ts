@@ -1,4 +1,4 @@
-import { language } from "@codemirror/language";
+import { ensureSyntaxTree, language } from "@codemirror/language";
 import { describe, expect, it, vi } from "vitest";
 
 import { createDocumentState } from "../../src/renderer/core/document";
@@ -8,11 +8,15 @@ import {
 } from "../../src/renderer/editor/editor";
 
 function editorLanguage(document: string) {
+  return editorState(document).facet(language)?.name ?? null;
+}
+
+function editorState(document: string) {
   return createEditorState(document, createDocumentState(), {
     onDocumentChanged: vi.fn(),
     onChanges: vi.fn(),
     updateTitle: vi.fn(),
-  }).facet(language)?.name ?? null;
+  });
 }
 
 describe("editor language size threshold", () => {
@@ -30,5 +34,17 @@ describe("editor language size threshold", () => {
 
   it("AC-PERF-10: keeps Markdown behavior through four MiB", () => {
     expect(editorLanguage("x".repeat(4 * 1024 * 1024))).toBe("markdown");
+  });
+
+  it("AC-PERF-10: a huge plain line keeps the Markdown paragraph tree", () => {
+    const document = "x".repeat(4 * 1024 * 1024);
+    const tree = ensureSyntaxTree(editorState(document), document.length, 1_000);
+    const paragraph = tree?.topNode.firstChild;
+
+    expect(tree?.toString()).toBe("Document(Paragraph)");
+    expect(tree?.length).toBe(document.length);
+    expect(paragraph?.name).toBe("Paragraph");
+    expect(paragraph?.from).toBe(0);
+    expect(paragraph?.to).toBe(document.length);
   });
 });
