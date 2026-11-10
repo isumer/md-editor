@@ -6,6 +6,14 @@ export const MENU_CHANNELS = {
 // Menu item ids are stable across slices: e2e tests address the items by these ids.
 export const MENU_ITEM_IDS = ["file-open", "file-save", "file-save-as"] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+export const VIEW_MENU_ITEM_IDS = [
+  "view-split",
+  "view-editor",
+  "view-preview",
+  "view-sync-scroll",
+  "view-focus-mode",
+] as const;
+export type ViewMenuItemId = (typeof VIEW_MENU_ITEM_IDS)[number];
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -23,7 +31,7 @@ export interface MenuContribution {
 export type MenuContributionResponse = void;
 
 // What main sends back when a contributed item is clicked: the menu item id.
-export type MenuCommandMessage = MenuItemId;
+export type MenuCommandMessage = MenuItemId | ViewMenuItemId;
 
 function exactData(
   value: unknown,
