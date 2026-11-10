@@ -15,6 +15,17 @@ export async function isFile(filePath: string): Promise<boolean> {
 }
 
 export class FileDialogs {
+  async chooseFolderPath(windowId: number): Promise<string | null> {
+    const options: Electron.OpenDialogOptions = {
+      properties: ["openDirectory"],
+    };
+    const window = windowFor(windowId);
+    const result = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+
   async chooseOpenPath(windowId: number): Promise<string | null> {
     const options: Electron.OpenDialogOptions = {
       properties: ["openFile"],

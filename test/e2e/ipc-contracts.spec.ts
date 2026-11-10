@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 import {
+  closeEditor,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -131,7 +132,7 @@ for (const invalidCase of invalidSaveCases) {
       expect(await dialogCallCount(application, "save")).toBe(0);
       await expectRendererResponsive(page, invalidCase.kind);
     } finally {
-      await application.close();
+      await closeEditor(application, page);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
@@ -145,20 +146,38 @@ const rejectedExternalUrls: ReadonlyArray<{ name: string; value: unknown; code: 
   { name: "a non-string URL", value: 42, code: "BAD_REQUEST" },
 ];
 
-for (const rejectedUrl of rejectedExternalUrls) {
-  test(`the open-external contract rejects ${rejectedUrl.name}`, {
-    tag: "@AC-SEC-08",
-    annotation: { type: "AC-SEC-08" },
-  }, async () => {
-    const { application, page } = await launchEditor(fixturePath);
-    try {
-      await expect(page.getByTestId("editor")).toContainText("Sample document");
-      await application.evaluate(({ shell }) => {
+test.describe("the open-external contract", () => {
+  let editor: Awaited<ReturnType<typeof launchEditor>> | undefined;
+
+  test.beforeAll(async () => {
+    editor = await launchEditor(fixturePath);
+    await expect(editor.page.getByTestId("editor")).toContainText("Sample document");
+    await editor.application.evaluate(({ shell }) => {
+      const probe = globalThis as typeof globalThis & { externalUrls?: string[] };
+      shell.openExternal = async (url) => {
+        probe.externalUrls?.push(url);
+      };
+    });
+  });
+
+  test.afterAll(async () => {
+    if (editor) {
+      await closeEditor(editor.application, editor.page);
+    }
+  });
+
+  for (const rejectedUrl of rejectedExternalUrls) {
+    test(`rejects ${rejectedUrl.name}`, {
+      tag: "@AC-SEC-08",
+      annotation: { type: "AC-SEC-08" },
+    }, async () => {
+      if (!editor) {
+        throw new Error("The shared editor did not launch");
+      }
+      const { application, page } = editor;
+      await application.evaluate(() => {
         const probe = globalThis as typeof globalThis & { externalUrls?: string[] };
         probe.externalUrls = [];
-        shell.openExternal = async (url) => {
-          probe.externalUrls?.push(url);
-        };
       });
 
       const result = await page.evaluate(async (value) => {
@@ -178,11 +197,9 @@ for (const rejectedUrl of rejectedExternalUrls) {
       await expect.poll(() => application.evaluate(() =>
         (globalThis as typeof globalThis & { externalUrls?: string[] }).externalUrls,
       )).toEqual([]);
-    } finally {
-      await application.close();
-    }
-  });
-}
+    });
+  }
+});
 
 test("the preload exposes only the fixed named API", {
   tag: "@AC-SEC-11",
@@ -201,22 +218,56 @@ test("the preload exposes only the fixed named API", {
       keys: [
         "attachDocument",
         "chooseSaveTarget",
+        "chooseWorkspaceRoot",
+        "clearDraft",
         "contributeMenu",
         "detachDocument",
+        "draftDocument",
+        "listDrafts",
+        "listWorkspaceChildren",
+        "loadSession",
         "onMenuCommand",
         "onOpenRequest",
+        "onSessionCloseRequest",
         "openExternal",
         "openFile",
+        "openWorkspaceFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
+        "respondSessionClose",
         "saveDocument",
         "sendChanges",
       ],
       legacyGlobal: false,
     });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
+  }
+});
+
+test("page scripts cannot open a path or create a trusted drop", {
+  tag: "@AC-SEC-09",
+  annotation: { type: "AC-SEC-09" },
+}, async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page.getByTestId("tab")).toHaveCount(1);
+
+    const exposed = await page.evaluate(() => ({
+      openPath: "openPath" in window.api,
+      pathForFile: "pathForFile" in window.api,
+    }));
+    expect(exposed).toEqual({ openPath: false, pathForFile: false });
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new DragEvent("drop", {
+        dataTransfer: new DataTransfer(),
+      }));
+    });
+    await expect(page.getByTestId("tab")).toHaveCount(1);
+  } finally {
+    await closeEditor(application, page);
   }
 });
 
@@ -252,7 +303,7 @@ test("the file-save contract rejects raw and forged grants", {
     }
     expect(await fs.readdir(temporaryDirectory)).toEqual([]);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -296,7 +347,7 @@ test("the file-save contract rejects a released grant", {
     });
     expect(await fs.readFile(firstPath, "utf8")).toBe("first");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });

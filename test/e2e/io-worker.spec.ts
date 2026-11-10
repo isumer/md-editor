@@ -6,6 +6,7 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 
 import {
   clickMenuItem,
+  closeEditor,
   dialogCallCount,
   fixturePath,
   launchEditor,
@@ -64,7 +65,7 @@ test("saving succeeds after the io-worker restarts", {
     await expect(page).not.toHaveTitle(/•/);
     expect(await dialogCallCount(application, "save")).toBe(0);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
@@ -98,7 +99,7 @@ if (process.platform !== "win32") {
       await expect(page).toHaveTitle(/^• current\.md/);
       expect(await fs.readFile(currentPath, "utf8")).toBe("# Current\n");
     } finally {
-      await application.close();
+      await closeEditor(application, page);
       await fs.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
@@ -120,6 +121,6 @@ test("an argv file is editable within the cold-start budget", {
 
     expect(performance.now() - startedAt).toBeLessThan(2_000);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });

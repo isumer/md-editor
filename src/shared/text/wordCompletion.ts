@@ -76,7 +76,7 @@ export function completeWord(
 
   const { prefix, start: cursorWordStart } = wordAt(text, cursorOffset);
 
-  if (prefix.length < 2) {
+  if (Array.from(prefix).length < 2) {
     return [];
   }
 

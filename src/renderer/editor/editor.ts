@@ -4,7 +4,7 @@ import {
   closeBracketsKeymap,
   completionKeymap,
 } from "@codemirror/autocomplete";
-import { defaultKeymap, history, redo, undo } from "@codemirror/commands";
+import { defaultKeymap, history, invertedEffects, redo, undo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
   bracketMatching,
@@ -16,7 +16,16 @@ import {
 } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { EditorState, type ChangeSet } from "@codemirror/state";
+import {
+  EditorState,
+  StateEffect,
+  StateField,
+  Transaction,
+  type ChangeSet,
+  type Extension,
+  type Text,
+  type TransactionSpec,
+} from "@codemirror/state";
 import {
   EditorView,
   crosshairCursor,
@@ -32,12 +41,23 @@ import {
 } from "@codemirror/view";
 
 import type { DocumentState } from "../core/document";
+import {
+  parseConflictFile,
+  type ConflictFile,
+} from "../../shared/merge/conflictMarkers";
+import {
+  acceptChunk,
+  createMergeState,
+  type ChunkChoice,
+  type MergeChunk,
+  type MergeState,
+} from "../../shared/merge/mergeChunks";
 
 export interface EditorCallbacks {
   onDocumentChanged(): void;
-  onChanges(changes: ChangeSet): void;
+  onChanges(changes: ChangeSet, state: EditorState): void;
   updateTitle(): void;
-  onStateChanged?(): void;
+  onStateChanged?(state: EditorState): void;
 }
 
 type DocumentUpdate = Pick<ViewUpdate, "docChanged" | "state" | "changes">;
@@ -72,6 +92,50 @@ const editorSetup = [
   ]),
 ];
 
+const plainMarkdownTemplate = markdown().language.parser.parse("x");
+const plainMarkdownParagraph = plainMarkdownTemplate.topNode.firstChild?.type;
+const plainMarkdownPattern = /^[A-Za-z0-9]+$/;
+// Lezer otherwise scans an entire unbroken line before honoring its parse budget.
+type MarkdownTree = typeof plainMarkdownTemplate;
+const MarkdownTree = plainMarkdownTemplate.constructor as new (
+  type: MarkdownTree["type"],
+  children: readonly MarkdownTree[],
+  positions: readonly number[],
+  length: number,
+) => MarkdownTree;
+
+function plainMarkdownParse(length: number) {
+  let stoppedAt: number | null = null;
+  return {
+    advance: () => {
+      const parsedLength = stoppedAt ?? length;
+      const children = plainMarkdownParagraph === undefined
+        ? []
+        : [new MarkdownTree(plainMarkdownParagraph, [], [], parsedLength)];
+      const positions = children.length === 0 ? [] : [0];
+      return new MarkdownTree(plainMarkdownTemplate.type, children, positions, parsedLength);
+    },
+    get parsedPos() { return stoppedAt ?? length; },
+    stopAt: (position: number) => { stoppedAt = position; },
+    get stoppedAt() { return stoppedAt; },
+  };
+}
+
+const markdownSupport = markdown({
+  extensions: {
+    wrap: (inner, input) => {
+      const text = input.chunk(0);
+      return text.length === input.length && text.length > 64 * 1024 &&
+        plainMarkdownPattern.test(text)
+        ? plainMarkdownParse(input.length)
+        : inner;
+    },
+  },
+});
+
+// Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
+export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
+
 export function dispatchUndo(view: EditorView): void {
   undo(view);
 }
@@ -85,35 +149,172 @@ export function handleDocumentUpdate(
   documentState: DocumentState,
   callbacks: EditorCallbacks,
 ): void {
-  callbacks.onStateChanged?.();
+  callbacks.onStateChanged?.(update.state);
   if (!update.docChanged) {
     return;
   }
   if (!documentState.applyingDocument) {
     documentState.dirty = !update.state.doc.eq(documentState.saved);
     callbacks.updateTitle();
-    callbacks.onChanges(update.changes);
+    callbacks.onChanges(update.changes, update.state);
   }
   callbacks.onDocumentChanged();
+}
+
+export function createEditorState(
+  document: Text | string,
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+  extension: Extension = [],
+): EditorState {
+  return EditorState.create({
+    doc: document,
+    extensions: [
+      editorSetup,
+      extension,
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
+      EditorView.lineWrapping,
+      EditorView.updateListener.of((update) => {
+        handleDocumentUpdate(update, documentState, callbacks);
+      }),
+    ],
+  });
 }
 
 export function createEditor(
   editorHost: HTMLElement,
   documentState: DocumentState,
   callbacks: EditorCallbacks,
+  initialState?: EditorState,
 ): EditorView {
   return new EditorView({
     parent: editorHost,
-    state: EditorState.create({
-      doc: "",
-      extensions: [
-        editorSetup,
-        markdown(),
-        EditorView.lineWrapping,
-        EditorView.updateListener.of((update) => {
-          handleDocumentUpdate(update, documentState, callbacks);
-        }),
-      ],
-    }),
+    state: initialState ?? createEditorState("", documentState, callbacks),
   });
+}
+
+export type MergeEditorState = EditorState;
+export type MergeTransactionSpec = TransactionSpec;
+
+export interface MarkerMergeState {
+  readonly expected: readonly string[];
+  readonly left: string;
+  readonly merge: MergeState;
+  readonly right: string;
+  readonly valid: readonly boolean[];
+}
+
+function conflictChunks(file: ConflictFile): readonly MergeChunk[] {
+  return file.conflicts.map((conflict) => ({
+    kind: "conflict",
+    start: conflict.left.start,
+    end: conflict.left.end,
+    left: file.left.slice(conflict.left.start, conflict.left.end),
+    right: file.right.slice(conflict.right.start, conflict.right.end),
+  }));
+}
+
+export function createMarkerMergeState(text: string): MarkerMergeState | null {
+  if (!text.includes("<<<<<<<")) return null;
+  const parsed = parseConflictFile(text);
+  if (!parsed.ok || parsed.file.conflicts.length === 0) return null;
+  const chunks = conflictChunks(parsed.file);
+  return {
+    expected: chunks.map((chunk) => chunk.left),
+    left: parsed.file.left,
+    merge: createMergeState(chunks),
+    right: parsed.file.right,
+    valid: chunks.map(() => true),
+  };
+}
+
+const setMarkerMerge = StateEffect.define<MarkerMergeState | null>();
+
+function mappedMarkerMerge(
+  state: MarkerMergeState,
+  transaction: Transaction,
+): MarkerMergeState {
+  const chunks = state.merge.chunks.map((chunk) => ({
+    ...chunk,
+    start: transaction.changes.mapPos(chunk.start, 1),
+    end: transaction.changes.mapPos(chunk.end, -1),
+  }));
+  const valid = chunks.map((chunk, index) => {
+    const expected = state.expected[index];
+    return expected !== undefined && chunk.start <= chunk.end &&
+      transaction.newDoc.sliceString(chunk.start, chunk.end) === expected;
+  });
+  return { ...state, merge: { ...state.merge, chunks }, valid };
+}
+
+const markerMergeField = StateField.define<MarkerMergeState | null>({
+  create: () => null,
+  update: (value, transaction) => {
+    for (const effect of transaction.effects) {
+      if (effect.is(setMarkerMerge)) return effect.value;
+    }
+    return value !== null && transaction.docChanged
+      ? mappedMarkerMerge(value, transaction)
+      : value;
+  },
+});
+
+const invertMarkerMerge = invertedEffects.of((transaction) => {
+  if (!transaction.effects.some((effect) => effect.is(setMarkerMerge))) return [];
+  return [setMarkerMerge.of(transaction.startState.field(markerMergeField))];
+});
+
+export const markerMergeExtension: Extension = [markerMergeField, invertMarkerMerge];
+
+export function markerMergeState(state: EditorState): MarkerMergeState | null {
+  return state.field(markerMergeField, false) ?? null;
+}
+
+export function initializeMarkerMerge(
+  state: EditorState,
+  source: string,
+  merge: MarkerMergeState,
+): TransactionSpec | null {
+  if (markerMergeState(state) !== null || state.doc.toString() !== source) return null;
+  return {
+    annotations: Transaction.addToHistory.of(false),
+    changes: { from: 0, to: state.doc.length, insert: merge.left },
+    effects: setMarkerMerge.of(merge),
+  };
+}
+
+function selectedMarkerEdit(
+  state: EditorState,
+  merge: MarkerMergeState,
+  index: number,
+  choice: ChunkChoice,
+): TransactionSpec | null {
+  const chunk = merge.merge.chunks[index];
+  const expected = merge.expected[index];
+  if (chunk === undefined || expected === undefined || merge.merge.resolved[index] ||
+    !merge.valid[index] || state.doc.sliceString(chunk.start, chunk.end) !== expected) {
+    return null;
+  }
+  const step = acceptChunk(merge.merge, index, choice);
+  const edit = step.edits[0];
+  if (edit === undefined) return null;
+  const nextExpected = merge.expected.map((text, itemIndex) =>
+    itemIndex === index ? edit.insert : text);
+  return {
+    changes: edit,
+    effects: setMarkerMerge.of({
+      ...merge,
+      expected: nextExpected,
+      merge: step.state,
+    }),
+  };
+}
+
+export function resolveMarkerConflict(
+  state: EditorState,
+  index: number,
+  choice: ChunkChoice,
+): TransactionSpec | null {
+  const merge = markerMergeState(state);
+  return merge === null ? null : selectedMarkerEdit(state, merge, index, choice);
 }
