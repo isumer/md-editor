@@ -34,7 +34,3 @@
 - Loose item one
 
   This is a paragraph inside a loose list item. It contains a `code span` that must stay literal.
-
-- Loose item two
-
-  Another paragraph with `another code span`.
