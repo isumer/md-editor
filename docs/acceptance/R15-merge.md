@@ -1,5 +1,7 @@
 # R15 — Three-way merge view
 
+Target release: 1.1. Not part of the 1.0 scope (owner decision, 2026-11-10); the criteria stay planned until then.
+
 ### AC-R15-01 — The fixture set merges to the expected result
 status: planned
 Given each (base, left, right, expected) fixture: clean merges, adjacent edits, the same edit on both sides, real conflicts, insert at end, deleted versus modified
