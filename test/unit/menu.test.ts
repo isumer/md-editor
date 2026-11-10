@@ -141,6 +141,11 @@ const contribution: MenuContribution = {
       enabled: false,
       checked: true,
     },
+    {
+      id: "file-compare-open",
+      title: "Compare Open Files",
+      accelerator: "CmdOrCtrl+Shift+C",
+    },
   ],
 };
 
@@ -203,6 +208,7 @@ describe("contributed menu template", () => {
       "file-open",
       "file-save",
       "file-save-as",
+      "file-compare-open",
       "separator",
       "quit",
     ]);
@@ -213,6 +219,11 @@ describe("contributed menu template", () => {
       registerAccelerator: false,
       enabled: true,
       checked: false,
+    });
+    expect(submenu[3]).toMatchObject({
+      id: "file-compare-open",
+      accelerator: "CmdOrCtrl+Shift+C",
+      registerAccelerator: false,
     });
     submenu[0]?.click?.();
     expect(send).toHaveBeenCalledWith("file-open");
@@ -236,6 +247,7 @@ describe("contributed menu template", () => {
       "file-open",
       "file-save",
       "file-save-as",
+      "file-compare-open",
     ]);
   });
 });
@@ -504,6 +516,7 @@ describe("menu:contribute contract", () => {
         item,
         { ...item, id: "file-save" },
         { ...item, id: "file-save-as" },
+        { ...item, id: "file-compare-open" },
         { ...item, id: "file-open" },
       ],
     })).toBe(false);
