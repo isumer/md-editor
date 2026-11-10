@@ -47,6 +47,8 @@ export function buildSkeletonTemplate(
   appName: string,
 ): MenuItemConstructorOptions[] {
   return Object.values(menuFeatures)
+    .filter((feature): feature is typeof menuFeatures.shellMenu =>
+      "build" in feature)
     .sort((left, right) => left.order - right.order)
     .flatMap((feature) => feature.build(platform, appName));
 }

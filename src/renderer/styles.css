@@ -248,14 +248,6 @@ body {
   contain-intrinsic-size: auto 12000px;
 }
 
-.preview-section-wide {
-  contain-intrinsic-size: auto 36000px;
-}
-
-.preview-section-prewarm {
-  content-visibility: visible;
-}
-
 #preview pre {
   overflow: auto;
   padding: 12px;

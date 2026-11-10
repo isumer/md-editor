@@ -16,11 +16,7 @@ import {
   isMenuItemId,
   MENU_CHANNELS,
   MENU_ITEM_IDS,
-  registerMenuDeclarations,
 } from "../../src/shared/ipc/menu";
-import { fileMenu } from "../../src/shared/ipc/menu/file";
-
-registerMenuDeclarations([fileMenu]);
 
 function withOwnProto<T extends object>(value: T): T {
   Object.defineProperty(value, "__proto__", {

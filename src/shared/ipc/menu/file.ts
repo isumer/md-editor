@@ -1,4 +1,5 @@
 export const fileMenu = {
+  order: 0,
   menuTitleKey: "menu.file",
   items: [
     {
@@ -19,17 +20,5 @@ export const fileMenu = {
       accelerator: "CmdOrCtrl+Shift+S",
       commandId: "file.saveAs",
     },
-    {
-      id: "file-compare-open",
-      titleKey: "menu.compareOpen",
-      accelerator: "CmdOrCtrl+Shift+C",
-      commandId: "file.compareOpen",
-    },
   ],
 } as const;
-
-declare global {
-  interface SharedMenuDeclarations {
-    file: typeof fileMenu;
-  }
-}

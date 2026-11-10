@@ -1,16 +1,12 @@
+import * as menuDeclarations from "./menu/registry";
+
 export const MENU_CHANNELS = {
   command: "menu:command",
   contribute: "menu:contribute",
 } as const;
 
-declare global {
-  interface SharedMenuDeclarations {}
-}
-
-type MenuFeature = SharedMenuDeclarations[keyof SharedMenuDeclarations];
-type MenuFeatureItem = MenuFeature extends {
-  items: readonly (infer Item)[];
-} ? Item : never;
+type MenuFeature = (typeof menuDeclarations)[keyof typeof menuDeclarations];
+type MenuFeatureItem = MenuFeature["items"][number];
 
 export type MenuItemId = MenuFeatureItem extends {
   id: infer Id extends string;
@@ -19,32 +15,17 @@ export type MenuCommandId = MenuFeatureItem extends {
   commandId: infer Id extends string;
 } ? Id : never;
 
-interface MenuDeclaration {
-  readonly items: readonly {
-    readonly id: MenuItemId;
-    readonly commandId: MenuCommandId;
-  }[];
-}
-
-const registeredMenuItemIds: MenuItemId[] = [];
-const registeredMenuCommandIds: MenuCommandId[] = [];
-export const MENU_ITEM_IDS: readonly MenuItemId[] = registeredMenuItemIds;
-export const MENU_COMMAND_IDS: readonly MenuCommandId[] =
-  registeredMenuCommandIds;
-
-export function registerMenuDeclarations(
-  declarations: readonly MenuDeclaration[],
-): void {
-  const items = declarations.flatMap((feature) => feature.items);
-  const itemIds = new Set(items.map((item) => item.id));
-  const commandIds = new Set(items.map((item) => item.commandId));
-  registeredMenuItemIds.splice(0, registeredMenuItemIds.length, ...itemIds);
-  registeredMenuCommandIds.splice(
-    0,
-    registeredMenuCommandIds.length,
-    ...commandIds,
-  );
-}
+export const MENU_ITEMS: readonly MenuFeatureItem[] = Object.values(
+  menuDeclarations,
+).sort((left, right) => left.order - right.order).flatMap(
+  (declaration) => declaration.items as readonly MenuFeatureItem[],
+);
+export const MENU_ITEM_IDS: readonly MenuItemId[] = MENU_ITEMS.map(
+  (item) => item.id,
+);
+export const MENU_COMMAND_IDS: readonly MenuCommandId[] = MENU_ITEMS.map(
+  (item) => item.commandId,
+);
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -108,7 +89,7 @@ function validAccelerator(value: unknown): value is string {
 
 export function isMenuItemId(value: unknown): value is MenuItemId {
   return typeof value === "string" &&
-    registeredMenuItemIds.includes(value as MenuItemId);
+    (MENU_ITEM_IDS as readonly string[]).includes(value);
 }
 
 export function isMenuContributionItem(

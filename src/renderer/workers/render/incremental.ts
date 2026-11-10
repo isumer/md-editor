@@ -47,6 +47,7 @@ interface RenderChunk {
   html: string | null;
   labels: Set<string>;
   definitionCandidate: boolean;
+  definitions: Record<string, ReferenceDefinition>;
 }
 
 interface LineSegment {
@@ -200,6 +201,9 @@ export class IncrementalRenderState {
         range.endLine - base,
       );
       chunk.definitionCandidate = rangeHasCandidate(lines, range);
+      chunk.definitions = chunk.definitionCandidate
+        ? collectReferences(sourceOf(lines, range.startLine, range.endLine))
+        : {};
       candidate ||= chunk.definitionCandidate;
       this.chunks.push(chunk);
       this.splitCursor = range.endLine;
@@ -386,6 +390,9 @@ export class IncrementalRenderState {
         range.endLine - firstBase,
       );
       chunk.definitionCandidate = range.definitionCandidate;
+      chunk.definitions = range.definitionCandidate
+        ? collectReferences(sourceOf(lines, range.startLine, range.endLine))
+        : {};
       definitionsChanged ||= range.definitionCandidate;
       return chunk;
     });
@@ -600,6 +607,7 @@ export class IncrementalRenderState {
       html: null,
       labels: new Set(),
       definitionCandidate: false,
+      definitions: {},
     };
     this.nextId += 1;
     this.unrendered += 1;
@@ -645,10 +653,7 @@ export class IncrementalRenderState {
       if (!chunk.definitionCandidate) {
         continue;
       }
-      const definitions = collectReferences(
-        sourceOf(textReader(this.document), this.startOf(index), this.endOf(index)),
-      );
-      for (const [label, definition] of Object.entries(definitions)) {
+      for (const [label, definition] of Object.entries(chunk.definitions)) {
         if (!(label in next)) {
           next[label] = definition;
         }

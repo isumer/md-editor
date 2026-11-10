@@ -1,8 +1,2 @@
-import { registerMenuDeclarations } from "../../../shared/ipc/menu";
-import { fileMenu } from "../../../shared/ipc/menu/file";
-
-const menuDeclarations = [fileMenu] as const;
-
-registerMenuDeclarations(menuDeclarations);
-
+export * from "../../../shared/ipc/menu/registry";
 export { shellMenu } from "./shell";

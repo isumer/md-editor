@@ -19,7 +19,10 @@ module.exports = {
     {
       name: "shared-no-dependencies",
       severity: "error",
-      from: { path: `${source}/shared/` },
+      from: {
+        path: `${source}/shared/`,
+        pathNot: `${source}/shared/ipc/menu(?:/registry)?\\.ts$`,
+      },
       to: {},
     },
     {

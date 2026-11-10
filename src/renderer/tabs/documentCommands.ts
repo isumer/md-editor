@@ -1,7 +1,11 @@
 import type { EditorView } from "@codemirror/view";
 
 import { fileMenu } from "../../shared/ipc/menu/file";
-import type { MenuCommandMessage, MenuContribution } from "../../shared/ipc/menu";
+import {
+  MENU_ITEMS,
+  type MenuCommandMessage,
+  type MenuContribution,
+} from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
 import { formatMessage } from "../core/messages";
 import { createCommandRegistry } from "../core/commands";
@@ -20,7 +24,7 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
 export function menuContribution(): MenuContribution {
   return {
     fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
-    items: fileMenu.items.map((item) => ({
+    items: MENU_ITEMS.map((item) => ({
       id: item.id,
       title: formatMessage(item.titleKey, {}),
       accelerator: item.accelerator,
@@ -96,7 +100,7 @@ export class DocumentCommands {
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {
-    const item = fileMenu.items.find((candidate) => candidate.id === menuItemId);
+    const item = MENU_ITEMS.find((candidate) => candidate.id === menuItemId);
     if (item === undefined) return;
     void this.commands.run(item.commandId, this.commandContext, undefined, "menu");
   }

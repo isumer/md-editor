@@ -6,15 +6,17 @@ Export the area once from `src/renderer/core/messages/registry.ts`.
 
 The renderer composer rejects duplicate keys during type checking.
 
-Shared files must not import another project file.
+English message declaration files must not import another project file.
 
 Add menu declarations to one feature file under `src/shared/ipc/menu/`.
 
 Declare each item ID and command ID in that feature file.
 
-Add the feature once to `src/main/app/menu/registry.ts`.
+Export the feature once from `src/shared/ipc/menu/registry.ts`.
 
-The registry composes each item ID and command ID from those declarations.
+The main registry re-exports that list with its main-owned menu sections.
+
+The shared registry composes each item ID and command ID.
 
 The shared menu types and validators derive IDs from that composition.
 

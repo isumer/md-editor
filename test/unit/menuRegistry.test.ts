@@ -1,34 +1,19 @@
-import { expect, it, vi } from "vitest";
+import { expect, expectTypeOf, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: {}, Menu: {} }));
 
 import { buildContributionTemplate } from "../../src/main/app/menu";
 import {
   MENU_COMMAND_IDS,
+  MENU_ITEMS,
   MENU_ITEM_IDS,
   type MenuCommandId,
   type MenuContribution,
   type MenuItemId,
   isMenuItemId,
-  registerMenuDeclarations,
 } from "../../src/shared/ipc/menu";
+import { compareMenu } from "../../src/shared/ipc/menu/compare";
 import { fileMenu } from "../../src/shared/ipc/menu/file";
-
-const registryTestMenu = {
-  menuTitleKey: "menu.registryTest",
-  items: [{
-    id: "registry-test-item",
-    titleKey: "menu.registryTest",
-    accelerator: "CmdOrCtrl+T",
-    commandId: "registry.test",
-  }],
-} as const;
-
-declare global {
-  interface SharedMenuDeclarations {
-    registryTest: typeof registryTestMenu;
-  }
-}
 
 interface TemplateShape {
   id?: string;
@@ -151,36 +136,27 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
     `);
 });
 
-it("composes every declared item id and command id from the registry", () => {
-  expect(fileMenu.items.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
-  expect(fileMenu.items.map((item) => item.commandId))
+it("fails when the registry omits a feature declaration", () => {
+  const declaredItems = [...fileMenu.items, ...compareMenu.items];
+
+  expect(declaredItems.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
+  expect(declaredItems.map((item) => item.commandId))
     .toEqual([...MENU_COMMAND_IDS]);
+  expect(MENU_ITEMS).toEqual(declaredItems);
 });
 
-it("adds a registered feature id to the type union and validator", () => {
-  const itemId: MenuItemId = "registry-test-item";
-  const commandId: MenuCommandId = "registry.test";
+it("keeps the type union and runtime validator on the same registry", () => {
+  const itemId: MenuItemId = "file-compare-open";
+  const commandId: MenuCommandId = "file.compareOpen";
 
-  registerMenuDeclarations([fileMenu, registryTestMenu]);
-  try {
-    expect(isMenuItemId(itemId)).toBe(true);
-    expect(MENU_ITEM_IDS).toContain(itemId);
-    expect(MENU_COMMAND_IDS).toContain(commandId);
-  } finally {
-    registerMenuDeclarations([fileMenu]);
-  }
+  expect(isMenuItemId(itemId)).toBe(true);
+  expect(MENU_COMMAND_IDS).toContain(commandId);
+  expectTypeOf<MenuItemId>().toEqualTypeOf<
+    "file-open" | "file-save" | "file-save-as" | "file-compare-open"
+  >();
 });
 
-it("rejects an item id that is missing from its declaration", () => {
-  const declarationWithoutOpen = {
-    ...fileMenu,
-    items: fileMenu.items.filter((item) => item.id !== "file-open"),
-  };
-
-  registerMenuDeclarations([declarationWithoutOpen]);
-  try {
-    expect(isMenuItemId("file-open")).toBe(false);
-  } finally {
-    registerMenuDeclarations([fileMenu]);
-  }
+it("rejects an item id that has no registry declaration", () => {
+  expectTypeOf<MenuItemId>().not.toEqualTypeOf<"registry-test-item">();
+  expect(isMenuItemId("registry-test-item")).toBe(false);
 });
