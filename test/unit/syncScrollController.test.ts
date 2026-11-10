@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/* eslint-disable max-lines -- Sync-scroll scenarios share one stateful DOM fixture. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -391,8 +392,14 @@ describe("sync scroll controller", () => {
     vi.unstubAllGlobals();
   });
 
-  it("a preview scroll during a document switch does not move the editor", async () => {
+  it("later pages cannot reapply an old preview target after a document switch", async () => {
     const { flush, frameCount, preview, scrollEditorToLine } = setup();
+    preview.scrollTop = 100;
+    preview.dispatchEvent(new Event("scroll"));
+    flush();
+    expect(scrollEditorToLine).toHaveBeenCalledOnce();
+    flush();
+    scrollEditorToLine.mockClear();
     const replacement = document.createElement("div");
     replacement.className = "preview-document";
     preview.dataset["renderComplete"] = "true";
@@ -401,6 +408,17 @@ describe("sync scroll controller", () => {
     preview.scrollTop = 200;
     preview.dispatchEvent(new Event("scroll"));
     expect(frameCount()).toBe(1);
+    flush();
+
+    const page = document.createElement("div");
+    page.className = "preview-page";
+    vi.spyOn(page, "getBoundingClientRect").mockReturnValue(rect(0, 200));
+    const block = document.createElement("div");
+    block.className = "preview-block";
+    block.dataset["line"] = "39";
+    page.append(block);
+    replacement.append(page);
+    await Promise.resolve();
     flush();
     expect(scrollEditorToLine).not.toHaveBeenCalled();
   });

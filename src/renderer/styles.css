@@ -169,7 +169,17 @@ body.focus-mode {
   grid-template-rows: minmax(0, 1fr);
 }
 
+body.focus-mode #workspace {
+  grid-template-columns: minmax(0, var(--editor-share)) 6px minmax(0, 1fr);
+}
+
+body.focus-mode #workspace[data-view-mode="editor"],
+body.focus-mode #workspace[data-view-mode="preview"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 body.focus-mode #tabs,
+body.focus-mode #workspace-sidebar,
 body.focus-mode #status {
   display: none;
 }
@@ -240,6 +250,14 @@ body.focus-mode #status {
 #preview {
   min-width: 0;
   min-height: 0;
+}
+
+#workspace[data-stable-pane-widths="true"][data-view-mode="split"] #editor {
+  width: var(--editor-resize-width);
+}
+
+#workspace[data-stable-pane-widths="true"][data-view-mode="split"] #preview {
+  width: var(--preview-resize-width);
 }
 
 #editor {

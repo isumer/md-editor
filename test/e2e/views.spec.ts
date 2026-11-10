@@ -122,14 +122,17 @@ test("AC-R2-03: Full Screen uses the operating system state", async () => {
 test("AC-R2-04: focus mode hides chrome and Escape restores it", async () => {
   const { application, page } = await launchEditor(fixturePath);
   try {
+    const workspaceSidebar = page.getByRole("complementary", { name: "Workspace" });
     await page.getByTestId("editor").locator(".cm-content").click();
     await page.keyboard.press(`${PRIMARY_MODIFIER}+Shift+F`);
     await expect(page.getByTestId("tabs")).toBeHidden();
+    await expect(workspaceSidebar).toBeHidden();
     await expect(page.getByTestId("status")).toBeHidden();
     await expect.poll(() => application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("tabs")).toBeVisible();
+    await expect(workspaceSidebar).toBeVisible();
     await expect(page.getByTestId("status")).toBeVisible();
   } finally {
     await closeEditor(application, page);
