@@ -6,7 +6,7 @@ import type {
   RenderResync,
   RenderResult,
 } from "../../../shared/workers/render";
-import { formatMessage } from "../../../shared/messages/en";
+import { formatMessage } from "../../core/messages";
 import type { ReplicatedVersion } from "../../core/replication";
 import { openExternal } from "../../platform/api";
 import { RenderScheduler } from "./renderScheduler";

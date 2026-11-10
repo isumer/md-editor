@@ -7,6 +7,7 @@ import {
   type MenuContributionItem,
   type MenuItemId,
 } from "../../shared/ipc/menu";
+import * as menuFeatures from "./menu/registry";
 import { getMainWindow } from "./window";
 
 export interface MenuEntry {
@@ -41,51 +42,15 @@ function sendMenuCommand(command: MenuCommandMessage): void {
   }
 }
 
-function macApplicationMenu(appName: string): MenuItemConstructorOptions {
-  return {
-    label: appName,
-    submenu: [
-      { role: "about" },
-      { type: "separator" },
-      // Electron has no Settings role, so this item is part of the main-owned skeleton.
-      { label: "Settings", accelerator: "CmdOrCtrl+," },
-      { type: "separator" },
-      { role: "services" },
-      { type: "separator" },
-      { role: "hide" },
-      { role: "hideOthers" },
-      { role: "unhide" },
-      { type: "separator" },
-      { role: "quit" },
-    ],
-  };
-}
-
 export function buildSkeletonTemplate(
   platform: string,
   appName: string,
 ): MenuItemConstructorOptions[] {
-  const template: MenuItemConstructorOptions[] = [];
-  if (platform === "darwin") {
-    template.push(macApplicationMenu(appName));
-  } else {
-    template.push({
-      label: "File",
-      submenu: [{ role: "quit" }],
-    });
-  }
-  template.push({
-    label: "Edit",
-    submenu: [
-      { role: "cut" },
-      { role: "copy" },
-      { role: "paste" },
-      { type: "separator" },
-      { role: "selectAll" },
-    ],
-  });
-  template.push({ role: "windowMenu" }, { role: "help" });
-  return template;
+  return Object.values(menuFeatures)
+    .filter((feature): feature is typeof menuFeatures.shellMenu =>
+      "build" in feature)
+    .sort((left, right) => left.order - right.order)
+    .flatMap((feature) => feature.build(platform, appName));
 }
 
 function contributedMenuItem(

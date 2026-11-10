@@ -1,16 +1,31 @@
+import * as menuDeclarations from "./menu/registry";
+
 export const MENU_CHANNELS = {
   command: "menu:command",
   contribute: "menu:contribute",
 } as const;
 
-// Menu item ids are stable across slices: e2e tests address the items by these ids.
-export const MENU_ITEM_IDS = [
-  "file-open",
-  "file-save",
-  "file-save-as",
-  "file-compare-open",
-] as const;
-export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+type MenuFeature = (typeof menuDeclarations)[keyof typeof menuDeclarations];
+type MenuFeatureItem = MenuFeature["items"][number];
+
+export type MenuItemId = MenuFeatureItem extends {
+  id: infer Id extends string;
+} ? Id : never;
+export type MenuCommandId = MenuFeatureItem extends {
+  commandId: infer Id extends string;
+} ? Id : never;
+
+export const MENU_ITEMS: readonly MenuFeatureItem[] = Object.values(
+  menuDeclarations,
+).sort((left, right) => left.order - right.order).flatMap(
+  (declaration) => declaration.items as readonly MenuFeatureItem[],
+);
+export const MENU_ITEM_IDS: readonly MenuItemId[] = MENU_ITEMS.map(
+  (item) => item.id,
+);
+export const MENU_COMMAND_IDS: readonly MenuCommandId[] = MENU_ITEMS.map(
+  (item) => item.commandId,
+);
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -27,7 +42,6 @@ export interface MenuContribution {
 
 export type MenuContributionResponse = void;
 
-// What main sends back when a contributed item is clicked: the menu item id.
 export type MenuCommandMessage = MenuItemId;
 
 function exactData(

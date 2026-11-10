@@ -209,8 +209,9 @@ thread. A test asserts no `doc.toString()` on the UI thread per edit.
 - **Macros** record command invocations, with typing recorded as
   `editor.insertText(text)` relative to the selection (Notepad++
   semantics). "Play to end of file" runs in cancellable, yielding batches.
-- **i18n**: titles are message keys in a catalog (`shared/messages/en.ts`)
-  from the first command; English is the only catalog in v1.
+- **i18n**: titles are message keys in a catalog. Each area exports its
+  strings from `shared/messages/en/`; the renderer composes them in
+  `renderer/core/messages.ts`. English is the only catalog in v1.
 
 ## 6. State and UI ([ADR-0003](adr/0003-ui-framework.md))
 - Core stores are framework-free observables with explicit actions.

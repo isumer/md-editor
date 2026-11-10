@@ -19,8 +19,18 @@ module.exports = {
     {
       name: "shared-no-dependencies",
       severity: "error",
-      from: { path: `${source}/shared/` },
+      from: {
+        path: `${source}/shared/`,
+        pathNot: `${source}/shared/ipc/menu(?:/registry)?\\.ts$`,
+      },
       to: {},
+    },
+    {
+      // The menu composition files may import only other shared menu modules.
+      name: "shared-menu-imports-shared-only",
+      severity: "error",
+      from: { path: `${source}/shared/ipc/menu(?:/registry)?\\.ts$` },
+      to: { pathNot: `${source}/shared/` },
     },
     {
       name: "node-shared-boundaries",

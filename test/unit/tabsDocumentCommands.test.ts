@@ -49,14 +49,19 @@ describe("document commands", () => {
     });
     await Promise.resolve();
 
-    expect(contributeMenu.mock.calls[0]?.[0].items.map((item) => item.id)).toEqual([
-      "file-open",
-      "file-save",
-      "file-save-as",
-      "file-compare-open",
-    ]);
-    expect(contributeMenu.mock.calls[0]?.[0].items[3]?.accelerator)
-      .toBe("CmdOrCtrl+Shift+C");
+    expect(contributeMenu.mock.calls[0]?.[0]).toEqual({
+      fileMenuTitle: "File",
+      items: [
+        { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
+        { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
+        { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
+        {
+          id: "file-compare-open",
+          title: "Compare Open Files",
+          accelerator: "CmdOrCtrl+Shift+C",
+        },
+      ],
+    });
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
