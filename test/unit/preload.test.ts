@@ -75,17 +75,20 @@ describe("preload bridge", () => {
       [
         "attachDocument",
         "chooseSaveTarget",
+        "chooseWorkspaceRoot",
         "clearDraft",
         "contributeMenu",
         "detachDocument",
         "draftDocument",
         "listDrafts",
+        "listWorkspaceChildren",
         "loadSession",
         "onMenuCommand",
         "onOpenRequest",
         "onSessionCloseRequest",
         "openExternal",
         "openFile",
+        "openWorkspaceFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
@@ -108,6 +111,9 @@ describe("preload bridge", () => {
       fileMenuTitle: "File",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
     });
+    await api.chooseWorkspaceRoot();
+    await api.listWorkspaceChildren({ path: "notes" });
+    await api.openWorkspaceFile({ path: "notes/daily.md" });
     expect(electron.invoke.mock.calls).toEqual([
       ["file:open", {}],
       ["file:choose-save-target", { grant: "grant-a" }],
@@ -120,6 +126,9 @@ describe("preload bridge", () => {
         fileMenuTitle: "File",
         items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
       }],
+      ["workspace:choose-root", {}],
+      ["workspace:list-children", { path: "notes" }],
+      ["workspace:open-file", { path: "notes/daily.md" }],
     ]);
 
     const port = new FakePort();
@@ -239,6 +248,26 @@ describe("preload bridge", () => {
       "file:open-path",
       { path: "/tmp/dropped.md" },
     );
+
+    electron.filePath.mockReturnValueOnce("");
+    listener?.({
+      isTrusted: true,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    });
+    await Promise.resolve();
+    expect(electron.invoke).toHaveBeenCalledTimes(1);
+
+    electron.invoke.mockRejectedValueOnce(new Error("main process stopped"));
+    listener?.({
+      isTrusted: true,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    });
+    await vi.waitFor(() => {
+      expect(electron.invoke).toHaveBeenCalledTimes(2);
+    });
+    expect(opened).toEqual([{ ok: true, value: reference }]);
   });
 
   it("AC-R5-17: fails pending requests when a replacement port arrives", async () => {

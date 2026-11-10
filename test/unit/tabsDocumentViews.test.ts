@@ -4,13 +4,18 @@ import { describe, expect, it } from "vitest";
 import { DocumentViews } from "../../src/renderer/tabs/documentViews";
 
 describe("document views", () => {
-  it("AC-R4-10: move removes a tab from its first view", () => {
+  it("AC-R4-10: move transfers a tab in either direction", () => {
     const views = new DocumentViews(["alpha", "beta"]);
 
     views.move("beta", 1);
 
     expect(views.documents(1)).toEqual(["alpha"]);
     expect(views.documents(2)).toEqual(["beta"]);
+
+    views.move("beta", 2);
+
+    expect(views.documents(1)).toEqual(["alpha", "beta"]);
+    expect(views.documents(2)).toEqual([]);
   });
 
   it("AC-R4-10: clone keeps a tab in both views", () => {
@@ -36,5 +41,22 @@ describe("document views", () => {
       "scrollTop",
       "selection",
     ]);
+  });
+
+  it("AC-R4-10: adding is idempotent and removing clears both views and states", () => {
+    const views = new DocumentViews();
+    const state = { scrollTop: 20, selection: EditorSelection.single(2) };
+    views.add("alpha");
+    views.add("alpha");
+    views.clone("alpha", 1);
+    views.saveState("alpha", 1, state);
+    views.saveState("alpha", 2, state);
+
+    views.remove("alpha");
+
+    expect(views.documents(1)).toEqual([]);
+    expect(views.documents(2)).toEqual([]);
+    expect(views.state("alpha", 1)).toBeUndefined();
+    expect(views.state("alpha", 2)).toBeUndefined();
   });
 });
