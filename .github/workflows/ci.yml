@@ -73,9 +73,21 @@ jobs:
       - name: Build the app for end-to-end tests
         run: npm run build
       - name: Run performance end-to-end tests
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: reports/perf-e2e-junit.xml
         run: node scripts/run-e2e.cjs test/e2e/preview-perf.spec.ts test/e2e/io-worker.spec.ts
       - name: Run remaining end-to-end tests
         run: node scripts/run-e2e.cjs '^(?!.*(?:preview-perf|io-worker)\.spec\.ts$).*'
+      - name: Merge end-to-end test reports
+        shell: bash
+        run: |
+          {
+            echo '<testsuites>'
+            sed '1d;$d' reports/perf-e2e-junit.xml
+            sed '1d;$d' reports/e2e-junit.xml
+            echo '</testsuites>'
+          } > reports/merged-e2e-junit.xml
+          mv reports/merged-e2e-junit.xml reports/e2e-junit.xml
       - name: Check acceptance criteria
         run: npm run check:acceptance
       - name: Add JUnit summary
