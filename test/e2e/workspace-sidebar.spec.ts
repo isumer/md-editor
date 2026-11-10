@@ -1,0 +1,187 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { expect, test } from "@playwright/test";
+
+import {
+  closeEditor,
+  launchEditor,
+  repositoryRoot,
+  stubOpenDialog,
+} from "./helpers";
+
+const workspaceFixture = path.join(repositoryRoot, "test/fixtures/workspace");
+
+async function writeNumberedFiles(
+  directory: string,
+  count: number,
+  contents: (index: number) => string,
+): Promise<void> {
+  for (let start = 0; start < count; start += 250) {
+    const end = Math.min(start + 250, count);
+    await Promise.all(Array.from({ length: end - start }, (_, offset) => {
+      const index = start + offset;
+      const name = `file-${String(index).padStart(4, "0")}.md`;
+      return fs.writeFile(path.join(directory, name), contents(index), "utf8");
+    }));
+  }
+}
+
+function percentile95(values: readonly number[]): number {
+  const ordered = [...values].sort((left, right) => left - right);
+  return ordered[Math.ceil(ordered.length * 0.95) - 1] ?? Number.POSITIVE_INFINITY;
+}
+
+async function openWorkspace(
+  application: Awaited<ReturnType<typeof launchEditor>>["application"],
+  page: Awaited<ReturnType<typeof launchEditor>>["page"],
+  directory: string,
+): Promise<void> {
+  await stubOpenDialog(application, directory);
+  await page.getByRole("button", { name: "Open Folder" }).click();
+  await expect(page.getByTestId("workspace-tree")).toBeVisible();
+}
+
+test("Open Folder shows a lazy Markdown tree", {
+  tag: "@AC-R11-01",
+  annotation: { type: "AC-R11-01" },
+}, async () => {
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, workspaceFixture);
+    const rows = page.getByTestId("workspace-row");
+    await expect(rows).toHaveText([
+      "empty",
+      "notes",
+      "about.md",
+      "getting-started.md",
+      "README.md",
+    ]);
+    await expect(page.getByText("data.json", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(".hidden.md", { exact: true })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "notes" }).click();
+    await expect(page.getByRole("button", { name: "daily.md" })).toBeVisible();
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+test("a second expand reuses loaded children and keeps editing responsive", {
+  tag: "@AC-R11-02",
+  annotation: { type: "AC-R11-02" },
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-large-"));
+  const bulk = path.join(root, "bulk");
+  await fs.mkdir(bulk);
+  await writeNumberedFiles(bulk, 5_000, () => "# Entry\n");
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, root);
+    const folder = page.getByRole("button", { name: "bulk" });
+    await folder.click();
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await editor.click();
+    await page.keyboard.type("responsive");
+    await expect(editor).toContainText("responsive");
+    await expect(page.getByTestId("workspace-row")).toHaveCount(5_001);
+    const durations = await page.evaluate(async () => {
+      const button = document.querySelector<HTMLButtonElement>('button[data-path="bulk"]');
+      const samples: number[] = [];
+      for (let index = 0; index < 30; index += 1) {
+        button?.click();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const started = performance.now();
+        button?.click();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        samples.push(performance.now() - started);
+      }
+      return samples;
+    });
+    await expect(page.locator('[data-testid="workspace-row"]:visible')).toHaveCount(5_001);
+    console.log(`AC-R11-02 expand p95 ${percentile95(durations).toFixed(1)} ms`);
+    expect(durations).toHaveLength(30);
+    expect(percentile95(durations)).toBeLessThan(500);
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the workspace filter keeps matching file ancestors", {
+  tag: "@AC-R11-03",
+  annotation: { type: "AC-R11-03" },
+}, async () => {
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, workspaceFixture);
+    await page.getByRole("button", { name: "notes" }).click();
+    await expect(page.getByRole("button", { name: "daily.md" })).toBeVisible();
+
+    const filter = page.getByRole("searchbox", { name: "Filter workspace" });
+    await filter.fill("DAILY");
+    await expect(page.getByTestId("workspace-row")).toHaveText(["notes", "daily.md"]);
+    await filter.fill("missing");
+    await expect(page.getByText("No matching files.", { exact: true })).toBeVisible();
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+test("clicking a workspace file opens and reuses its tab", {
+  tag: "@AC-R11-04",
+  annotation: { type: "AC-R11-04" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-"));
+  await writeNumberedFiles(temporaryDirectory, 31, (index) => {
+    const heading = `# Workspace note ${String(index)}\n`;
+    return (heading + "workspace text\n".repeat(8_000)).slice(0, 100 * 1024);
+  });
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, temporaryDirectory);
+    const durations: number[] = [];
+    for (let index = 0; index < 31; index += 1) {
+      const name = `file-${String(index).padStart(4, "0")}.md`;
+      const duration = await page.evaluate(({ fileName, marker }) =>
+        new Promise<number>((resolve) => {
+          const editor = document.querySelector("[data-testid=editor] .cm-content");
+          const button = document.querySelector<HTMLButtonElement>(
+            `button[data-path="${fileName}"]`,
+          );
+          const started = performance.now();
+          const observer = new MutationObserver(() => {
+            if (editor?.textContent?.includes(marker)) {
+              observer.disconnect();
+              requestAnimationFrame(() => resolve(performance.now() - started));
+            }
+          });
+          observer.observe(editor ?? document.body, { childList: true, subtree: true });
+          button?.click();
+        }), { fileName: name, marker: `Workspace note ${String(index)}` });
+      if (index > 0) {
+        durations.push(duration);
+      }
+      if (index < 30) {
+        await page.getByRole("button", { name: `Close ${name}` }).click();
+        await expect(page.getByTestId("tab")).toHaveCount(0);
+      }
+    }
+    console.log(`AC-R11-04 open p95 ${percentile95(durations).toFixed(1)} ms`);
+    expect(durations).toHaveLength(30);
+    expect(percentile95(durations)).toBeLessThan(100);
+    await expect(page.getByTestId("tab")).toHaveCount(1);
+
+    const tree = page.getByTestId("workspace-tree");
+    await tree.getByRole("button", { name: "file-0029.md" }).click();
+    await expect(page.getByTestId("editor")).toContainText("Workspace note 29");
+    await expect(page.getByTestId("tab")).toHaveCount(2);
+    await tree.getByRole("button", { name: "file-0030.md" }).click();
+    await expect(page.getByTestId("editor")).toContainText("Workspace note 30");
+    await expect(page.getByTestId("tab")).toHaveCount(2);
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});

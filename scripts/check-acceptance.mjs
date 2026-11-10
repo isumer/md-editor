@@ -65,7 +65,11 @@ function escapeCell(value) {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-export function buildAcceptanceReport(criteria, tests, platform = process.platform) {
+export function buildAcceptanceReport(
+  criteria,
+  tests,
+  platform = process.platform,
+) {
   const knownIds = new Set(criteria.map((criterion) => criterion.id));
   const unknown = new Map();
 
@@ -138,7 +142,7 @@ export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
     path.join(repositoryRoot, "reports", "unit-junit.xml"),
   ];
   const tests = (await Promise.all(junitPaths.map(readJUnitFile))).flat();
-  const report = buildAcceptanceReport(criteria, tests);
+  const report = buildAcceptanceReport(criteria, tests, process.platform);
 
   console.log(report.markdown);
   if (process.env.GITHUB_STEP_SUMMARY) {

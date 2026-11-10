@@ -34,3 +34,4 @@ export function buildAcceptanceReport(
   tests: readonly AcceptanceTest[],
   platform?: string,
 ): AcceptanceReport;
+export function runAcceptanceCheck(repositoryRoot?: string): Promise<AcceptanceReport>;

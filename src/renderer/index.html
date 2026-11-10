@@ -10,10 +10,36 @@
     <title>Untitled</title>
   </head>
   <body>
+    <div id="tabs" data-testid="tabs" role="tablist" aria-label="Open documents"></div>
     <main id="workspace">
+      <aside id="workspace-sidebar" aria-label="Workspace">
+        <div class="workspace-sidebar-header">
+          <strong id="workspace-title">Workspace</strong>
+          <button id="workspace-open" type="button">Open Folder</button>
+        </div>
+        <input
+          id="workspace-filter"
+          type="search"
+          aria-label="Filter workspace"
+          placeholder="Filter"
+        />
+        <div id="workspace-tree" data-testid="workspace-tree" role="tree"></div>
+        <p id="workspace-empty" hidden>No matching files.</p>
+      </aside>
       <section id="editor" data-testid="editor" aria-label="Markdown editor"></section>
       <section id="preview" data-testid="preview" aria-label="Markdown preview"></section>
+      <div id="preview-error" data-testid="preview-error" role="alert" hidden></div>
     </main>
+    <div id="close-prompt" data-testid="close-prompt" role="dialog" aria-modal="true" hidden>
+      <div class="close-prompt-panel">
+        <p id="close-prompt-message"></p>
+        <div class="close-prompt-actions">
+          <button type="button" data-action="cancel"></button>
+          <button type="button" data-action="discard"></button>
+          <button type="button" data-action="save"></button>
+        </div>
+      </div>
+    </div>
     <footer id="status" data-testid="status" role="status" aria-live="polite"></footer>
     <script type="module" src="/main.ts"></script>
   </body>

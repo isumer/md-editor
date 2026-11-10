@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
-  invoke: vi.fn(async () => ({ ok: true, value: null })),
+  invoke: vi.fn(async (): Promise<{ ok: boolean; value: unknown }> => ({ ok: true, value: null })),
   on: vi.fn(),
   removeListener: vi.fn(),
+  filePath: vi.fn(() => "/tmp/dropped.md"),
 }));
 
 vi.mock("electron", () => ({
@@ -14,6 +15,7 @@ vi.mock("electron", () => ({
     on: electron.on,
     removeListener: electron.removeListener,
   },
+  webUtils: { getPathForFile: electron.filePath },
 }));
 
 class FakePort {
@@ -31,20 +33,37 @@ class FakePort {
   }
 }
 
+interface DropEvent {
+  readonly isTrusted: boolean;
+  readonly dataTransfer: { readonly files: ArrayLike<File> } | null;
+  preventDefault(): void;
+}
+
+const dropListeners = new Map<string, (event: DropEvent) => void>();
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   electron.invoke.mockResolvedValue({ ok: true, value: null });
+  dropListeners.clear();
+  (globalThis as unknown as {
+    addEventListener: (type: string, listener: (event: DropEvent) => void) => void;
+  }).addEventListener = (type, listener) => {
+    dropListeners.set(type, listener);
+  };
 });
 
 async function loadPreload() {
   const module = await import("../../src/preload/preload");
   const api = electron.exposeInMainWorld.mock.calls[0]?.[1];
   const portListener = electron.on.mock.calls.find(([channel]) => channel === "io:port")?.[1];
+  const portLostListener = electron.on.mock.calls.find(
+    ([channel]) => channel === "io:port-lost",
+  )?.[1];
   if (!api || !portListener) {
     throw new Error("preload did not expose its API and port listener");
   }
-  return { api, IoPortClient: module.IoPortClient, portListener };
+  return { api, IoPortClient: module.IoPortClient, portListener, portLostListener };
 }
 
 describe("preload bridge", () => {
@@ -56,39 +75,60 @@ describe("preload bridge", () => {
       [
         "attachDocument",
         "chooseSaveTarget",
+        "chooseWorkspaceRoot",
+        "clearDraft",
         "contributeMenu",
         "detachDocument",
+        "draftDocument",
+        "listDrafts",
+        "listWorkspaceChildren",
+        "loadSession",
         "onMenuCommand",
         "onOpenRequest",
+        "onSessionCloseRequest",
         "openExternal",
         "openFile",
+        "openWorkspaceFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
+        "respondSessionClose",
         "saveDocument",
         "sendChanges",
       ]
     `);
+    expect(api).not.toHaveProperty("openPath");
+    expect(api).not.toHaveProperty("pathForFile");
 
     await api.openFile();
     await api.chooseSaveTarget({ grant: "grant-a" });
     await api.releaseDocument({ grant: "grant-a" });
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
+    await api.loadSession();
+    await api.respondSessionClose({ allow: true, documents: [], id: 1 });
     await api.contributeMenu({
       fileMenuTitle: "File",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
     });
+    await api.chooseWorkspaceRoot();
+    await api.listWorkspaceChildren({ path: "notes" });
+    await api.openWorkspaceFile({ path: "notes/daily.md" });
     expect(electron.invoke.mock.calls).toEqual([
       ["file:open", {}],
       ["file:choose-save-target", { grant: "grant-a" }],
       ["file:release-document", { grant: "grant-a" }],
       ["link:open-external", { url: "https://example.com" }],
       ["file:open-requests-ready", {}],
+      ["session:load", {}],
+      ["session:close-result", { allow: true, documents: [], id: 1 }],
       ["menu:contribute", {
         fileMenuTitle: "File",
         items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
       }],
+      ["workspace:choose-root", {}],
+      ["workspace:list-children", { path: "notes" }],
+      ["workspace:open-file", { path: "notes/daily.md" }],
     ]);
 
     const port = new FakePort();
@@ -137,7 +177,7 @@ describe("preload bridge", () => {
     ]);
     port.reply({
       id: "io-1",
-      result: { ok: true, value: { name: "note.md", text: "opened" } },
+      result: { ok: true, value: { canonicalPath: "/tmp/note.md", name: "note.md", text: "opened" } },
     });
     port.reply({
       id: "io-2",
@@ -153,6 +193,61 @@ describe("preload bridge", () => {
       ok: true,
       value: { name: "note.md", version: 1 },
     });
+  });
+
+  it("AC-SEC-09: opens only files from a trusted drop, through the preload", async () => {
+    const { api } = await loadPreload();
+    const opened: unknown[] = [];
+    api.onOpenRequest((request: unknown) => {
+      opened.push(request);
+    });
+    const listener = dropListeners.get("drop");
+    expect(listener).toBeDefined();
+    const file = { name: "dropped.md" } as unknown as File;
+
+    // A page-created drop is not trusted: it must not reach the main process.
+    const untrusted = {
+      isTrusted: false,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    };
+    listener?.(untrusted);
+    await Promise.resolve();
+    expect(electron.invoke).not.toHaveBeenCalled();
+    expect(untrusted.preventDefault).not.toHaveBeenCalled();
+
+    const empty = {
+      isTrusted: true,
+      dataTransfer: null,
+      preventDefault: vi.fn(),
+    };
+    listener?.(empty);
+    await Promise.resolve();
+    expect(electron.invoke).not.toHaveBeenCalled();
+    expect(empty.preventDefault).toHaveBeenCalledOnce();
+
+    // A real drop reaches main as a path and reports the result to the renderer.
+    const reference = {
+      canonicalPath: "/tmp/dropped.md",
+      grant: "grant-d",
+      name: "dropped.md",
+    };
+    electron.invoke.mockResolvedValueOnce({ ok: true, value: reference });
+    const trusted = {
+      isTrusted: true,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    };
+    listener?.(trusted);
+
+    await vi.waitFor(() => {
+      expect(opened).toEqual([{ ok: true, value: reference }]);
+    });
+    expect(trusted.preventDefault).toHaveBeenCalledOnce();
+    expect(electron.invoke).toHaveBeenCalledWith(
+      "file:open-path",
+      { path: "/tmp/dropped.md" },
+    );
   });
 
   it("AC-R5-17: fails pending requests when a replacement port arrives", async () => {
@@ -180,6 +275,143 @@ describe("preload bridge", () => {
       },
     });
     expect(first.close).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R5-17: posts a request queued after port loss on the replacement port", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    const replacement = new FakePort();
+    portListener({ ports: [first] });
+    expect(portLostListener).toBeDefined();
+    portLostListener?.({});
+
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+    portListener({ ports: [replacement] });
+
+    expect(first.messages).toEqual([]);
+    expect(replacement.messages).toEqual([{
+      id: "io-1",
+      op: "save",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    }]);
+    replacement.reply({
+      id: "io-1",
+      result: { ok: true, value: { name: "note.md", version: 1 } },
+    });
+    await expect(saved).resolves.toMatchObject({ ok: true, value: { version: 1 } });
+  });
+
+  it("AC-R5-17: a second port loss keeps a message queued after the first", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    portLostListener?.({});
+    api.sendChanges({
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    });
+
+    portLostListener?.({});
+
+    const replacement = new FakePort();
+    portListener({ ports: [replacement] });
+    expect(replacement.messages).toEqual([{
+      op: "change",
+      docId: "doc",
+      epoch: 1,
+      fromVersion: 0,
+      toVersion: 1,
+      changes: [4, [0, "!"]],
+    }]);
+  });
+
+  it("AC-R5-17: a second port loss keeps a request queued after the first", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    portLostListener?.({});
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+
+    portLostListener?.({});
+
+    const replacement = new FakePort();
+    portListener({ ports: [replacement] });
+    replacement.reply({
+      id: "io-1",
+      result: { ok: true, value: { name: "note.md", version: 1 } },
+    });
+    await expect(saved).resolves.toMatchObject({ ok: true, value: { version: 1 } });
+  });
+
+  it("AC-R5-17: port loss fails a request pending on the old port", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    portListener({ ports: [first] });
+    expect(portLostListener).toBeDefined();
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+
+    portLostListener?.({});
+
+    await expect(saved).resolves.toMatchObject({
+      ok: false,
+      error: { code: "WORKER_RESTARTED", retryable: true },
+    });
+    expect(first.close).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R5-17: a failure port settles a request queued after port loss", async () => {
+    const { api, portListener, portLostListener } = await loadPreload();
+    const first = new FakePort();
+    const failure = new FakePort();
+    portListener({ ports: [first] });
+    expect(portLostListener).toBeDefined();
+    portLostListener?.({});
+    const saved = api.saveDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 1,
+    });
+
+    portListener({ ports: [failure] });
+    failure.reply({
+      id: "io-1",
+      result: {
+        ok: false,
+        error: {
+          code: "WORKER_RESTARTED",
+          messageKey: "file.workerRestarted",
+          params: {},
+          retryable: true,
+        },
+      },
+    });
+
+    await expect(saved).resolves.toMatchObject({
+      ok: false,
+      error: { code: "WORKER_RESTARTED", retryable: true },
+    });
   });
 
   it("AC-R5-17: queues requests and one-way messages in one FIFO", async () => {
@@ -242,6 +474,81 @@ describe("preload bridge", () => {
     });
     await expect(attached).resolves.toMatchObject({ ok: true });
     await expect(saved).resolves.toMatchObject({ ok: true });
+  });
+
+  it("AC-R4-07: requests, lists and clears drafts through the port", async () => {
+    const { IoPortClient } = await loadPreload();
+    const client = new IoPortClient();
+    const port = new FakePort();
+    client.attach(port);
+
+    const drafted = client.request({
+      op: "draft",
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 2,
+    });
+    const listed = client.request({ op: "drafts" });
+    client.send({ op: "clear-draft", docId: "doc" });
+
+    expect(port.messages).toEqual([
+      { id: "io-1", op: "draft", grant: "grant", docId: "doc", epoch: 0, version: 2 },
+      { id: "io-2", op: "drafts" },
+      { op: "clear-draft", docId: "doc" },
+    ]);
+
+    port.reply({ id: "io-1", result: { ok: true, value: {} } });
+    port.reply({
+      id: "io-2",
+      result: {
+        ok: true,
+        value: { drafts: [{ docId: "doc", grant: "grant", text: "draft text" }] },
+      },
+    });
+    await expect(drafted).resolves.toMatchObject({ ok: true, value: {} });
+    await expect(listed).resolves.toEqual({
+      ok: true,
+      value: { drafts: [{ docId: "doc", grant: "grant", text: "draft text" }] },
+    });
+  });
+
+  it("AC-R4-07: drafts, lists and clears through the named API", async () => {
+    const { api, portListener } = await loadPreload();
+    const port = new FakePort();
+    portListener({ ports: [port] });
+
+    const drafted = api.draftDocument({
+      grant: "grant",
+      docId: "doc",
+      epoch: 0,
+      version: 2,
+    });
+    const listed = api.listDrafts();
+    api.clearDraft({ docId: "doc" });
+
+    expect(port.messages).toEqual([
+      { id: "io-1", op: "draft", grant: "grant", docId: "doc", epoch: 0, version: 2 },
+      { id: "io-2", op: "drafts" },
+      { op: "clear-draft", docId: "doc" },
+    ]);
+
+    port.reply({ id: "io-1", result: { ok: true, value: {} } });
+    port.reply({
+      id: "io-2",
+      result: { ok: true, value: { drafts: [{ docId: "doc", grant: null, text: "x" }] } },
+    });
+    await expect(drafted).resolves.toMatchObject({ ok: true, value: {} });
+    await expect(listed).resolves.toMatchObject({
+      ok: true,
+      value: { drafts: [{ docId: "doc", grant: null, text: "x" }] },
+    });
+
+    let invalidSettled = false;
+    void api.listDrafts().then(() => { invalidSettled = true; });
+    port.reply({ id: "io-3", result: { ok: true, value: {} } });
+    await Promise.resolve();
+    expect(invalidSettled).toBe(false);
   });
 
   it("AC-PERF-04: sendChanges posts exactly the delta without text", async () => {
@@ -315,8 +622,17 @@ describe("preload bridge", () => {
     await Promise.resolve();
     expect(settled).not.toHaveBeenCalled();
 
-    port.reply({ id: "io-1", result: { ok: true, value: { name: "a.md", text: "a" } } });
-    await expect(pending).resolves.toEqual({ ok: true, value: { name: "a.md", text: "a" } });
+    port.reply({
+      id: "io-1",
+      result: {
+        ok: true,
+        value: { canonicalPath: "/tmp/a.md", name: "a.md", text: "a" },
+      },
+    });
+    await expect(pending).resolves.toEqual({
+      ok: true,
+      value: { canonicalPath: "/tmp/a.md", name: "a.md", text: "a" },
+    });
   });
 
   it("AC-SEC-12: accepts an exact typed failure reply", async () => {
@@ -367,6 +683,19 @@ describe("preload bridge", () => {
     expect(electron.removeListener).toHaveBeenCalledWith(
       "file:open-request",
       openCall?.[1],
+    );
+
+    const closeListener = vi.fn();
+    const unsubscribeClose = api.onSessionCloseRequest(closeListener);
+    const closeCall = electron.on.mock.calls.find(
+      ([channel]) => channel === "session:request-close",
+    );
+    closeCall?.[1]({}, { id: 5 });
+    expect(closeListener).toHaveBeenCalledWith({ id: 5 });
+    unsubscribeClose();
+    expect(electron.removeListener).toHaveBeenCalledWith(
+      "session:request-close",
+      closeCall?.[1],
     );
   });
 });

@@ -30,17 +30,19 @@ function wiring(options: WiringOptions = {}) {
   const scheduler = new RenderScheduler(() => undefined);
   const preview = options.preview ?? document.createElement("div");
   const showStatus = vi.fn();
+  const showError = vi.fn();
   const onResync = vi.fn();
   const rewriteHtml = options.rewriteHtml ?? ((html: string) => html);
-  wireRenderWorker(worker, {
+  const documents = wireRenderWorker(worker, {
     scheduler,
     preview,
     showStatus,
+    showError,
     currentVersion: () => options.version ?? { docId: "doc", epoch: 1, version: 1 },
     onResync,
     rewriteHtml,
   });
-  return { worker, preview, showStatus, onResync, rewriteHtml };
+  return { worker, preview, showStatus, showError, onResync, rewriteHtml, documents };
 }
 
 function send(worker: FakeWorker, response: RenderResponse): void {
@@ -52,6 +54,379 @@ function blocks(preview: HTMLElement): HTMLElement[] {
 }
 
 describe("preview render flow", () => {
+  it("AC-PERF-10: limits each frame-paced append to four blocks", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${"x".repeat(1_024)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    vi.runOnlyPendingTimers();
+
+    expect(blocks(preview)).toHaveLength(4);
+    expect(frames).toHaveLength(1);
+    frames.shift()?.(16);
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview)).toHaveLength(8);
+    expect(frames).toHaveLength(1);
+    frames.shift()?.(32);
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview)).toHaveLength(12);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-10: a worker message drains at most four pending blocks", () => {
+    vi.useFakeTimers();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const handle = nextFrame;
+      nextFrame += 1;
+      frames.set(handle, callback);
+      return handle;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+      frames.delete(handle);
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    send(worker, { op: "resync", id: 2, docId: "doc", epoch: 1, version: 1 });
+
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]);
+    expect(frames).toHaveLength(1);
+    for (const frame of [...frames.values()]) {
+      frame(16);
+    }
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(renderedBlocks.map((block) => block.id));
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-09: keeps an eight-block fill batch off the frame-paced path", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${"x".repeat(1_024)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    vi.runOnlyPendingTimers();
+
+    expect(blocks(preview)).toHaveLength(8);
+    expect(frames).toHaveLength(1);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-10: requests one fill after a split append", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+
+    vi.runOnlyPendingTimers();
+    for (const frame of frames) {
+      frame(16);
+    }
+
+    expect(blocks(preview)).toHaveLength(8);
+    expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
+      op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
+    });
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-10: applies a newer result after the deferred part", () => {
+    vi.useFakeTimers();
+    const version = { docId: "doc", epoch: 1, version: 1 };
+    const { worker, preview } = wiring({ version });
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    version.version = 2;
+    send(worker, {
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b12", startLine: 12, endLine: 13, html: "<p>12</p>" }],
+      fillToken: 5,
+      complete: false,
+    });
+    vi.runAllTimers();
+
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual([
+        "b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9",
+        "b10", "b11", "b12",
+      ]);
+    vi.useRealTimers();
+  });
+
+  it("AC-PERF-10: drops a pending append when the document changes", () => {
+    vi.useFakeTimers();
+    const version = { docId: "doc", epoch: 1, version: 1 };
+    const { worker, preview } = wiring({ version });
+    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    version.docId = "next-doc";
+    vi.runOnlyPendingTimers();
+
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(["b0", "b1", "b2", "b3"]);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("AC-PERF-10: a document switch cancels the stale append frame", () => {
+    vi.useFakeTimers();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const handle = nextFrame;
+      nextFrame += 1;
+      frames.set(handle, callback);
+      return handle;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+      frames.delete(handle);
+    });
+    const version = { docId: "doc", epoch: 1, version: 1 };
+    const { worker, preview } = wiring({ version });
+    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    version.docId = "next-doc";
+    send(worker, {
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [],
+      fillToken: 5,
+      complete: false,
+    });
+    for (const frame of frames.values()) {
+      frame(16);
+    }
+
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(["b0", "b1", "b2", "b3"]);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-10: applies a batch of four blocks in one task", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const { worker, preview } = wiring();
+    const renderedBlocks = Array.from({ length: 4 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+
+    expect(blocks(preview)).toHaveLength(4);
+    expect(frames).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("AC-PERF-10: records the apply boundary marker names", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      fillToken: 4,
+      complete: false,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
+  it("AC-PERF-10: clears the previous apply boundary marks", () => {
+    const clearMarks = vi.spyOn(performance, "clearMarks");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      fillToken: 4,
+      complete: false,
+    });
+
+    expect(clearMarks.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+    ]);
+    clearMarks.mockRestore();
+  });
+
   it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -233,7 +608,7 @@ describe("preview render flow", () => {
   });
 
   it("AC-R1-06: a failed render keeps the last good preview and the next success replaces it", () => {
-    const { worker, preview, showStatus } = wiring();
+    const { worker, preview, showStatus, showError } = wiring();
 
     send(worker, {
       id: 1,
@@ -256,6 +631,7 @@ describe("preview render flow", () => {
 
     expect(preview.textContent).toBe("good");
     expect(showStatus).toHaveBeenLastCalledWith("render failed");
+    expect(showError).toHaveBeenLastCalledWith("render failed");
 
     send(worker, {
       id: 3,
@@ -274,6 +650,7 @@ describe("preview render flow", () => {
 
     expect(preview.textContent).toBe("recovered");
     expect(showStatus).toHaveBeenLastCalledWith();
+    expect(showError).toHaveBeenLastCalledWith();
   });
 
   it("AC-R1-09: patches only the changed block and keeps other blocks' DOM nodes", () => {
@@ -352,6 +729,47 @@ describe("preview render flow", () => {
       .toEqual(["one", "three"]);
   });
 
+  it("AC-R4-01: a switch back keeps the cached nodes but resumes an unfinished fill", () => {
+    const preview = document.createElement("div");
+    const { worker, documents } = wiring({
+      preview,
+      version: { docId: "doc", epoch: 1, version: 1 },
+    });
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      complete: false,
+    });
+    const first = blocks(preview);
+
+    // The fill pass was still running when the window switched away, so the
+    // cached preview is incomplete: the switch back must ask for a render.
+    expect(documents.show({ docId: "doc", epoch: 1, version: 1 })).toBe(false);
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b2", startLine: 2, endLine: 3, html: "<p>two</p>" }],
+      fillToken: 1,
+      complete: true,
+    });
+
+    expect(documents.show({ docId: "doc", epoch: 1, version: 1 })).toBe(true);
+    const shown = blocks(preview);
+    expect(shown.map((element) => element.textContent)).toEqual(["one", "two"]);
+    expect(shown[0]?.isSameNode(first[0] ?? null)).toBe(true);
+  });
+
   it("AC-R1-04: a block's line follows lines inserted above it after it was rendered", () => {
     const preview = document.createElement("div");
     const { worker } = wiring({
@@ -396,4 +814,5 @@ describe("preview render flow", () => {
     expect(elements.map((element) => element.dataset["line"])).toEqual(["2", "2", "4"]);
     expect(elements.map((element) => blockLine(element))).toEqual([2, 4, 6]);
   });
+
 });

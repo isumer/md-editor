@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { launchEditor } from "./helpers";
+import { closeEditor, launchEditor } from "./helpers";
 
 test("the renderer loads from the app bundle origin", {
   tag: "@AC-SEC-14",
@@ -18,7 +18,7 @@ test("the renderer loads from the app bundle origin", {
     expect(response.ok).toBe(true);
     expect(response.body).toContain("<main id=\"workspace\">");
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -41,7 +41,7 @@ test("the app protocol returns no content outside the bundle host and path", {
     expect(pathResponse).toEqual({ ok: false, status: 404, body: "" });
     expect(hostResponse).toEqual({ ok: false, status: 404, body: "" });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -92,7 +92,7 @@ test("the content security policy reports and blocks inline script and eval", {
     })).toMatchObject({ evalResult: null, inlineRan: false });
     expect(evaluation.exceptionDetails).toBeDefined();
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -161,7 +161,7 @@ test("the content security policy reports and blocks file images", {
       return probe.fileImageProbe?.loaded;
     })).toBe(false);
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });
 
@@ -201,6 +201,6 @@ test("the live renderer preferences keep every isolation control enabled", {
       nodeIntegration: false,
     });
   } finally {
-    await application.close();
+    await closeEditor(application, page);
   }
 });

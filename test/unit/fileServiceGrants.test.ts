@@ -107,6 +107,23 @@ describe("file service grants", () => {
     expect(grants.entries(1)).toEqual([]);
   });
 
+  it("AC-R4-08: resolves an owned grant path and refuses an unknown or foreign grant", async () => {
+    const service = new DocumentGrantService(
+      new GrantTable(),
+      new FileDialogs(),
+      createControl(),
+    );
+    const opened = await service.openPath(1, "/documents/note.md");
+    if (!opened) {
+      throw new Error("the open did not return a grant");
+    }
+
+    expect(service.resolvePath(1, opened.grant))
+      .toBe(path.resolve("/documents/note.md"));
+    expect(service.resolvePath(1, "unknown")).toBeNull();
+    expect(service.resolvePath(2, opened.grant)).toBeNull();
+  });
+
   it("AC-R5-09: choosing another path keeps the current grant live", async () => {
     const grants = new GrantTable();
     const control = createControl();

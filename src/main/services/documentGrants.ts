@@ -50,6 +50,11 @@ export class DocumentGrantService {
     await this.control.revokeWindow(windowId);
   }
 
+  resolvePath(windowId: number, handle: string): string | null {
+    const result = this.grants.resolve(windowId, handle);
+    return result.ok ? result.value : null;
+  }
+
   private async register(
     windowId: number,
     filePath: string,
@@ -66,7 +71,11 @@ export class DocumentGrantService {
       throw result.error;
     }
     this.grants.register(windowId, handle, result.value.canonicalPath, "document");
-    return { grant: handle, name: result.value.name };
+    return {
+      canonicalPath: result.value.canonicalPath,
+      grant: handle,
+      name: result.value.name,
+    };
   }
 
   private resolve(windowId: number, handle: string): string {

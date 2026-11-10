@@ -147,6 +147,61 @@ describe("io-worker port boundary", () => {
     await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("original");
   });
 
+  it("AC-R4-07: drafts, lists, and clears drafts through the port", async () => {
+    const port = new FakePort();
+    attachIoPort(port, 1, serviceWithGrant());
+    attach(port, "attach", "doc", "text");
+    await waitForReplies(port, 1);
+    port.replies.length = 0;
+
+    port.send({
+      id: "draft",
+      op: "draft",
+      grant: "valid",
+      docId: "doc",
+      epoch: 0,
+      version: 0,
+    });
+    port.send({ id: "drafts", op: "drafts" });
+    port.send({ op: "clear-draft", docId: "doc" });
+    port.send({ id: "drafts-after", op: "drafts" });
+    await waitForReplies(port, 3);
+
+    expect(port.replies).toEqual([
+      { id: "draft", result: { ok: true, value: {} } },
+      {
+        id: "drafts",
+        result: {
+          ok: true,
+          value: {
+            drafts: [{ docId: "doc", grant: "valid", text: "text" }],
+          },
+        },
+      },
+      { id: "drafts-after", result: { ok: true, value: { drafts: [] } } },
+    ]);
+  });
+
+  it("AC-R4-07: a draft needs an attached document and a known grant", () => {
+    const grants = new IoGrantTable();
+    const service = new IoFileService(grants);
+    service.attach(1, { docId: "doc", epoch: 0, version: 0, text: "text" });
+
+    expect(() => service.draft(1, {
+      docId: "missing",
+      grant: null,
+      epoch: 0,
+      version: 0,
+    })).toThrowError(expect.objectContaining({ code: "OUT_OF_SYNC" }));
+    expect(() => service.draft(1, {
+      docId: "doc",
+      grant: "unknown",
+      epoch: 0,
+      version: 0,
+    })).toThrowError(expect.objectContaining({ code: "GRANT_INVALID" }));
+    expect(() => service.clearDraft(9, "doc")).not.toThrow();
+  });
+
   it("AC-SEC-13: an inapplicable change requires an attach before saving", async () => {
     const port = new FakePort();
     attachIoPort(port, 1, serviceWithGrant());
@@ -335,6 +390,27 @@ describe("io-worker file service", () => {
       .rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("AC-R4-07: stores a draft for an untitled document with a null grant", () => {
+    const service = new IoFileService(new IoGrantTable());
+    service.attach(1, {
+      docId: "untitled",
+      epoch: 0,
+      version: 0,
+      text: "unsaved text",
+    });
+
+    service.draft(1, {
+      docId: "untitled",
+      epoch: 0,
+      version: 0,
+      grant: null,
+    });
+
+    expect(service.listDrafts(1)).toEqual({
+      drafts: [{ docId: "untitled", grant: null, text: "unsaved text" }],
+    });
+  });
+
   it("AC-SEC-16 AC-SEC-17: resolves a document asset from its own folder only", async () => {
     const grants = new IoGrantTable();
     const service = new IoFileService(grants);
@@ -367,6 +443,7 @@ describe("io-worker file service", () => {
     service.attach(1, { docId: "doc", epoch: 0, version: 4, text: "updated" });
 
     await expect(service.read(1, "grant")).resolves.toEqual({
+      canonicalPath: targetPath,
       name: "protected.md",
       text: "original",
     });
@@ -396,11 +473,11 @@ describe("io-worker file service", () => {
   it("AC-R12-01: a UTF-16LE BOM exempts a file with NUL bytes", async () => {
     const grants = new IoGrantTable();
     const service = new IoFileService(grants);
-    await service.registerGrant(1, "utf16", path.join(
-      __dirname, "../fixtures/binary/utf16le-bom.txt",
-    ), true);
+    const filePath = path.join(__dirname, "../fixtures/binary/utf16le-bom.txt");
+    await service.registerGrant(1, "utf16", filePath, true);
 
     await expect(service.read(1, "utf16")).resolves.toEqual({
+      canonicalPath: filePath,
       name: "utf16le-bom.txt",
       text: "\uFFFD\uFFFDh\u0000e\u0000l\u0000l\u0000o\u0000",
     });
@@ -409,11 +486,11 @@ describe("io-worker file service", () => {
   it("AC-R12-01: a UTF-8 BOM keeps its exact text", async () => {
     const grants = new IoGrantTable();
     const service = new IoFileService(grants);
-    await service.registerGrant(1, "utf8-bom", path.join(
-      __dirname, "../fixtures/encodings/utf8-bom.txt",
-    ), true);
+    const filePath = path.join(__dirname, "../fixtures/encodings/utf8-bom.txt");
+    await service.registerGrant(1, "utf8-bom", filePath, true);
 
     await expect(service.read(1, "utf8-bom")).resolves.toEqual({
+      canonicalPath: filePath,
       name: "utf8-bom.txt",
       text: "\uFEFFhello\n",
     });

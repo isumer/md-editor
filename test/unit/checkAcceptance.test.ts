@@ -85,4 +85,16 @@ describe("acceptance report", () => {
     expect(report.ok).toBe(false);
     expect([...report.unknown.keys()]).toEqual(["AC-R9-99"]);
   });
+
+  it("fails when an implemented perf criterion has no passing test", () => {
+    const criteria = parseCriterionFiles([{
+      path: "PERF.md",
+      content: "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+    }]);
+
+    const report = buildAcceptanceReport(criteria, [], "linux");
+
+    expect(report.ok).toBe(false);
+    expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
 });
