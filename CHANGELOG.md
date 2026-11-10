@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".
 - When two tabs save under the same new file name at the same moment, the second save now refuses with a message instead of overwriting the first save's content.
 - Opening a file, or restoring a draft, while another tab is still saving that same file now shows a message and does not open a second tab for that file.
+- Quitting no longer hangs when the background file service does not answer. The app stops waiting after five seconds and finishes closing.
 
 ### Security
 

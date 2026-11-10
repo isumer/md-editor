@@ -15,6 +15,7 @@ interface PendingClose {
 }
 
 const KEEPALIVE_GRANT = "session-close:keepalive";
+const PERSIST_TIMEOUT_MILLISECONDS = 5_000;
 
 function isKeepalive(result: SessionCloseResult): boolean {
   return !result.allow && result.documents[0]?.grant === KEEPALIVE_GRANT;
@@ -71,10 +72,27 @@ export class CloseRequestBroker {
     // already closes without a snapshot.
     try {
       if (result.allow) {
-        await this.persist(result, windowId);
+        await this.persistWithTimeout(result, windowId);
       }
     } finally {
       pending.resolve(result.allow);
+    }
+  }
+
+  private async persistWithTimeout(
+    result: SessionCloseResult,
+    windowId: number,
+  ): Promise<void> {
+    let timer: TimerHandle | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = this.setTimer(resolve, PERSIST_TIMEOUT_MILLISECONDS);
+    });
+    try {
+      await Promise.race([this.persist(result, windowId), timeout]);
+    } finally {
+      if (timer !== undefined) {
+        this.clearTimer(timer);
+      }
     }
   }
 
