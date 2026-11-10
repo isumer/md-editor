@@ -6,7 +6,6 @@ export const MENU_CHANNELS = {
 // Menu item ids are stable across slices: e2e tests address the items by these ids.
 export const MENU_ITEM_IDS = ["file-open", "file-save", "file-save-as"] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
-export type MenuCommandMessage = MenuItemId;
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -22,6 +21,9 @@ export interface MenuContribution {
 }
 
 export type MenuContributionResponse = void;
+
+// What main sends back when a contributed item is clicked: the menu item id.
+export type MenuCommandMessage = MenuItemId;
 
 function exactData(
   value: unknown,

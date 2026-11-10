@@ -94,38 +94,6 @@ const editorSetup = [
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
-// Lezer cannot yield while parsing inline content, so bound pathological blocks.
-const MARKDOWN_INLINE_PARSE_MAX_LENGTH = 64 * 1024;
-const MARKDOWN_PARAGRAPH_PARSE_MAX_LENGTH = 8 * 1024;
-
-const markdownSupport = markdown({
-  extensions: {
-    parseBlock: [{
-      name: "BoundedInline",
-      before: "LinkReference",
-      parse(context, line) {
-        if (line.text.length <= MARKDOWN_INLINE_PARSE_MAX_LENGTH) return false;
-        const from = context.lineStart;
-        context.addElement(context.elt("Paragraph", from, from + line.text.length));
-        context.nextLine();
-        return true;
-      },
-      leaf() {
-        return {
-          nextLine(context, _line, leaf) {
-            if (leaf.content.length <= MARKDOWN_PARAGRAPH_PARSE_MAX_LENGTH) return false;
-            const to = leaf.start + leaf.content.length;
-            context.addLeafElement(leaf, context.elt("Paragraph", leaf.start, to));
-            return true;
-          },
-          finish() {
-            return false;
-          },
-        };
-      },
-    }],
-  },
-});
 
 export function dispatchUndo(view: EditorView): void {
   undo(view);
@@ -163,7 +131,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);

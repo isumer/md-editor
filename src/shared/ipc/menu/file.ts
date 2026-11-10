@@ -1,5 +1,4 @@
 export const fileMenu = {
-  contributes: true,
   menuTitleKey: "menu.file",
   items: [
     {

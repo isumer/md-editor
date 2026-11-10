@@ -3,7 +3,8 @@ import { expect, it, vi } from "vitest";
 vi.mock("electron", () => ({ app: {}, Menu: {} }));
 
 import { buildContributionTemplate } from "../../src/main/app/menu";
-import type { MenuContribution } from "../../src/shared/ipc/menu";
+import { MENU_ITEM_IDS, type MenuContribution } from "../../src/shared/ipc/menu";
+import { fileMenu } from "../../src/shared/ipc/menu/file";
 
 interface TemplateShape {
   id?: string;
@@ -117,4 +118,10 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
         ],
       }
     `);
+});
+
+it("keeps each declared menu item id in the shared id list", () => {
+  expect(fileMenu.items.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
+  expect(new Set(fileMenu.items.map((item) => item.commandId)).size)
+    .toBe(fileMenu.items.length);
 });
