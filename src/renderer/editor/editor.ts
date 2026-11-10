@@ -12,6 +12,7 @@ import {
   foldGutter,
   foldKeymap,
   indentOnInput,
+  StreamLanguage,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
@@ -94,6 +95,33 @@ const editorSetup = [
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
+const MARKDOWN_LINE_MAX_LENGTH = 64 * 1024;
+const markdownSupport = markdown();
+const longLineMarkdown = StreamLanguage.define<null>({
+  name: "markdown",
+  startState: () => null,
+  token: (stream) => {
+    stream.skipToEnd();
+    return null;
+  },
+});
+
+function hasLongLine(document: Text | string): boolean {
+  if (typeof document === "string") {
+    return new RegExp(`[^\\r\\n]{${String(MARKDOWN_LINE_MAX_LENGTH + 1)}}`, "u")
+      .test(document);
+  }
+  for (const line of document.iterLines()) {
+    if (line.length > MARKDOWN_LINE_MAX_LENGTH) return true;
+  }
+  return false;
+}
+
+function markdownExtension(document: Text | string): Extension {
+  if (document.length > MARKDOWN_LANGUAGE_MAX_LENGTH) return [];
+  // Markdown's block parser scans an entire physical line before yielding.
+  return hasLongLine(document) ? longLineMarkdown : markdownSupport;
+}
 
 export function dispatchUndo(view: EditorView): void {
   undo(view);
@@ -131,7 +159,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      markdownExtension(document),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);
