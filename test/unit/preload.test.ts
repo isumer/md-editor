@@ -83,6 +83,7 @@ describe("preload bridge", () => {
         "listDrafts",
         "listWorkspaceChildren",
         "loadSession",
+        "loadSettings",
         "onMenuCommand",
         "onOpenRequest",
         "onSessionCloseRequest",
@@ -94,6 +95,7 @@ describe("preload bridge", () => {
         "releaseDocument",
         "respondSessionClose",
         "saveDocument",
+        "saveSettings",
         "sendChanges",
       ]
     `);

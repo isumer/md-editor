@@ -38,6 +38,9 @@ import {
 } from "./features/preview/preview";
 import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
 import { WorkspaceSidebar } from "./features/workspace/workspaceSidebar";
+import { applyBackgrounds, resetToThemeDefaults } from "./features/background/background";
+import { loadSettings, saveSettings, onMenuCommand } from "./platform/api";
+import type { Settings } from "../shared/settings/settings";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
@@ -424,6 +427,33 @@ async function initialize(): Promise<void> {
   }
   renderController.start();
   wirePreviewLinks(preview, showStatus);
+
+  const settingsResult = await loadSettings();
+  let currentTheme: "light" | "dark" = "light";
+  if (settingsResult.ok) {
+    applyBackgrounds(
+      { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
+      currentTheme,
+    );
+  } else {
+    resetToThemeDefaults(currentTheme);
+  }
+
+  const updateTheme = () => {
+    currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    if (settingsResult.ok) {
+      applyBackgrounds(
+        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
+        currentTheme,
+      );
+    } else {
+      resetToThemeDefaults(currentTheme);
+    }
+  };
+
+  const observer = new MutationObserver(updateTheme);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
   const untitled = createUntitled();
   activateDocument(untitled);
   updateTitle();

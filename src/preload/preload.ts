@@ -281,6 +281,8 @@ export class IoPortClient {
   }
 }
 
+import type { Settings } from "../shared/settings/settings";
+
 interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
@@ -299,6 +301,8 @@ interface Api {
   contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
   loadSession(): Promise<Result<SessionLoadResponse>>;
+  loadSettings(): Promise<Result<Settings>>;
+  saveSettings(settings: Settings): Promise<Result<void>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
   chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;
@@ -439,6 +443,8 @@ const api: Api = {
     SESSION_CHANNELS.load,
     {},
   ) as Promise<Result<SessionLoadResponse>>,
+  loadSettings: () => ipcRenderer.invoke("settings:read", {}) as Promise<Result<Settings>>,
+  saveSettings: (settings) => ipcRenderer.invoke("settings:write", settings) as Promise<Result<void>>,
   respondSessionClose: (result) => ipcRenderer.invoke(
     SESSION_CHANNELS.closeResult,
     result,

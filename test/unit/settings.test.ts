@@ -59,14 +59,14 @@ describe("AC-R08-01: settings load, migrate and save", () => {
       version: 0,
       editor: { wrap: false },
     });
-    expect(withoutTabWidth.editor).toEqual({ wrap: false, tabSize: 2 });
+    expect(withoutTabWidth.editor).toEqual({ wrap: false, tabSize: 2, background: null });
   });
 
   it("AC-R08-01: migrates tabWidth when the version is missing", () => {
     const settings = normalizeSettings({ editor: { tabWidth: 6 } });
 
     expect(settings.version).toBe(1);
-    expect(settings.editor).toEqual({ wrap: true, tabSize: 6 });
+    expect(settings.editor).toEqual({ wrap: true, tabSize: 6, background: null });
   });
 
   it("AC-R08-01: keeps tabSize when an old file has no tabWidth", () => {
@@ -81,7 +81,7 @@ describe("AC-R08-01: settings load, migrate and save", () => {
       editor: { tabWidth: 6, tabSize: 3 },
     });
 
-    expect(settings.editor).toEqual({ wrap: true, tabSize: 3 });
+    expect(settings.editor).toEqual({ wrap: true, tabSize: 3, background: null });
   });
 
   it("AC-R08-01: keeps an unknown __proto__ key without changing the prototype", () => {
