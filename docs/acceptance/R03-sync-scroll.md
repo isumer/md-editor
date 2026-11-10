@@ -13,7 +13,7 @@ When the preview is scrolled so that a heading is the top visible block
 Then the editor's top visible line is that heading's source line, within ±1 block
 
 ### AC-R3-03 — The two panes never feed back into each other
-status: implemented
+status: planned
 Given sync scroll is on
 When the editor is scrolled once and left alone
 Then the preview scrolls once, the editor receives no scroll it did not start, and both positions are still after 1 s

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/* eslint-disable max-lines -- View controller scenarios share one DOM fixture. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -126,6 +127,55 @@ describe("view controller", () => {
     }
   });
 
+  it("AC-R2-05: the trailing resize action keeps the visible preview block fixed", () => {
+    vi.useFakeTimers();
+    const elementFromPointDescriptor = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+    try {
+      const { divider, workspace } = elements();
+      const preview = requiredElement("#preview");
+      const page = document.createElement("div");
+      page.className = "preview-page";
+      const block = document.createElement("div");
+      block.className = "preview-block";
+      page.append(block);
+      preview.append(page);
+      let blockTop = 100;
+      let finishing = false;
+      vi.spyOn(preview, "getBoundingClientRect").mockReturnValue({
+        left: 500, width: 500, right: 1_000, top: 0, bottom: 600, height: 600,
+        x: 500, y: 0, toJSON: () => ({}),
+      });
+      vi.spyOn(block, "getBoundingClientRect").mockImplementation(() => ({
+        left: 500, width: 500, right: 1_000, top: blockTop, bottom: blockTop + 40, height: 40,
+        x: 500, y: blockTop, toJSON: () => ({}),
+      }));
+      vi.spyOn(workspace, "getBoundingClientRect").mockImplementation(() => {
+        if (finishing) blockTop = 130;
+        return { left: 0, width: 1_000, right: 1_000, top: 0, bottom: 600, height: 600,
+          x: 0, y: 0, toJSON: () => ({}) };
+      });
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: () => page,
+      });
+      new ViewController({ divider, workspace });
+      preview.scrollTop = 500;
+      finishing = true;
+
+      window.dispatchEvent(new Event("resize"));
+      vi.advanceTimersByTime(500);
+
+      expect(preview.scrollTop).toBe(530);
+    } finally {
+      if (elementFromPointDescriptor === undefined) {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      } else {
+        Object.defineProperty(document, "elementFromPoint", elementFromPointDescriptor);
+      }
+      vi.useRealTimers();
+    }
+  });
+
   it("AC-R2-02: a resize outside split mode keeps the captured pane widths", () => {
     vi.useFakeTimers();
     try {
@@ -188,6 +238,115 @@ describe("view controller", () => {
     expect(document.body.classList.contains("focus-mode")).toBe(false);
   });
 
+  it("AC-R2-04: the full-screen completion signal restores chrome before the exit promise", async () => {
+    const { divider, workspace } = elements();
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    let fullScreenElement: Element | null = document.documentElement;
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => fullScreenElement,
+    });
+    const exitFullscreen = vi.fn(() => {
+      fullScreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+      return new Promise<void>(() => undefined);
+    });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exitFullscreen });
+    try {
+      const controller = new ViewController({ divider, workspace });
+      document.body.classList.add("focus-mode");
+
+      void controller.leaveFocusMode();
+      await Promise.resolve();
+
+      expect(document.body.classList.contains("focus-mode")).toBe(false);
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+    } finally {
+      if (fullScreenDescriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
+      else Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      if (exitDescriptor === undefined) Reflect.deleteProperty(document, "exitFullscreen");
+      else Object.defineProperty(document, "exitFullscreen", exitDescriptor);
+    }
+  });
+
+  it("AC-R2-04: a full-screen error keeps focus mode active", async () => {
+    const { divider, workspace } = elements();
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: document.body,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: () => new Promise<void>(() => undefined),
+    });
+    try {
+      const controller = new ViewController({ divider, workspace });
+      document.body.classList.add("focus-mode");
+      const leaving = controller.leaveFocusMode();
+      document.dispatchEvent(new Event("fullscreenerror"));
+
+      await expect(leaving).rejects.toThrow("Full-screen exit failed");
+      expect(controller.focusMode).toBe(true);
+    } finally {
+      if (fullScreenDescriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
+      else Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      if (exitDescriptor === undefined) Reflect.deleteProperty(document, "exitFullscreen");
+      else Object.defineProperty(document, "exitFullscreen", exitDescriptor);
+    }
+  });
+
+  it("AC-R2-04: exit avoids a request when full screen ends during listener setup", async () => {
+    const { divider, workspace } = elements();
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    let reads = 0;
+    const exitFullscreen = vi.fn(async () => undefined);
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => reads++ === 0 ? document.body : null,
+    });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exitFullscreen });
+    try {
+      const controller = new ViewController({ divider, workspace });
+      document.body.classList.add("focus-mode");
+
+      await controller.leaveFocusMode();
+
+      expect(controller.focusMode).toBe(false);
+      expect(exitFullscreen).not.toHaveBeenCalled();
+    } finally {
+      if (fullScreenDescriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
+      else Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      if (exitDescriptor === undefined) Reflect.deleteProperty(document, "exitFullscreen");
+      else Object.defineProperty(document, "exitFullscreen", exitDescriptor);
+    }
+  });
+
+  it("AC-R2-05: trailing resize needs no correction without a visible preview block", () => {
+    vi.useFakeTimers();
+    try {
+      const { divider, workspace } = elements();
+      const preview = requiredElement("#preview");
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: () => preview,
+      });
+      new ViewController({ divider, workspace });
+      preview.scrollTop = 500;
+
+      window.dispatchEvent(new Event("resize"));
+      vi.advanceTimersByTime(500);
+
+      expect(preview.scrollTop).toBe(500);
+    } finally {
+      Reflect.deleteProperty(document, "elementFromPoint");
+      vi.useRealTimers();
+    }
+  });
+
   it("AC-R2-04: repeated focus transitions are no-ops", async () => {
     const { divider, workspace } = elements();
     const enterFullScreen = vi.fn(async () => undefined);
@@ -206,6 +365,27 @@ describe("view controller", () => {
 
     expect(enterFullScreen).toHaveBeenCalledOnce();
     expect(leaveFullScreen).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R2-04: Escape during entry leaves full screen after entry completes", async () => {
+    const { divider, workspace } = elements();
+    let completeEntry: () => void = vi.fn();
+    const enterFullScreen = vi.fn(() => new Promise<void>((resolve) => { completeEntry = resolve; }));
+    const leaveFullScreen = vi.fn(async () => undefined);
+    const controller = new ViewController({
+      divider,
+      workspace,
+      enterFullScreen,
+      leaveFullScreen,
+    });
+
+    const entering = controller.enterFocusMode();
+    await controller.leaveFocusMode();
+    completeEntry();
+    await entering;
+
+    expect(controller.focusMode).toBe(false);
+    expect(leaveFullScreen).toHaveBeenCalledTimes(2);
   });
 
   it("AC-R2-04: failed full-screen exit keeps focus mode active", async () => {

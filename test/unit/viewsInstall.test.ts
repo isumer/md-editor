@@ -29,7 +29,11 @@ describe("view installation", () => {
       .mockRejectedValueOnce(failure)
       .mockRejectedValueOnce(failure)
       .mockResolvedValue(undefined);
-    const exitFullscreen = vi.fn(async () => undefined);
+    let fullScreenElement: Element | null = document.body;
+    const exitFullscreen = vi.fn(async () => {
+      fullScreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+    });
     Object.defineProperty(document.documentElement, "requestFullscreen", {
       configurable: true,
       value: requestFullscreen,
@@ -40,7 +44,7 @@ describe("view installation", () => {
     });
     Object.defineProperty(document, "fullscreenElement", {
       configurable: true,
-      value: document.body,
+      get: () => fullScreenElement,
     });
     const onError = vi.fn();
     const onModeChange = vi.fn();

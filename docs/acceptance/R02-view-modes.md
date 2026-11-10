@@ -19,13 +19,13 @@ When the user invokes View > Full Screen (F11 on Windows and Linux, Ctrl+Cmd+F o
 Then the window enters and then leaves the OS full screen state
 
 ### AC-R2-04 — Focus mode hides everything but the active panes
-status: implemented
+status: planned
 Given split, editor-only or preview-only mode
 When the user presses CmdOrCtrl+Shift+F and then Esc
 Then the window is full screen with tab bar, sidebar and status bar hidden, and Esc restores the previous layout and view mode
 
 ### AC-R2-05 — Resizing the window never stalls and never jumps
-status: implemented
+status: planned
 Given a 500 KB document in split mode with the preview scrolled to the middle
 When the window is resized continuously for 2 s
 Then no frame takes over 32 ms, no long task occurs, and the top visible preview block is the same before and after

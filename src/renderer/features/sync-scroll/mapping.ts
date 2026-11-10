@@ -4,6 +4,14 @@ export interface SyncAnchor {
   readonly blockHeight: number;
 }
 
+export interface PageGeometry {
+  readonly anchors: readonly SyncAnchor[];
+  readonly height: number;
+  readonly page: HTMLElement;
+  readonly sourceLine: number;
+  readonly top: number;
+}
+
 function clampTop(top: number, maxTop: number): number {
   if (Number.isNaN(top)) {
     return 0;

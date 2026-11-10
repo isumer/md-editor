@@ -37,6 +37,29 @@ async function settledPreviewPosition(
   });
 }
 
+async function positionDuringResizeSettle(
+  preview: import("@playwright/test").Locator,
+  expected: PreviewPosition,
+): Promise<{ readonly changed: boolean; readonly final: PreviewPosition }> {
+  return preview.evaluate(async (element, expectedPosition) => {
+    const read = (): PreviewPosition => {
+      const top = element.getBoundingClientRect().top;
+      const block = [...element.querySelectorAll<HTMLElement>(".preview-block")]
+        .find((candidate) => candidate.getBoundingClientRect().bottom > top);
+      return { blockId: block?.dataset["blockId"] ?? "", line: block?.dataset["line"] ?? "" };
+    };
+    const startedAt = performance.now();
+    let changed = false;
+    let final = read();
+    while (performance.now() - startedAt < 750) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      final = read();
+      changed ||= final.blockId !== expectedPosition.blockId || final.line !== expectedPosition.line;
+    }
+    return { changed, final };
+  }, expected);
+}
+
 async function nativeFullScreen(
   application: import("@playwright/test").ElectronApplication,
 ): Promise<boolean> {
@@ -234,11 +257,12 @@ test("AC-R2-05: continuous resize preserves the preview block and frame budget",
         await new Promise<void>((resolve) => {
           let count = 0;
           const timer = setInterval(() => {
+            if (count === 119 && window !== undefined) window.once("resize", resolve);
             window?.setSize(count % 2 === 0 ? 1_100 : 1_200, 800);
             count += 1;
             if (count === 120) {
               clearInterval(timer);
-              resolve();
+              if (window === undefined) resolve();
             }
           }, 16);
         });
@@ -248,8 +272,10 @@ test("AC-R2-05: continuous resize preserves the preview block and frame budget",
     console.log(`resize frame distribution: p95 ${p95.toFixed(2)} ms, max ${String(Math.max(...measurements.frames))} ms`);
     expect(p95).toBeLessThanOrEqual(32);
     expect(measurements.longTasks).toBe(0);
-    const topBlockAfter = await settledPreviewPosition(preview);
-    expect(topBlockAfter).toEqual(topBlock);
+    const settled = await positionDuringResizeSettle(preview, topBlock);
+    console.log(`resize position: before=${JSON.stringify(topBlock)} final=${JSON.stringify(settled.final)}`);
+    expect(settled.changed).toBe(false);
+    expect(settled.final).toEqual(topBlock);
   } finally {
     await closeEditor(application, page);
   }

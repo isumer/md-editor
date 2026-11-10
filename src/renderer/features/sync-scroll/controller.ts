@@ -1,18 +1,11 @@
 import {
   previewTopForLine,
   sourceLineForPreviewTop,
+  type PageGeometry,
   type SyncAnchor,
 } from "./mapping";
 
 const ENABLED_STORAGE_KEY = "syncScroll.enabled";
-
-interface PageGeometry {
-  readonly anchors: readonly SyncAnchor[];
-  readonly height: number;
-  readonly page: HTMLElement;
-  readonly sourceLine: number;
-  readonly top: number;
-}
 
 export interface SyncScrollControllerOptions {
   readonly blockLine: (element: HTMLElement) => number;
@@ -28,8 +21,9 @@ export class SyncScrollController {
   private enabled = localStorage.getItem(ENABLED_STORAGE_KEY) !== "false";
   private editorFrame = false;
   private previewFrame = false;
-  private suppressEditor = false;
-  private suppressPreview = false;
+  private refreshFrame = false;
+  private editorTargetLine: number | null = null;
+  private previewWriteTop: number | null = null;
   private anchorTimer: ReturnType<typeof setTimeout> | null = null;
   private documentRoot: Element | null;
   private pages: HTMLElement[] = [];
@@ -60,7 +54,7 @@ export class SyncScrollController {
       ? null
       : new ResizeObserver(() => this.scheduleDelayedRefresh());
     this.resizeObserver?.observe(options.preview);
-    this.requestFrame(() => this.refreshAnchors());
+    this.scheduleAnchorRefresh();
   }
 
   get isEnabled(): boolean {
@@ -69,6 +63,8 @@ export class SyncScrollController {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
+    this.editorTargetLine = null;
+    this.previewWriteTop = null;
     localStorage.setItem(ENABLED_STORAGE_KEY, String(enabled));
   }
 
@@ -104,33 +100,36 @@ export class SyncScrollController {
   }
 
   private readonly onEditorScroll = (): void => {
-    if (!this.enabled || this.suppressEditor || this.editorFrame) return;
-    this.previewTargetTop = null;
-    this.lastPreviewLine = null;
+    if (!this.enabled || this.editorFrame) return;
     this.editorFrame = true;
     this.requestFrame(() => {
       this.editorFrame = false;
       const line = this.options.sourceLineAtEditorTop();
-      this.suppressPreview = true;
+      if (this.editorTargetLine !== null && Math.abs(line - this.editorTargetLine) <= 1) return;
+      this.editorTargetLine = null;
+      this.previewTargetTop = null;
+      this.lastPreviewLine = null;
       this.options.preview.scrollTop = previewTopForLine(
         this.anchorsForLine(line),
         line,
         this.previewMaxTop,
       );
-      this.requestFrame(() => { this.suppressPreview = false; });
+      this.previewWriteTop = this.options.preview.scrollTop;
     });
   };
 
   private readonly onPreviewScroll = (): void => {
     if (this.anchorTimer !== null) this.scheduleDelayedRefresh(true, 250);
-    if (!this.enabled || this.suppressPreview || this.previewFrame || !this.hasAnchors()) {
+    const top = this.options.preview.scrollTop;
+    if (this.previewWriteTop !== null && Math.abs(top - this.previewWriteTop) <= 1) return;
+    this.previewWriteTop = null;
+    if (!this.enabled || this.previewFrame || !this.hasAnchors()) {
       return;
     }
-    this.previewTargetTop = this.options.preview.scrollTop;
+    this.previewTargetTop = top;
     this.previewFrame = true;
     this.requestFrame(() => {
       this.previewFrame = false;
-      if (this.pendingPages.size > 0 && this.pages.length <= 100) this.refreshAnchors();
       this.applyPreviewTarget(false);
     });
   };
@@ -138,7 +137,7 @@ export class SyncScrollController {
   private readonly onContentVisibilityChange = (event: Event): void => {
     this.markPagesWithin(event.target);
     if (event.target === this.options.preview) {
-      this.requestFrame(() => this.refreshAndReapply());
+      this.scheduleAnchorRefresh();
     } else {
       this.scheduleDelayedRefresh(true, 250);
     }
@@ -151,9 +150,8 @@ export class SyncScrollController {
     const line = sourceLineForPreviewTop(anchors, this.previewTargetTop);
     if (skipUnchanged && line === this.lastPreviewLine) return;
     this.lastPreviewLine = line;
-    this.suppressEditor = true;
+    this.editorTargetLine = line;
     this.options.scrollEditorToLine(line);
-    this.requestFrame(() => { this.suppressEditor = false; });
   }
 
   private refreshAndReapply(): void {
@@ -298,6 +296,8 @@ export class SyncScrollController {
       this.pendingPages.clear();
       this.previewTargetTop = null;
       this.lastPreviewLine = null;
+      this.editorTargetLine = null;
+      this.previewWriteTop = null;
     }
     if (records.some((record) => record.removedNodes.length > 0)) {
       this.pages = this.pages.filter((page) => {
@@ -305,9 +305,6 @@ export class SyncScrollController {
         if (!keep) this.pageSet.delete(page);
         return keep;
       });
-    }
-    if (this.pages.length <= 100) {
-      for (const page of this.pages) this.pendingPages.add(page);
     }
     for (const record of records) {
       this.markMutationPage(record.target);
@@ -358,11 +355,12 @@ export class SyncScrollController {
   }
 
   private scheduleAnchorRefresh(): void {
-    if (this.pages.length <= 100 && this.options.preview.dataset["renderComplete"] === "true") {
-      this.requestFrame(() => this.refreshAndReapply());
-      return;
-    }
-    this.scheduleDelayedRefresh();
+    if (this.refreshFrame) return;
+    this.refreshFrame = true;
+    this.requestFrame(() => {
+      this.refreshFrame = false;
+      this.refreshAndReapply();
+    });
   }
 
   private markPagesWithin(target: EventTarget | Node | null): void {
@@ -391,7 +389,7 @@ export class SyncScrollController {
     }
     this.anchorTimer = setTimeout(() => {
       this.anchorTimer = null;
-      this.requestFrame(() => this.refreshAndReapply());
+      this.scheduleAnchorRefresh();
     }, delay);
   }
 }

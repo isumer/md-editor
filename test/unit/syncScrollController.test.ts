@@ -26,11 +26,19 @@ function setup(initial: readonly PageFixture[] = [
   const editorScroll = document.querySelector<HTMLElement>("#editor");
   const preview = document.querySelector<HTMLElement>("#preview");
   if (editorScroll === null || preview === null) throw new Error("Missing scroll test element");
+  let insideFrame = false;
+  let layoutReadCount = 0;
+  const recordLayoutRead = (): void => {
+    if (insideFrame) layoutReadCount += 1;
+  };
   Object.defineProperties(preview, {
-    clientHeight: { value: 200, configurable: true },
-    scrollHeight: { value: 1_000, configurable: true },
+    clientHeight: { get: () => { recordLayoutRead(); return 200; }, configurable: true },
+    scrollHeight: { get: () => { recordLayoutRead(); return 1_000; }, configurable: true },
   });
-  vi.spyOn(preview, "getBoundingClientRect").mockReturnValue(rect(0, 200));
+  vi.spyOn(preview, "getBoundingClientRect").mockImplementation(() => {
+    recordLayoutRead();
+    return rect(0, 200);
+  });
   const root = document.createElement("div");
   root.className = "preview-document";
   preview.append(root);
@@ -42,16 +50,23 @@ function setup(initial: readonly PageFixture[] = [
     page.className = "preview-page";
     pages.push(fixture);
     vi.spyOn(page, "getBoundingClientRect").mockImplementation(() => {
+      recordLayoutRead();
       pageRectCount += 1;
       const index = pages.indexOf(fixture);
       const top = pages.slice(0, index).reduce((sum, item) => sum + item.height, 0);
       return rect(top - preview.scrollTop, fixture.height);
+    });
+    const querySelectorAll = page.querySelectorAll.bind(page);
+    vi.spyOn(page, "querySelectorAll").mockImplementation((selectors: string) => {
+      recordLayoutRead();
+      return querySelectorAll(selectors);
     });
     for (let index = 0; index < blockCount; index += 1) {
       const block = document.createElement("div");
       block.className = "preview-block";
       block.dataset["line"] = String(fixture.line + index - 1);
       vi.spyOn(block, "getBoundingClientRect").mockImplementation(() => {
+        recordLayoutRead();
         blockRectCount += 1;
         const pageIndex = pages.indexOf(fixture);
         const pageTop = pages.slice(0, pageIndex).reduce((sum, item) => sum + item.height, 0);
@@ -79,7 +94,14 @@ function setup(initial: readonly PageFixture[] = [
   });
   const flush = (): void => {
     const pending = frames.splice(0);
-    for (const frame of pending) frame(16);
+    for (const frame of pending) {
+      insideFrame = true;
+      try {
+        frame(16);
+      } finally {
+        insideFrame = false;
+      }
+    }
   };
   flush();
   return {
@@ -89,6 +111,7 @@ function setup(initial: readonly PageFixture[] = [
     editorScroll,
     frameCount: () => frames.length,
     flush,
+    layoutReads: () => layoutReadCount,
     pageRects: () => pageRectCount,
     pages,
     preview,
@@ -166,14 +189,19 @@ describe("sync scroll controller", () => {
 
     const firstFixture = fixtures[0];
     const secondFixture = fixtures[1];
+    const pageElements = preview.querySelectorAll<HTMLElement>(".preview-page");
+    const firstPage = pageElements.item(0);
+    const secondPage = pageElements.item(1);
     if (firstFixture === undefined || secondFixture === undefined) {
       throw new Error("Missing fill fixtures");
     }
     firstFixture.height = 200;
+    firstPage?.append(document.createElement("span"));
     addPage({ line: 20, height: 100 });
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(50);
     secondFixture.height = 300;
+    secondPage?.append(document.createElement("span"));
     addPage({ line: 30, height: 100 });
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(50);
@@ -223,6 +251,7 @@ describe("sync scroll controller", () => {
     const state = setup([]);
     for (const fixture of fixtures) state.addPage(fixture, 20);
     await Promise.resolve();
+    state.flush();
     const pagesBefore = state.pageRects();
     const blocksBefore = state.blockRects();
     state.preview.scrollTop = 3_000;
@@ -230,6 +259,20 @@ describe("sync scroll controller", () => {
     state.flush();
     expect(state.pageRects() - pagesBefore).toBe(0);
     expect(state.blockRects() - blocksBefore).toBe(0);
+  });
+
+  it("scroll callbacks use only cached geometry when a page refresh is pending", () => {
+    const state = setup();
+    const page = state.root.querySelector<HTMLElement>(".preview-page");
+    if (page === null) throw new Error("Missing preview page");
+    page.dispatchEvent(new Event("contentvisibilityautostatechange", { bubbles: true }));
+    const readsBefore = state.layoutReads();
+
+    state.preview.scrollTop = 150;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.layoutReads() - readsBefore).toBe(0);
   });
 
   it("a changed cached page shifts the geometry after it", async () => {
@@ -435,6 +478,7 @@ describe("sync scroll controller", () => {
     if (callback === null) throw new Error("Missing resize observer callback");
 
     callback([], {} as ResizeObserver);
+    callback([], {} as ResizeObserver);
     await vi.advanceTimersByTimeAsync(100);
     for (const frame of frames.splice(0)) frame(16);
     controller.dispose();
@@ -485,6 +529,32 @@ describe("sync scroll controller", () => {
     expect(scrollEditorToLine).not.toHaveBeenCalled();
   });
 
+  it("AC-R3-03: suppresses a synchronized preview event delayed across frames", () => {
+    const { editorScroll, flush, preview, scrollEditorToLine } = setup();
+    editorScroll.dispatchEvent(new Event("scroll"));
+    flush();
+    flush();
+
+    preview.dispatchEvent(new Event("scroll"));
+    flush();
+
+    expect(scrollEditorToLine).not.toHaveBeenCalled();
+  });
+
+  it("AC-R3-03: suppresses a synchronized editor event delayed across frames", () => {
+    const state = setup();
+    state.preview.scrollTop = 100;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+    state.flush();
+
+    state.editorScroll.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.frameCount()).toBe(0);
+    expect(state.scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(10);
+  });
+
   it("AC-R3-04: disables synchronization and saves the setting", () => {
     const { controller, editorScroll, flush, preview } = setup();
     controller.refreshAnchors();
@@ -508,6 +578,8 @@ describe("sync scroll controller", () => {
     addPage({ line: 30, height: 100 });
     await Promise.resolve();
     const measured = pageRects();
+    const page = preview.querySelector<HTMLElement>(".preview-page");
+    page?.dispatchEvent(new Event("contentvisibilityautostatechange", { bubbles: true }));
 
     controller.dispose();
     editorScroll.dispatchEvent(new Event("scroll"));
@@ -516,5 +588,18 @@ describe("sync scroll controller", () => {
     await vi.advanceTimersByTimeAsync(100);
 
     expect(pageRects()).toBe(measured);
+  });
+
+  it("ignores a visibility event from a non-element target", () => {
+    const state = setup();
+    const text = document.createTextNode("fill");
+    state.root.append(text);
+
+    text.dispatchEvent(new Event("contentvisibilityautostatechange", { bubbles: true }));
+    state.preview.scrollTop = 100;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(10);
   });
 });
