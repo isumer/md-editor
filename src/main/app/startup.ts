@@ -288,6 +288,7 @@ export async function initializeApplication(
   applicationReady();
   await startupRequests;
   createMenu();
-  startIoWorker();
+  // Load the renderer while the supervisor starts; port attachment waits for its generation.
   createApplicationWindow();
+  startIoWorker();
 }
