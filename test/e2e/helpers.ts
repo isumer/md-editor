@@ -74,6 +74,20 @@ async function waitForArgvDocument(
   );
 }
 
+async function applyCpuThrottle(
+  page: Page,
+  configuredRate: string,
+): Promise<void> {
+  const rate = Number(configuredRate);
+  if (!Number.isFinite(rate) || rate < 1) {
+    throw new Error(
+      "MDEDITOR_CPU_THROTTLE must be a number greater than or equal to 1",
+    );
+  }
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setCPUThrottlingRate", { rate });
+}
+
 export async function launchEditor(
   filePath?: string,
   optionsOrUserDataDir: LaunchEditorOptions | string = {},
@@ -104,6 +118,10 @@ export async function launchEditor(
   }
   try {
     const page = await application.firstWindow();
+    const configuredCpuThrottle = process.env["MDEDITOR_CPU_THROTTLE"];
+    if (configuredCpuThrottle !== undefined) {
+      await applyCpuThrottle(page, configuredCpuThrottle);
+    }
     // Runs before the argv document is applied, so startup traffic is observable.
     options.onPage?.({ application, page, userDataDir: profileDirectory });
     if (filePath) {
