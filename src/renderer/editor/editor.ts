@@ -55,6 +55,7 @@ import {
 } from "../../shared/merge/mergeChunks";
 
 export interface EditorCallbacks {
+  deferDirtyState?: boolean;
   onDocumentChanged(): void;
   onChanges(changes: ChangeSet, state: EditorState): void;
   updateTitle(): void;
@@ -130,9 +131,11 @@ export function handleDocumentUpdate(
   if (!update.docChanged) {
     return;
   }
-  if (!documentState.applyingDocument) {
+  if (!documentState.applyingDocument && callbacks.deferDirtyState !== true) {
     documentState.dirty = !update.state.doc.eq(documentState.saved);
     callbacks.updateTitle();
+  }
+  if (!documentState.applyingDocument) {
     callbacks.onChanges(update.changes, update.state);
   }
   callbacks.onDocumentChanged();

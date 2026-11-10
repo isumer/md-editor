@@ -180,14 +180,9 @@ const renderController = new RenderController({
 });
 
 const callbacks: EditorCallbacks = {
+  deferDirtyState: true,
   onDocumentChanged: () => {
     if (mirroring) return;
-    const document = activeDocument;
-    if (document) {
-      document.state = editor.state;
-      saveEditorViewState(document, 1, editor);
-      dirtyFrame.changed(document);
-    }
     renderController.schedule();
   },
   onChanges: (changes, state) => {
@@ -197,7 +192,6 @@ const callbacks: EditorCallbacks = {
       return;
     }
     document.state = state;
-    saveEditorViewState(document, 1, editor);
     syncPeerEditor(document, 1, changes);
     const message = document.replication.changed(changes);
     sendChanges(message);
@@ -214,20 +208,13 @@ const callbacks: EditorCallbacks = {
 
 editor = createEditor(editorHost, documentState, callbacks);
 const secondaryCallbacks: EditorCallbacks = {
-  onDocumentChanged: () => {
-    if (mirroring) return;
-    const document = secondaryDocument;
-    if (document) {
-      document.state = editorTwo.state;
-      saveEditorViewState(document, 2, editorTwo);
-    }
-  },
+  deferDirtyState: true,
+  onDocumentChanged: () => undefined,
   onChanges: (changes, state) => {
     if (mirroring) return;
     const document = secondaryDocument;
     if (!document) return;
     document.state = state;
-    saveEditorViewState(document, 2, editorTwo);
     syncPeerEditor(document, 2, changes);
     const message = document.replication.changed(changes);
     sendChanges(message);
@@ -262,6 +249,12 @@ function focusEditor(view: DocumentViewId): void {
 
 editor.contentDOM.addEventListener("focus", () => focusEditor(1));
 editorTwo.contentDOM.addEventListener("focus", () => focusEditor(2));
+editor.contentDOM.addEventListener("blur", () => {
+  if (activeDocument) saveEditorViewState(activeDocument, 1, editor);
+});
+editorTwo.contentDOM.addEventListener("blur", () => {
+  if (secondaryDocument) saveEditorViewState(secondaryDocument, 2, editorTwo);
+});
 
 function saveEditorViewState(
   document: DocumentRecord,
@@ -308,10 +301,6 @@ function syncPeerEditor(
     }
     return;
   }
-  documentViews.saveState(document.id, peerView, {
-    scrollTop: peer.scrollDOM.scrollTop,
-    selection: peer.state.selection.map(changes),
-  });
   const scrollTop = peer.scrollDOM.scrollTop;
   const peerDocumentState = peerView === 1 ? documentState : secondaryDocumentState;
   mirroring = true;
@@ -321,7 +310,6 @@ function syncPeerEditor(
       annotations: Transaction.addToHistory.of(false),
       changes,
     });
-    saveEditorViewState(document, peerView, peer);
     peer.scrollDOM.scrollTop = scrollTop;
   } finally {
     peerDocumentState.applyingDocument = false;
