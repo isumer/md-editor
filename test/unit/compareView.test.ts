@@ -51,4 +51,15 @@ describe("compare view", () => {
     expect(view.root.querySelectorAll(".compare-empty").length).toBeGreaterThan(0);
     expect(move.mock.calls).toEqual([[-1], [1]]);
   });
+
+  it("shows the highlight mode of each compare result", () => {
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move: vi.fn() });
+    const select = view.root.querySelector<HTMLSelectElement>(".compare-highlight");
+    if (!select) throw new Error("Missing compare highlight selector.");
+    select.value = "characters";
+
+    view.show("left.txt", "right.txt", createCompareState("left", "right", "words"));
+
+    expect(select.value).toBe("words");
+  });
 });

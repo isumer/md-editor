@@ -96,6 +96,8 @@ export class CompareView {
 
   show(leftName: string, rightName: string, state: CompareState): void {
     this.root.hidden = false;
+    const highlight = this.root.querySelector<HTMLSelectElement>(".compare-highlight");
+    if (highlight) highlight.value = state.highlight;
     this.heading.replaceChildren(
       this.headingCell(leftName, "compare-left-heading"),
       this.headingCell(rightName, "compare-right-heading"),

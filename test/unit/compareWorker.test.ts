@@ -52,6 +52,17 @@ describe("compare worker", () => {
     expect(responses).toEqual([]);
   });
 
+  it("rejects negative, fractional and unsafe request ids", () => {
+    const responses: CompareWorkerResponse[] = [];
+    const handler = new CompareWorkerHandler((response) => responses.push(response));
+
+    for (const id of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      handler.handle({ id, left: "left", right: "right", highlight: "words" });
+    }
+
+    expect(responses).toEqual([]);
+  });
+
   it("rejects accessors and hostile request objects", () => {
     const responses: CompareWorkerResponse[] = [];
     const handler = new CompareWorkerHandler((response) => responses.push(response));
