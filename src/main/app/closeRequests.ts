@@ -4,6 +4,7 @@ export type TimerHandle = unknown;
 
 export interface CloseRequestBrokerOptions {
   timeoutMilliseconds?: number;
+  persistTimeoutMilliseconds?: number;
   setTimer?: (callback: () => void, milliseconds: number) => TimerHandle;
   clearTimer?: (handle: TimerHandle) => void;
 }
@@ -15,6 +16,7 @@ interface PendingClose {
 }
 
 const KEEPALIVE_GRANT = "session-close:keepalive";
+const PERSIST_TIMEOUT_MILLISECONDS = 5_000;
 
 function isKeepalive(result: SessionCloseResult): boolean {
   return !result.allow && result.documents[0]?.grant === KEEPALIVE_GRANT;
@@ -26,6 +28,7 @@ function isKeepalive(result: SessionCloseResult): boolean {
 export class CloseRequestBroker {
   private readonly pending = new Map<number, PendingClose>();
   private readonly timeoutMilliseconds: number;
+  private readonly persistTimeoutMilliseconds: number;
   private readonly setTimer: (callback: () => void, milliseconds: number) => TimerHandle;
   private readonly clearTimer: (handle: TimerHandle) => void;
   private nextId = 1;
@@ -39,6 +42,8 @@ export class CloseRequestBroker {
     options: CloseRequestBrokerOptions = {},
   ) {
     this.timeoutMilliseconds = options.timeoutMilliseconds ?? 15_000;
+    this.persistTimeoutMilliseconds = options.persistTimeoutMilliseconds ??
+      PERSIST_TIMEOUT_MILLISECONDS;
     this.setTimer = options.setTimer ??
       ((callback, milliseconds) => setTimeout(callback, milliseconds));
     this.clearTimer = options.clearTimer ??
@@ -71,10 +76,27 @@ export class CloseRequestBroker {
     // already closes without a snapshot.
     try {
       if (result.allow) {
-        await this.persist(result, windowId);
+        await this.persistWithTimeout(result, windowId);
       }
     } finally {
       pending.resolve(result.allow);
+    }
+  }
+
+  private async persistWithTimeout(
+    result: SessionCloseResult,
+    windowId: number,
+  ): Promise<void> {
+    let timer: TimerHandle | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = this.setTimer(resolve, this.persistTimeoutMilliseconds);
+    });
+    try {
+      await Promise.race([this.persist(result, windowId), timeout]);
+    } finally {
+      if (timer !== undefined) {
+        this.clearTimer(timer);
+      }
     }
   }
 
