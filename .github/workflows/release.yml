@@ -55,8 +55,8 @@ jobs:
       - name: Check Linux fuses
         if: runner.os == 'Linux'
         run: |
-          node scripts/check-fuses.mjs release/linux-unpacked/mdeditor
-          node scripts/check-fuses.mjs release/linux-arm64-unpacked/mdeditor
+          node scripts/check-fuses.mjs release/linux-unpacked/solidmd
+          node scripts/check-fuses.mjs release/linux-arm64-unpacked/solidmd
       - name: Check Windows fuses
         if: runner.os == 'Windows'
         shell: pwsh
@@ -101,7 +101,7 @@ jobs:
             reg query $key 2>$null
             if ($LASTEXITCODE -eq 0) { throw "Registry key remains after uninstall: $key" }
           }
-          $portableRoot = Join-Path $env:RUNNER_TEMP "mdeditor-portable"
+          $portableRoot = Join-Path $env:RUNNER_TEMP "solidmd-portable"
           $portableZip = Get-ChildItem release -Filter "*-win-x64-portable.zip" | Select-Object -First 1
           Expand-Archive $portableZip.FullName $portableRoot
           $portableExe = Get-ChildItem $portableRoot -Filter "$productName.exe" | Select-Object -First 1

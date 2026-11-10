@@ -43,7 +43,7 @@ export interface LaunchedEditor {
 }
 
 export async function createUserDataDirectory(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-userdata-"));
+  return fs.mkdtemp(path.join(os.tmpdir(), "solidmd-userdata-"));
 }
 
 function launchEnvironment(): Record<string, string> {
@@ -125,7 +125,7 @@ export async function launchEditor(
   }
 }
 
-const PROFILE_PREFIX = "mdeditor-userdata-";
+const PROFILE_PREFIX = "solidmd-userdata-";
 
 // A crashed Playwright page cannot be reused, but the window reloads. Execute
 // an expression in the live renderer through the main process instead.

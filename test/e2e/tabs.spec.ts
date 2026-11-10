@@ -23,7 +23,7 @@ const alphaFixture = path.join(tabsDirectory, "alpha.md");
 const betaFixture = path.join(tabsDirectory, "beta.md");
 
 async function copyFixtures(): Promise<{ directory: string; alpha: string; beta: string }> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-tabs-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-tabs-"));
   const alpha = path.join(directory, "alpha.md");
   const beta = path.join(directory, "beta.md");
   await fs.copyFile(alphaFixture, alpha);

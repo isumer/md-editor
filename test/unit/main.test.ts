@@ -158,7 +158,7 @@ const electron = vi.hoisted(() => {
   }
 
   const app = {
-    getName: vi.fn(() => "MD Editor"),
+    getName: vi.fn(() => "SolidMD"),
     getPath: vi.fn(() => "/profiles/default"),
     isPackaged: false,
     requestSingleInstanceLock: vi.fn(() => true),
@@ -381,7 +381,7 @@ describe("main process", () => {
 
     await expect(invoke("file:open-requests-ready", {})).resolves.toEqual({
       ok: true,
-      value: { notice: null, productName: "MD Editor", windowId: 1 },
+      value: { notice: null, productName: "SolidMD", windowId: 1 },
     });
     expect(electron.app.setPath).toHaveBeenCalledWith("userData", "/profiles/default");
   });
@@ -484,7 +484,7 @@ describe("main process", () => {
     }
     await expect(invoke("file:open-requests-ready", {})).resolves.toMatchObject({
       ok: true,
-      value: { productName: "MD Editor" },
+      value: { productName: "SolidMD" },
     });
   });
 
@@ -532,7 +532,7 @@ describe("main process", () => {
   it("AC-R5-01 AC-R5-08 AC-PERF-01: creates a secure ready-to-show window and menu", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     electron.app.isPackaged = true;
-    process.env.APPIMAGE = path.join("media", "MD-Editor.AppImage");
+    process.env.APPIMAGE = path.join("media", "SolidMD.AppImage");
     process.argv = ["electron", "--inspect", "folder", "missing.md", "document.md"];
     fileSystem.access.mockResolvedValue(undefined);
     fileSystem.stat.mockImplementation(async (filePath: string) => {
@@ -556,7 +556,7 @@ describe("main process", () => {
     await readyApplication();
     const firstWindow = electron.BrowserWindowMock.instances[0];
     expect(firstWindow?.options).toMatchObject({
-      title: "MD Editor",
+      title: "SolidMD",
       show: false,
       backgroundColor: "#ffffff",
       webPreferences: {
@@ -689,7 +689,7 @@ describe("main process", () => {
     // macOS leads with the application menu (it owns Quit there); elsewhere File comes first.
     const firstMenu = electron.menuTemplate[0] as any;
     if (process.platform === "darwin") {
-      expect(firstMenu.label).toBe("MD Editor");
+      expect(firstMenu.label).toBe("SolidMD");
       expect(firstMenu.submenu).toContainEqual({ role: "quit" });
     } else {
       expect(firstMenu.label).toBe("File");

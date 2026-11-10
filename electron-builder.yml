@@ -1,4 +1,4 @@
-appId: io.github.isumer.mdeditor
+appId: io.github.isumer.solidmd
 asar: true
 directories:
   output: release
@@ -20,7 +20,7 @@ electronFuses:
   enableEmbeddedAsarIntegrityValidation: true
   enableCookieEncryption: true
 win:
-  artifactName: ${name}-${version}-win-${arch}-portable.${ext}
+  artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
   target:
     - target: nsis
       arch:
@@ -31,7 +31,7 @@ win:
         - x64
         - arm64
 nsis:
-  artifactName: ${name}-Setup-${version}-${arch}.${ext}
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
   oneClick: false
   perMachine: false
   allowElevation: false
@@ -46,7 +46,7 @@ mac:
         - x64
         - arm64
 dmg:
-  artifactName: ${name}-${version}-${arch}.${ext}
+  artifactName: ${productName}-${version}-${arch}.${ext}
 linux:
   # A noreply address so no personal e-mail ships inside public packages.
   maintainer: "isumer <isumer@users.noreply.github.com>"
@@ -72,6 +72,6 @@ linux:
         - x64
         - arm64
 deb:
-  artifactName: ${name}_${version}_${arch}.${ext}
+  artifactName: ${productName}_${version}_${arch}.${ext}
 appImage:
-  artifactName: ${name}-${version}-${arch}.${ext}
+  artifactName: ${productName}-${version}-${arch}.${ext}

@@ -1,6 +1,6 @@
-# Releasing MD Editor
+# Releasing SolidMD
 
-MD Editor releases are built on native Linux, Windows, and macOS runners. Builds are currently unsigned, so Windows SmartScreen and macOS Gatekeeper can warn on first launch.
+SolidMD releases are built on native Linux, Windows, and macOS runners. Builds are currently unsigned, so Windows SmartScreen and macOS Gatekeeper can warn on first launch.
 
 ## Cut a release
 
@@ -14,11 +14,11 @@ MD Editor releases are built on native Linux, Windows, and macOS runners. Builds
 
 ## Assets
 
-- `MD-Editor-Setup-X.Y.Z-x64.exe` and `-arm64.exe` are per-user Windows NSIS installers. They add classic Explorer file and folder context-menu entries and remove them on uninstall.
-- `MD-Editor-X.Y.Z-win-x64-portable.zip` and `-arm64-portable.zip` are unpacked Windows applications with a `portable` marker. They do not self-extract at launch.
-- `MD-Editor-X.Y.Z-x64.dmg` and `-arm64.dmg` are the Intel and Apple Silicon macOS disk images.
-- `MD-Editor_X.Y.Z_amd64.deb` and `_arm64.deb` install the Linux desktop entry and MIME registrations on Debian-family distributions.
-- `MD-Editor-X.Y.Z-x86_64.AppImage` and `-arm64.AppImage` are standalone Linux applications.
+- `SolidMD-Setup-X.Y.Z-x64.exe` and `-arm64.exe` are per-user Windows NSIS installers. They add classic Explorer file and folder context-menu entries and remove them on uninstall.
+- `SolidMD-X.Y.Z-win-x64-portable.zip` and `-arm64-portable.zip` are unpacked Windows applications with a `portable` marker. They do not self-extract at launch.
+- `SolidMD-X.Y.Z-x64.dmg` and `-arm64.dmg` are the Intel and Apple Silicon macOS disk images.
+- `SolidMD_X.Y.Z_amd64.deb` and `_arm64.deb` install the Linux desktop entry and MIME registrations on Debian-family distributions.
+- `SolidMD-X.Y.Z-x86_64.AppImage` and `-arm64.AppImage` are standalone Linux applications.
 - `SHA256SUMS.txt` contains a SHA-256 digest for every downloadable platform asset.
 
 ## Portable Windows packaging

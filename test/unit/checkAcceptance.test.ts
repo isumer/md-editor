@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -96,5 +101,62 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("reads passing performance tests from the split e2e report", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await fs.mkdir(path.join(root, "reports"));
+      await fs.writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+      );
+      await fs.writeFile(
+        path.join(root, "reports", "perf-e2e-junit.xml"),
+        '<testsuite><testcase name="fast @AC-PERF-02"/></testsuite>',
+      );
+
+      const report = await runAcceptanceCheck(root);
+
+      expect(report.ok).toBe(true);
+      expect(report.missing).toEqual([]);
+    } finally {
+      log.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a current e2e failure over a stale split report pass", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await fs.mkdir(path.join(root, "reports"));
+      await fs.writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+      );
+      const testName = "fast @AC-PERF-02";
+      await fs.writeFile(
+        path.join(root, "reports", "e2e-junit.xml"),
+        `<testsuite><testcase name="${testName}"><failure/></testcase></testsuite>`,
+      );
+      await fs.writeFile(
+        path.join(root, "reports", "perf-e2e-junit.xml"),
+        `<testsuite><testcase name="${testName}"/></testsuite>`,
+      );
+
+      const report = await runAcceptanceCheck(root);
+
+      expect(report.ok).toBe(false);
+      expect(report.missing).toEqual(["AC-PERF-02"]);
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
