@@ -300,6 +300,24 @@ export function wireRenderWorker(
     frame: number;
     timer: number;
   } | null = null;
+  const queuedResponses: RenderResponse[] = [];
+  let queuedResponseTimer = 0;
+
+  function scheduleQueuedResponse(): void {
+    if (queuedResponses.length === 0 || queuedResponseTimer !== 0) {
+      return;
+    }
+    queuedResponseTimer = window.setTimeout(() => {
+      queuedResponseTimer = 0;
+      const response = queuedResponses.shift();
+      if (response !== undefined) {
+        handleResponse(response);
+      }
+      if (pendingAppend === null) {
+        scheduleQueuedResponse();
+      }
+    }, 0);
+  }
 
   const deferAppend = (
     pending: NonNullable<typeof pendingAppend>,
@@ -357,10 +375,12 @@ export function wireRenderWorker(
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
       pending.response.epoch !== current.epoch) {
+      scheduleQueuedResponse();
       return;
     }
     if (pending.response.blocks.length <= APPEND_TASK_BLOCK_LIMIT) {
       applyAccepted(pending.response, true);
+      scheduleQueuedResponse();
       return;
     }
     const next = {
@@ -369,6 +389,7 @@ export function wireRenderWorker(
       complete: false,
     };
     if (!applyAccepted(next, false)) {
+      scheduleQueuedResponse();
       return;
     }
     const remainder = {
@@ -380,11 +401,7 @@ export function wireRenderWorker(
     deferAppend(nextPending, true);
   };
 
-  renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
-    while (pendingAppend !== null) {
-      flushAppend();
-    }
-    const response = event.data;
+  function handleResponse(response: RenderResponse): void {
     const current = wiring.currentVersion();
     if ("op" in response) {
       if (response.op === "resync" &&
@@ -427,6 +444,17 @@ export function wireRenderWorker(
       return;
     }
     applyAccepted(response, true);
+  }
+
+  renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
+    if (pendingAppend !== null) {
+      flushAppend();
+      if (pendingAppend !== null || queuedResponses.length > 0) {
+        queuedResponses.push(event.data);
+        return;
+      }
+    }
+    handleResponse(event.data);
   };
 
   renderWorker.onerror = (event) => {
