@@ -255,6 +255,11 @@ body {
   color: var(--editor-text-color);
 }
 
+#editor .cm-editor {
+  background: var(--custom-background, var(--editor-background));
+  color: var(--custom-text-color, var(--editor-text-color));
+}
+
 #editor .cm-editor.cm-focused {
   outline: none;
 }
@@ -263,8 +268,8 @@ body {
   padding: 24px 32px;
   overflow: auto;
   line-height: 1.55;
-  background: var(--preview-background);
-  color: var(--preview-text-color);
+  background: var(--custom-background, var(--preview-background));
+  color: var(--custom-text-color, var(--preview-text-color));
 }
 
 #preview > :first-child,

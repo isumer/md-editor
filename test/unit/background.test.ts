@@ -9,10 +9,12 @@ import {
 import { beginStartup } from "../../src/renderer/features/background/startup";
 
 function createMockElements() {
+  const editorHost = document.createElement("div");
+  editorHost.id = "editor";
   const editor = document.createElement("div");
   editor.className = "cm-editor";
-  editor.id = "editor";
-  document.body.appendChild(editor);
+  editorHost.appendChild(editor);
+  document.body.appendChild(editorHost);
 
   const preview = document.createElement("div");
   preview.id = "preview";
@@ -60,6 +62,10 @@ describe("background feature", () => {
     expect(document.documentElement.style.getPropertyValue("--preview-background")).toBe("#abcdef");
     expect(document.documentElement.style.getPropertyValue("--editor-text-color")).toBe("#ffffff");
     expect(document.documentElement.style.getPropertyValue("--preview-text-color")).toBe("#000000");
+    expect(document.querySelector<HTMLElement>("#editor .cm-editor")?.style
+      .getPropertyValue("--custom-background")).toBe("#123456");
+    expect(document.querySelector<HTMLElement>("#preview")?.style
+      .getPropertyValue("--custom-text-color")).toBe("#000000");
   });
 
   it("falls back to theme defaults when background is null", () => {
