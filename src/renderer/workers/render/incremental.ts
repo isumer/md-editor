@@ -49,6 +49,12 @@ interface RenderChunk {
   definitionCandidate: boolean;
 }
 
+interface PreparedBlock {
+  block: RenderBlock;
+  html: string;
+  labels: Set<string>;
+}
+
 interface LineSegment {
   // Chunk index where this base starts; bases are absolute line offsets.
   start: number;
@@ -68,7 +74,9 @@ interface ChangedRange {
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
 const FILL_BATCH_SIZE = 8;
+export const RENDER_BATCH_BYTE_LIMIT = 256 * 1024;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
+const UTF8_ENCODER = new TextEncoder();
 // Segment lookups are linear; compacting an edit-heavy session keeps the list
 // short. Compaction is amortised over the edits that created the segments.
 const MAX_LINE_SEGMENTS = 64;
@@ -225,14 +233,7 @@ export class IncrementalRenderState {
     // Every block is rendered from the current document, so any shift that
     // accumulated before the first publish is already reflected in its lines.
     this.pendingLineShifts = [];
-    this.ensureChunks(INITIAL_CHUNK_COUNT);
-    const limit = Math.min(INITIAL_CHUNK_COUNT, this.chunks.length);
-    const blocks: RenderBlock[] = [];
-    while (this.cursor < limit) {
-      const chunk = this.chunks[this.cursor] as RenderChunk;
-      blocks.push(this.send(chunk, this.cursor));
-      this.cursor += 1;
-    }
+    const blocks = this.nextBatch(INITIAL_CHUNK_COUNT);
     this.published = true;
     return { blocks, complete: this.complete };
   }
@@ -259,17 +260,30 @@ export class IncrementalRenderState {
   }
 
   fill(): RenderBatch {
-    this.ensureChunks(this.cursor + FILL_BATCH_SIZE);
+    const blocks = this.nextBatch(FILL_BATCH_SIZE);
+    return { blocks, complete: this.complete };
+  }
+
+  private nextBatch(countLimit: number): RenderBlock[] {
+    this.ensureChunks(this.cursor + countLimit);
     const blocks: RenderBlock[] = [];
-    const end = Math.min(this.chunks.length, this.cursor + FILL_BATCH_SIZE);
-    // Everything before the cursor has been sent; the fill pass starts on the
+    const end = Math.min(this.chunks.length, this.cursor + countLimit);
+    let bytes = 0;
+    // Everything before the cursor has been sent. This batch starts on the
     // first chunk that has never been rendered.
     while (this.cursor < end) {
       const chunk = this.chunks[this.cursor] as RenderChunk;
-      blocks.push(this.send(chunk, this.cursor));
+      const prepared = this.prepare(chunk, this.cursor);
+      const blockBytes = UTF8_ENCODER.encode(prepared.block.html).byteLength;
+      if (blocks.length > 0 && bytes + blockBytes > RENDER_BATCH_BYTE_LIMIT) {
+        break;
+      }
+      this.commit(chunk, prepared);
+      blocks.push(prepared.block);
+      bytes += blockBytes;
       this.cursor += 1;
     }
-    return { blocks, complete: this.complete };
+    return blocks;
   }
 
   applyChange(
@@ -608,23 +622,34 @@ export class IncrementalRenderState {
   }
 
   private send(chunk: RenderChunk, index: number): RenderBlock {
+    const prepared = this.prepare(chunk, index);
+    this.commit(chunk, prepared);
+    return prepared.block;
+  }
+
+  private prepare(chunk: RenderChunk, index: number): PreparedBlock {
     const startLine = this.startOf(index);
     const endLine = this.endOf(index);
     const source = sourceOf(textReader(this.document), startLine, endLine);
-    chunk.labels = referenceLabels(source);
     const html = this.renderText(source, this.environment());
-    if (!chunk.rendered) {
-      chunk.rendered = true;
-      this.unrendered -= 1;
-    }
-    chunk.html = html;
-    this.dirty.delete(chunk);
     return {
-      id: chunk.id,
-      startLine,
-      endLine,
-      html: shiftChunkDataLines(html, startLine),
+      block: {
+        id: chunk.id,
+        startLine,
+        endLine,
+        html: shiftChunkDataLines(html, startLine),
+      },
+      html,
+      labels: referenceLabels(source),
     };
+  }
+
+  private commit(chunk: RenderChunk, prepared: PreparedBlock): void {
+    chunk.labels = prepared.labels;
+    chunk.rendered = true;
+    this.unrendered -= 1;
+    chunk.html = prepared.html;
+    this.dirty.delete(chunk);
   }
 
   private environment(): RenderEnvironment {
