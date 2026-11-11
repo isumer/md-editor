@@ -1,4 +1,4 @@
-import { parseHexColor, contrastRatio, textColorFor, formatHexColor, type Rgb } from "../../../shared/settings/appearance";
+import { parseHexColor, textColorFor, formatHexColor, type Rgb } from "../../../shared/settings/appearance";
 
 export interface BackgroundSettings {
   editor: string | null;
