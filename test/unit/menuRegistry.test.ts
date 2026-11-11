@@ -144,6 +144,20 @@ it("fails when a declaration drifts from the literal id unions", () => {
     .toEqual([...MENU_COMMAND_IDS]);
 });
 
+it("sorts menu declarations by order", () => {
+  const declaredItems = composeMenuItems([compareMenu, fileMenu]);
+
+  expect(declaredItems.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
+});
+
+it("keeps import order when menu declaration orders are equal", () => {
+  const first = { ...fileMenu, order: 0 } as const;
+  const second = { ...compareMenu, order: 0 } as const;
+
+  expect(composeMenuItems([first, second]).map((item) => item.id))
+    .toEqual([...MENU_ITEM_IDS]);
+});
+
 it("keeps the type union and runtime validator on the same registry", () => {
   const itemId: MenuItemId = "file-compare-open";
   const commandId: MenuCommandId = "file.compareOpen";
