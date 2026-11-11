@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { app, BrowserWindow } from "electron";
 
 import {
@@ -22,6 +24,16 @@ interface WindowDependencies {
   attachIoPort(window: BrowserWindow): Promise<void>;
   closeWindow(windowId: number): Promise<void>;
   requestClose(window: BrowserWindow): Promise<boolean>;
+}
+
+function getWindowIconPath(): string | undefined {
+  if (process.platform !== "linux" && process.platform !== "win32") {
+    return undefined;
+  }
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "window-icon.png");
+  }
+  return path.join(app.getAppPath(), "build", "icons", "512x512.png");
 }
 
 function wireWindowSecurity(
@@ -56,12 +68,14 @@ export function createWindow(
   preloadPath: string,
   dependencies: WindowDependencies,
 ): BrowserWindow {
+  const icon = getWindowIconPath();
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
     title: app.getName(),
     show: false,
     backgroundColor: "#ffffff",
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
