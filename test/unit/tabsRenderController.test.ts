@@ -95,6 +95,20 @@ describe("render controller", () => {
     });
   });
 
+  it("AC-PERF-11: attachVersion sends a version before its document record exists", async () => {
+    const { instance } = await controller(() => null);
+
+    instance.attachVersion({ docId: "early", epoch: 2, version: 0 }, "opened text");
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "attach",
+      docId: "early",
+      epoch: 2,
+      version: 0,
+      text: "opened text",
+    });
+  });
+
   it("AC-R1-07: attach without supplied text sends the document text", async () => {
     const document = item();
     const { instance } = await controller(() => document);
