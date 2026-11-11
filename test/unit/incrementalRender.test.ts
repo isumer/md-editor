@@ -336,6 +336,37 @@ describe("progressive large-document rendering", () => {
     ).join("\n");
   }
 
+  it("AC-PERF-09: groups adjacent chunks after the progressive first screen", async () => {
+    vi.useFakeTimers();
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+    handler.handle({
+      op: "attach",
+      docId: "doc",
+      epoch: 1,
+      version: 0,
+      text: largeDocument(),
+    });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+
+    const first = scope.results()[0];
+    const firstHtml = first?.ok && first.mode === "replace"
+      ? first.blocks[0]?.html ?? ""
+      : "";
+    await vi.runAllTimersAsync();
+    const firstAppend = scope.results().find((result) =>
+      result.ok && result.mode === "append");
+    const appendHtml = firstAppend?.ok && firstAppend.mode === "append"
+      ? firstAppend.blocks[0]?.html ?? ""
+      : "";
+
+    expect(firstHtml).toContain("paragraph 0");
+    expect(firstHtml).not.toContain("paragraph 1");
+    expect(appendHtml).toContain("paragraph 4");
+    expect(appendHtml).toContain("paragraph 5");
+    expect(appendHtml).not.toContain("paragraph 6");
+  });
+
   it("AC-PERF-11: publishes the first screen, then appends the rest in the background", async () => {
     vi.useFakeTimers();
     const scope = new FakeScope();
@@ -352,7 +383,7 @@ describe("progressive large-document rendering", () => {
     const first = scope.results()[0];
     expect(first?.ok).toBe(true);
     if (first?.ok && first.mode === "replace") {
-      expect(first.blocks).toHaveLength(12);
+      expect(first.blocks).toHaveLength(4);
       expect(first.complete).toBe(false);
     }
 
@@ -361,7 +392,7 @@ describe("progressive large-document rendering", () => {
     expect(appended.length).toBeGreaterThan(0);
     const appendedBlocks = appended.flatMap((result) =>
       result.ok && result.mode === "append" ? result.blocks : []);
-    expect(appendedBlocks).toHaveLength(108);
+    expect(appendedBlocks).toHaveLength(58);
     const last = appended.at(-1);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
@@ -410,8 +441,28 @@ describe("progressive large-document rendering", () => {
     const last = appends.at(-1);
 
     expect(appends.length).toBeGreaterThanOrEqual(2);
-    expect(appendedBlocks).toHaveLength(238);
+    expect(appendedBlocks).toHaveLength(123);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
+  });
+
+  it("AC-PERF-09: sends sixteen blocks in each progressive fill batch", async () => {
+    vi.useFakeTimers();
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+    const text = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+
+    await vi.runAllTimersAsync();
+    const firstAppend = scope.results().find((result) =>
+      result.ok && result.mode === "append");
+
+    expect(firstAppend?.ok && firstAppend.mode === "append"
+      ? firstAppend.blocks
+      : []).toHaveLength(16);
   });
 
   it("AC-R1-06: a non-Error fill failure is reported as a message", async () => {

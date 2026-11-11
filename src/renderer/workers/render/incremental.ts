@@ -67,8 +67,10 @@ interface ChangedRange {
 // Only the first screen is sent in the initial replace. The rest arrives in
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
-const FILL_BATCH_SIZE = 8;
+const PROGRESSIVE_INITIAL_CHUNK_COUNT = 4;
+const FILL_BATCH_SIZE = 16;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
+const PROGRESSIVE_CHUNKS_PER_BLOCK = 2;
 // Segment lookups are linear; compacting an edit-heavy session keeps the list
 // short. Compaction is amortised over the edits that created the segments.
 const MAX_LINE_SEGMENTS = 64;
@@ -150,6 +152,7 @@ export class IncrementalRenderState {
   private segments: LineSegment[] = [{ start: 0, base: 0 }];
   private nextId = 1;
   private lineWrites = 0;
+  private readonly initialChunkCount: number;
 
   // Counts chunk line-field writes so a test can assert that a keystroke does
   // not touch every chunk after the change.
@@ -167,16 +170,39 @@ export class IncrementalRenderState {
     this.version = version;
     this.document = document;
     this.progressive = document.length > PROGRESSIVE_BYTES;
+    this.initialChunkCount = this.progressive
+      ? PROGRESSIVE_INITIAL_CHUNK_COUNT
+      : INITIAL_CHUNK_COUNT;
     this.chunks = [];
     // Split only the first screen. The fill pass extends the chunk list as it
     // consumes it, which keeps a 20 MB open off the critical path.
-    this.ensureChunks(INITIAL_CHUNK_COUNT);
+    this.ensureChunks(this.initialChunkCount);
     this.refreshReferences();
   }
 
   get complete(): boolean {
     return this.fullySplit && this.cursor >= this.chunks.length &&
       this.unrendered === 0;
+  }
+
+  private nextRange(
+    lines: LineReader,
+    from: number,
+    groupChunks = this.progressive,
+  ): LineRange | null {
+    const first = nextChunk(lines, from);
+    if (!first || !groupChunks) {
+      return first;
+    }
+    let endLine = first.endLine;
+    for (let index = 1; index < PROGRESSIVE_CHUNKS_PER_BLOCK; index += 1) {
+      const next = nextChunk(lines, endLine);
+      if (!next) {
+        break;
+      }
+      endLine = next.endLine;
+    }
+    return { startLine: first.startLine, endLine };
   }
 
   // Splits chunks from the current document until the list has `count` entries
@@ -189,7 +215,11 @@ export class IncrementalRenderState {
     const lines = textReader(this.document);
     let candidate = false;
     while (this.chunks.length < count) {
-      const range = nextChunk(lines, this.splitCursor);
+      const range = this.nextRange(
+        lines,
+        this.splitCursor,
+        this.progressive && this.chunks.length >= this.initialChunkCount,
+      );
       if (!range) {
         this.fullySplit = true;
         break;
@@ -225,8 +255,8 @@ export class IncrementalRenderState {
     // Every block is rendered from the current document, so any shift that
     // accumulated before the first publish is already reflected in its lines.
     this.pendingLineShifts = [];
-    this.ensureChunks(INITIAL_CHUNK_COUNT);
-    const limit = Math.min(INITIAL_CHUNK_COUNT, this.chunks.length);
+    this.ensureChunks(this.initialChunkCount);
+    const limit = Math.min(this.initialChunkCount, this.chunks.length);
     const blocks: RenderBlock[] = [];
     while (this.cursor < limit) {
       const chunk = this.chunks[this.cursor] as RenderChunk;
@@ -305,11 +335,18 @@ export class IncrementalRenderState {
     const lines = textReader(after);
     const previousLines = textReader(before);
     const replacements: Replacement[] = [];
+    const oldGroupedStart = this.progressive &&
+      this.chunks.length > this.initialChunkCount
+      ? this.startOf(this.initialChunkCount)
+      : Number.POSITIVE_INFINITY;
+    const groupedStart = changed.endOld <= oldGroupedStart
+      ? oldGroupedStart + lineDelta
+      : oldGroupedStart;
     let candidate = this.firstStartAtOrAfter(changed.endOld);
     let stop = -1;
     let from = reparseStart;
     while (from < after.lines) {
-      const range = nextChunk(lines, from);
+      const range = this.nextRange(lines, from, from >= groupedStart);
       if (!range) {
         break;
       }

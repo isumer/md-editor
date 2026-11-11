@@ -44,14 +44,13 @@ const BLOCK_CLASS = "preview-block";
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
-const PAGE_BLOCK_LIMIT = 10;
-const SECTION_PAGE_LIMIT = 10;
+const PAGE_BLOCK_LIMIT = 20;
+const SECTION_PAGE_LIMIT = 25;
 const APPEND_TASK_BLOCK_LIMIT = 4;
-// Worker fills have at most eight blocks; only the larger initial batch is
-// frame-paced.
+const FILL_BATCH_BLOCK_LIMIT = 16;
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
-// A section also bounds the layout work when it becomes visible: 100 blocks
-// keep each layout task short, at the cost of more containment elements.
+// Outer sections reduce containment checks without forcing a one-second fling
+// across section boundaries; twenty-block pages still bound visible layout work.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
 
@@ -299,6 +298,7 @@ export function wireRenderWorker(
     response: RenderResult & { ok: true; mode: "append" };
     frame: number;
     timer: number;
+    framePaced: boolean;
   } | null = null;
   const queuedResponses: RenderResponse[] = [];
   let queuedResponseTimer = 0;
@@ -396,9 +396,14 @@ export function wireRenderWorker(
       ...pending.response,
       blocks: pending.response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
     };
-    const nextPending = { response: remainder, frame: 0, timer: 0 };
+    const nextPending = {
+      response: remainder,
+      frame: 0,
+      timer: 0,
+      framePaced: pending.framePaced,
+    };
     pendingAppend = nextPending;
-    deferAppend(nextPending, true);
+    deferAppend(nextPending, nextPending.framePaced);
   };
 
   function handleResponse(response: RenderResponse): void {
@@ -438,9 +443,11 @@ export function wireRenderWorker(
         response: remainder,
         frame: 0,
         timer: 0,
+        framePaced: response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD &&
+          response.blocks.length !== FILL_BATCH_BLOCK_LIMIT,
       };
       pendingAppend = pending;
-      deferAppend(pending, response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD);
+      deferAppend(pending, pending.framePaced);
       return;
     }
     applyAccepted(response, true);

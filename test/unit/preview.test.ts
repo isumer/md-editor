@@ -142,7 +142,7 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-09: keeps an eight-block fill batch off the frame-paced path", () => {
+  it("AC-PERF-09: drains a sixteen-block fill in bounded event-loop tasks", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -150,7 +150,7 @@ describe("preview render flow", () => {
       return frames.length;
     });
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 16 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -168,9 +168,9 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
-    vi.runOnlyPendingTimers();
+    vi.runAllTimers();
 
-    expect(blocks(preview)).toHaveLength(8);
+    expect(blocks(preview)).toHaveLength(16);
     expect(frames).toHaveLength(1);
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -455,9 +455,9 @@ describe("preview render flow", () => {
     });
   });
 
-  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
+  it("AC-PERF-09: limits each visibility section to 500 preview blocks", () => {
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 501 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -478,7 +478,7 @@ describe("preview render flow", () => {
     const sections = [...preview.querySelectorAll(".preview-section")];
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([100, 1]);
+      .toEqual([500, 1]);
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {
