@@ -12,12 +12,10 @@ function isSettingsObject(value: unknown): value is Settings {
 
 export function registerSettingsIpcHandler(store: { read: () => Promise<Settings>; write: (settings: Settings) => Promise<void> }): void {
   handle({ channel: "settings:read", validate: isEmptyObject }, async () => {
-    const settings = await store.read();
-    return { ok: true, value: settings };
+    return store.read();
   });
   handle({ channel: "settings:write", validate: isSettingsObject }, async (settings: Settings) => {
     const normalized = normalizeSettings(settings);
     await store.write(normalized);
-    return { ok: true, value: {} };
   });
 }

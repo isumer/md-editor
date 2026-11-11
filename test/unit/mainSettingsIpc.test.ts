@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Settings } from "../../src/shared/settings/settings";
-import { normalizeSettings, DEFAULT_SETTINGS } from "../../src/shared/settings/settings";
+import { DEFAULT_SETTINGS } from "../../src/shared/settings/settings";
 
 // Mock electron's ipcMain
 const ipcHandlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
@@ -25,10 +25,29 @@ vi.mock("electron", () => ({
   },
 }));
 
-function createMockStore() {
+function createMockStore(): {
+  read: ReturnType<typeof vi.fn<() => Promise<Settings>>>;
+  write: ReturnType<typeof vi.fn<(settings: Settings) => Promise<void>>>;
+} {
   return {
-    read: vi.fn(() => Promise.resolve({} as Settings)),
-    write: vi.fn((_: Settings) => Promise.resolve()),
+    read: vi.fn(() => Promise.resolve(DEFAULT_SETTINGS)),
+    write: vi.fn(() => Promise.resolve()),
+  };
+}
+
+async function registerHandlers(
+  store: ReturnType<typeof createMockStore>,
+): Promise<void> {
+  const { registerTrustedWindow } = await import("../../src/main/ipc/handle");
+  const { registerSettingsIpcHandler } = await import("../../src/main/ipc/settings");
+  registerTrustedWindow(mockTrustedWindow as never, "app://localhost");
+  registerSettingsIpcHandler(store);
+}
+
+function trustedEvent(): unknown {
+  return {
+    sender: mockTrustedWindow.webContents,
+    senderFrame: mockTrustedWindow.webContents.mainFrame,
   };
 }
 
@@ -46,38 +65,13 @@ describe("registerSettingsIpcHandler", () => {
     vi.resetModules();
   });
 
-  it("registers read and write handlers", async () => {
-    const { registerSettingsIpcHandler } = await import("../../src/main/ipc/settings");
-    registerSettingsIpcHandler(mockStore);
+  it("settings read returns one Result with backgrounds directly in its value", async () => {
+    await registerHandlers(mockStore);
+    const handler = ipcHandlers.get("settings:read");
 
-    expect(mockIpcMain.handle).toHaveBeenCalledTimes(2);
+    expect(handler).toBeDefined();
+    const result = await handler?.(trustedEvent(), {});
 
-    const readCall = mockIpcMain.handle.mock.calls.find((c) => c[0] === "settings:read");
-    const writeCall = mockIpcMain.handle.mock.calls.find((c) => c[0] === "settings:write");
-
-    expect(readCall).toBeDefined();
-    expect(writeCall).toBeDefined();
-  });
-
-  it("read handler function exists and is callable", async () => {
-    const { registerSettingsIpcHandler } = await import("../../src/main/ipc/settings");
-    registerSettingsIpcHandler(mockStore);
-
-    const readCall = mockIpcMain.handle.mock.calls.find((c) => c[0] === "settings:read");
-    const action = readCall?.[1];
-    expect(typeof action).toBe("function");
-    expect(mockIpcMain.handle).toHaveBeenCalledWith("settings:read", expect.any(Function));
-  });
-
-  it("write handler function exists and is callable", async () => {
-    mockStore.write.mockResolvedValue(undefined);
-
-    const { registerSettingsIpcHandler } = await import("../../src/main/ipc/settings");
-    registerSettingsIpcHandler(mockStore);
-
-    const writeCall = mockIpcMain.handle.mock.calls.find((c) => c[0] === "settings:write");
-    const action = writeCall?.[1];
-    expect(typeof action).toBe("function");
-    expect(mockIpcMain.handle).toHaveBeenCalledWith("settings:write", expect.any(Function));
+    expect(result).toEqual({ ok: true, value: DEFAULT_SETTINGS });
   });
 });
