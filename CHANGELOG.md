@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Custom editor and preview background colours now survive restarts. Invalid colours use the theme, and text remains readable.
 - Several files can be open at once, each in its own tab with its own text, undo history, cursor, scroll and preview. Opening a file that is already open focuses its tab. A dot marks each tab with unsaved changes. Dropping a file onto the window opens it in a tab.
 - Closing a tab or quitting with unsaved changes asks first: Cancel, Discard or Save. Reopening the app restores the files you had open, with their unsaved changes.
 - Unsaved typing is drafted every few seconds. If the window crashes, the app reopens it and restores the drafts. A stuck preview restarts on its own and the editor stays responsive.
