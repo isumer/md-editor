@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Control messages and validators stay together for exhaustive checks. */
 export const MAX_CONTROL_PATH_LENGTH = 32 * 1024;
 export const MAX_ASSET_RELATIVE_PATH_LENGTH = 32 * 1024;
 export const MAX_SESSION_PATH_LENGTH = 32 * 1024;
@@ -328,7 +329,9 @@ function isReadSettings(value: unknown): value is ReadSettingsRequest {
 function isWriteSettings(value: unknown): value is WriteSettingsRequest {
   const request = exactData(value, ["type", "id", "path", "settings"]);
   return request !== null && request["type"] === "writeSettings" &&
-    validId(request["id"]) && validSessionPath(request["path"]);
+    validId(request["id"]) && validSessionPath(request["path"]) &&
+    typeof request["settings"] === "object" && request["settings"] !== null &&
+    !Array.isArray(request["settings"]);
 }
 
 export function isIoControlRequest(value: unknown): value is IoControlRequest {

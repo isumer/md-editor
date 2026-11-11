@@ -139,6 +139,27 @@ describe("SettingsStore (io-worker)", () => {
     ]);
   });
 
+  it.each([
+    { kind: "null", settings: null },
+    { kind: "array", settings: [] },
+  ])("rejects $kind settings at the io-worker control boundary", async ({ settings }) => {
+    const filePath = path.join(testDirectory, "settings.json");
+    const { handler, parent } = createControl(new SettingsStore());
+
+    handler.handle({
+      type: "writeSettings",
+      id: "invalid-write",
+      path: filePath,
+      settings,
+    }, []);
+    await expect.poll(() => parent.replies.length).toBe(1);
+
+    expect(parent.replies).toEqual([{
+      id: "invalid-write",
+      result: { ok: false, error: expect.objectContaining({ code: "BAD_REQUEST" }) },
+    }]);
+  });
+
   it("returns typed failures when settings control operations throw", async () => {
     const settings = {
       read: async () => { throw new Error("read failed"); },
