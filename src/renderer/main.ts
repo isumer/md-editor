@@ -24,7 +24,13 @@ import {
   type EditorCallbacks,
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
-import { applyBackgrounds, resetToThemeDefaults } from "./features/background/background";
+import {
+  applyBackgrounds,
+  resetToThemeDefaults,
+  resolveSystemTheme,
+  watchSystemTheme,
+  type ResolvedTheme,
+} from "./features/background/background";
 import { beginStartup } from "./features/background/startup";
 import {
   featureEditorExtensions,
@@ -383,30 +389,18 @@ window.addEventListener("drop", (event) => {
 
 async function loadBackgroundSettings(): Promise<void> {
   const settingsResult = await loadSettings();
-  let currentTheme: "light" | "dark" = "light";
-  if (settingsResult.ok) {
-    applyBackgrounds(
-      { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
-      currentTheme,
-    );
-  } else {
-    resetToThemeDefaults(currentTheme);
-  }
-
-  const updateTheme = () => {
-    currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const applyTheme = (theme: ResolvedTheme): void => {
     if (settingsResult.ok) {
       applyBackgrounds(
         { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
-        currentTheme,
+        theme,
       );
     } else {
-      resetToThemeDefaults(currentTheme);
+      resetToThemeDefaults(theme);
     }
   };
-
-  const observer = new MutationObserver(updateTheme);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  applyTheme(resolveSystemTheme());
+  watchSystemTheme(applyTheme);
 }
 
 async function initialize(): Promise<void> {

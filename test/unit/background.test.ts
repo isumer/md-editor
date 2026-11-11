@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { applyBackgrounds, resetToThemeDefaults } from "../../src/renderer/features/background/background";
+import {
+  applyBackgrounds,
+  resetToThemeDefaults,
+  resolveSystemTheme,
+  watchSystemTheme,
+} from "../../src/renderer/features/background/background";
 import { beginStartup } from "../../src/renderer/features/background/startup";
 
 function createMockElements() {
@@ -19,6 +24,26 @@ function createMockElements() {
 function cleanup() {
   document.body.innerHTML = "";
   document.documentElement.style.cssText = "";
+}
+
+function mockSystemTheme(dark: boolean): {
+  dispatch(dark: boolean): void;
+  remove: ReturnType<typeof vi.fn>;
+} {
+  let listener: ((event: MediaQueryListEvent) => void) | undefined;
+  const remove = vi.fn();
+  const query = {
+    matches: dark,
+    addEventListener: vi.fn((_type: "change", next) => {
+      listener = next as (event: MediaQueryListEvent) => void;
+    }),
+    removeEventListener: remove,
+  };
+  window.matchMedia = vi.fn(() => query as unknown as MediaQueryList);
+  return {
+    dispatch: (matches) => listener?.({ matches } as MediaQueryListEvent),
+    remove,
+  };
 }
 
 describe("background feature", () => {
@@ -51,6 +76,13 @@ describe("background feature", () => {
 
     expect(document.documentElement.style.getPropertyValue("--editor-background")).toBe("#ffffff");
     expect(document.documentElement.style.getPropertyValue("--preview-background")).toBe("#ffffff");
+  });
+
+  it("AC-R7-03: falls back to dark theme defaults when colours are invalid", () => {
+    applyBackgrounds({ editor: "not-a-colour", preview: "#12345" }, "dark");
+
+    expect(document.documentElement.style.getPropertyValue("--editor-background")).toBe("#0d1117");
+    expect(document.documentElement.style.getPropertyValue("--preview-background")).toBe("#0d1117");
   });
 
   it("uses dark theme defaults for dark theme", () => {
@@ -108,6 +140,32 @@ describe("background feature", () => {
 
     expect(document.documentElement.style.getPropertyValue("--editor-background")).toBe("#abcdef");
     expect(document.documentElement.style.getPropertyValue("--preview-background")).toBe("#123456");
+  });
+});
+
+describe("system theme", () => {
+  it("resolves the light system theme", () => {
+    mockSystemTheme(false);
+
+    expect(resolveSystemTheme()).toBe("light");
+  });
+
+  it("resolves the dark system theme", () => {
+    mockSystemTheme(true);
+
+    expect(resolveSystemTheme()).toBe("dark");
+  });
+
+  it("reports system theme changes", () => {
+    const media = mockSystemTheme(false);
+    const changed = vi.fn();
+
+    const stop = watchSystemTheme(changed);
+    media.dispatch(true);
+    stop();
+
+    expect(changed).toHaveBeenCalledWith("dark");
+    expect(media.remove).toHaveBeenCalledOnce();
   });
 });
 

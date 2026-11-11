@@ -5,6 +5,10 @@ export interface BackgroundSettings {
   preview: string | null;
 }
 
+export type ResolvedTheme = "light" | "dark";
+
+const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
+
 const EDITOR_SELECTOR = "#editor .cm-editor";
 const PREVIEW_SELECTOR = "#preview";
 
@@ -84,4 +88,21 @@ export function resetToThemeDefaults(theme: "light" | "dark"): void {
   document.documentElement.style.setProperty("--preview-background", defaults.preview);
   document.documentElement.style.setProperty("--editor-text-color", defaults.text);
   document.documentElement.style.setProperty("--preview-text-color", defaults.text);
+}
+
+export function resolveSystemTheme(
+  media = window.matchMedia(SYSTEM_DARK_QUERY),
+): ResolvedTheme {
+  return media.matches ? "dark" : "light";
+}
+
+export function watchSystemTheme(
+  onChange: (theme: ResolvedTheme) => void,
+): () => void {
+  const media = window.matchMedia(SYSTEM_DARK_QUERY);
+  const handleChange = (event: MediaQueryListEvent): void => {
+    onChange(event.matches ? "dark" : "light");
+  };
+  media.addEventListener("change", handleChange);
+  return () => media.removeEventListener("change", handleChange);
 }
