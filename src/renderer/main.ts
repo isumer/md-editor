@@ -235,14 +235,18 @@ function newDocument(input: {
   text: string;
 }): DocumentRecord {
   const replication = new DocumentReplication();
+  const editorText = Text.of(input.text.split("\n"));
+  const savedText = input.savedText === input.text
+    ? editorText
+    : Text.of(input.savedText.split("\n"));
   const document = createDocumentRecord({
     canonicalPath: input.canonicalPath,
     grant: input.grant,
     name: input.name,
     replication,
-    savedText: Text.of(input.savedText.split("\n")),
+    savedText,
     state: createEditorState(
-      input.text,
+      editorText,
       documentState,
       callbacks,
       featureEditorExtensions,
@@ -250,7 +254,7 @@ function newDocument(input: {
   });
   registry.add(document);
   const version = replication.current();
-  const text = document.state.doc.toString();
+  const text = input.text;
   renderController.attach(document, text);
   window.setTimeout(() => installedFeatures?.documentCreated(document, text), 0);
   void attachDocument({ ...version, text }).then((result) => {
