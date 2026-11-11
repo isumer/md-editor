@@ -1,3 +1,5 @@
+import "./compare.css";
+
 import type { FeatureRegistration } from "../../editor/featureWiring";
 import compareWorkerUrl from "./compare.worker.ts?worker&url";
 import { CompareController } from "./controller";

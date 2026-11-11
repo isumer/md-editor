@@ -12,7 +12,6 @@ import {
   foldGutter,
   foldKeymap,
   indentOnInput,
-  StreamLanguage,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
@@ -95,41 +94,6 @@ const editorSetup = [
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
-const INITIAL_PARSE_LENGTH = 3_000;
-const MAX_INITIAL_LINE_LENGTH = 100_000;
-
-const longLineMarkdown = StreamLanguage.define<null>({
-  name: "markdown",
-  startState: () => null,
-  token: (stream) => {
-    stream.skipToEnd();
-    return null;
-  },
-});
-
-function nextLineBreak(document: string, from: number): number {
-  const carriageReturn = document.indexOf("\r", from);
-  const lineFeed = document.indexOf("\n", from);
-  if (carriageReturn < 0) return lineFeed;
-  if (lineFeed < 0) return carriageReturn;
-  return Math.min(carriageReturn, lineFeed);
-}
-
-function hasLongInitialLine(document: Text | string): boolean {
-  let lineStart = 0;
-  while (lineStart <= Math.min(document.length, INITIAL_PARSE_LENGTH)) {
-    const lineEnd = typeof document === "string"
-      ? nextLineBreak(document, lineStart)
-      : document.lineAt(lineStart).to;
-    if (lineEnd < 0 || lineEnd - lineStart > MAX_INITIAL_LINE_LENGTH) return true;
-    lineStart = lineEnd + 1;
-  }
-  return false;
-}
-
-function markdownExtension(document: Text | string): Extension {
-  return hasLongInitialLine(document) ? longLineMarkdown : markdown();
-}
 
 export function dispatchUndo(view: EditorView): void {
   undo(view);
@@ -167,9 +131,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH
-        ? [markdownExtension(document)]
-        : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);

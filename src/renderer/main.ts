@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Application composition stays in one entry module. */
-import { Text, type EditorState } from "@codemirror/state";
+import { Text, type EditorState, type Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
@@ -21,10 +21,11 @@ import {
 import {
   createEditor,
   createEditorState,
+  markerMergeExtension,
   type EditorCallbacks,
 } from "./editor/editor";
-import type { InstalledFeatures } from "./editor/featureWiring";
 import {
+  type DeferredInstalledFeatures,
   featureEditorExtensions,
   installFeatures,
   rewriteFeatureHtml,
@@ -40,13 +41,22 @@ import {
   sendChanges,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
-import { DocumentCommands } from "./tabs/documentCommands";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
 import "./styles.css";
 
-performance.mark("renderer-script-start");
+const startupMarks = new Set<string>();
+
+function markStartup(name: string): void {
+  if (startupMarks.has(name)) return;
+  startupMarks.add(name);
+  performance.mark(name);
+}
+
+markStartup("renderer-script-start");
+
+type DocumentCommands = import("./tabs/documentCommands").DocumentCommands;
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -72,7 +82,13 @@ let statusFromPreview = false;
 let editor: EditorView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
-let installedFeatures: InstalledFeatures;
+let installedFeatures: DeferredInstalledFeatures;
+let secondaryFeaturesStarted = false;
+let secondaryFeaturesScheduled = false;
+
+function currentFeatureExtensions(): Extension {
+  return [featureEditorExtensions, markerMergeExtension];
+}
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -155,7 +171,7 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
-performance.mark("editor-mounted");
+markStartup("editor-mounted");
 installedFeatures = installFeatures({
   documents: () => registry.all(),
   editorHost,
@@ -216,7 +232,7 @@ function activateDocument(document: DocumentRecord): void {
   editor.setState(document.state);
   documentState.applyingDocument = false;
   if (document.grant !== null) {
-    performance.mark("file-text-shown");
+    markStartup("file-text-shown");
   }
   syncDocumentState(document);
   editor.scrollDOM.scrollTop = document.scrollTop;
@@ -232,7 +248,8 @@ function activateDocument(document: DocumentRecord): void {
   installedFeatures.documentActivated(document);
   editor.focus();
   if (document.grant !== null) {
-    performance.mark("editor-editable");
+    markStartup("editor-editable");
+    scheduleSecondaryFeatures();
   }
 }
 
@@ -254,14 +271,19 @@ function newDocument(input: {
       input.text,
       documentState,
       callbacks,
-      featureEditorExtensions,
+      currentFeatureExtensions(),
     ),
   });
   registry.add(document);
   const version = replication.current();
   const text = document.state.doc.toString();
   renderController.attach(document, text);
-  window.setTimeout(() => installedFeatures?.documentCreated(document, text), 0);
+  window.setTimeout(() => {
+    installedFeatures.documentCreated(document, text);
+    if (text.includes("<<<<<<<")) {
+      void loadMergeFeature().catch(showUnexpectedError);
+    }
+  }, 0);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);
   }).catch(showUnexpectedError);
@@ -336,7 +358,7 @@ function removeDocument(document: DocumentRecord): void {
         "",
         documentState,
         callbacks,
-        featureEditorExtensions,
+        currentFeatureExtensions(),
       ));
       documentState.applyingDocument = false;
       documentState.currentGrant = null;
@@ -364,16 +386,43 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
-documentCommands = new DocumentCommands({
-  compare: () => installedFeatures.runCommand("file.compareOpen"),
-  editor,
-  onError: showUnexpectedError,
-  onResult: (result) => {
-    valueOrStatus(result);
-  },
-  open: () => lifecycle.open(),
-  save: (saveAs) => lifecycle.saveActive(saveAs),
-});
+function loadSecondaryFeatures(): void {
+  if (secondaryFeaturesStarted) return;
+  secondaryFeaturesStarted = true;
+  void import("./tabs/documentCommands").then((commandsModule) => {
+    documentCommands = new commandsModule.DocumentCommands({
+      compare: () => {
+        void openCompare().catch(showUnexpectedError);
+      },
+      editor,
+      onError: showUnexpectedError,
+      onResult: (result) => {
+        valueOrStatus(result);
+      },
+      open: () => lifecycle.open(),
+      save: (saveAs) => lifecycle.saveActive(saveAs),
+    });
+  }).catch(showUnexpectedError);
+}
+
+async function openCompare(): Promise<void> {
+  const { compareFeature } = await import("./features/compare/wiring");
+  installedFeatures.installDeferred([compareFeature]);
+  installedFeatures.runCommand("file.compareOpen");
+}
+
+async function loadMergeFeature(): Promise<void> {
+  const { mergeFeature } = await import("./features/merge/wiring");
+  installedFeatures.installDeferred([mergeFeature]);
+}
+
+function scheduleSecondaryFeatures(): void {
+  if (secondaryFeaturesScheduled) return;
+  secondaryFeaturesScheduled = true;
+  requestAnimationFrame(() => {
+    window.setTimeout(loadSecondaryFeatures, 0);
+  });
+}
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));
 onSessionCloseRequest((request) => {
@@ -418,6 +467,7 @@ async function initialize(): Promise<void> {
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
   }
+  window.setTimeout(loadSecondaryFeatures, 1_000);
 }
 
 void initialize();
