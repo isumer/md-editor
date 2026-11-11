@@ -8,11 +8,15 @@ import {
 } from "../../src/renderer/editor/editor";
 
 function editorLanguage(document: string) {
+  return editorState(document).facet(language)?.name ?? null;
+}
+
+function editorState(document: string) {
   return createEditorState(document, createDocumentState(), {
     onDocumentChanged: vi.fn(),
     onChanges: vi.fn(),
     updateTitle: vi.fn(),
-  }).facet(language)?.name ?? null;
+  });
 }
 
 describe("editor language size threshold", () => {
@@ -30,5 +34,16 @@ describe("editor language size threshold", () => {
 
   it("AC-PERF-10: keeps Markdown behavior through four MiB", () => {
     expect(editorLanguage("x".repeat(4 * 1024 * 1024))).toBe("markdown");
+  });
+
+  it("AC-PERF-10: a huge plain line keeps its Markdown paragraph tree", () => {
+    const document = "x".repeat(4 * 1024 * 1024);
+    const tree = editorState(document).facet(language)?.parser.parse(document);
+    const paragraph = tree?.topNode.firstChild;
+
+    expect(tree?.toString()).toBe("Document(Paragraph)");
+    expect(tree?.length).toBe(document.length);
+    expect(paragraph?.from).toBe(0);
+    expect(paragraph?.to).toBe(document.length);
   });
 });

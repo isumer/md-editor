@@ -19,6 +19,7 @@ interface WiringOptions {
   preview?: HTMLElement;
   version?: { docId: string; epoch: number; version: number };
   rewriteHtml?: (html: string) => string;
+  now?: () => number;
 }
 
 function wiring(options: WiringOptions = {}) {
@@ -41,6 +42,7 @@ function wiring(options: WiringOptions = {}) {
     currentVersion: () => options.version ?? { docId: "doc", epoch: 1, version: 1 },
     onResync,
     rewriteHtml,
+    now: options.now,
   });
   return { worker, preview, showStatus, showError, onResync, rewriteHtml, documents };
 }
@@ -54,15 +56,23 @@ function blocks(preview: HTMLElement): HTMLElement[] {
 }
 
 describe("preview render flow", () => {
-  it("AC-PERF-10: limits each frame-paced append to four blocks", () => {
+  it("AC-PERF-10: a slow clock applies one block in each task", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
     });
-    const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
+    const mark = vi.spyOn(performance, "mark");
+    let currentTime = 0;
+    const { worker, preview } = wiring({
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 8;
+        return html;
+      },
+    });
+    const renderedBlocks = Array.from({ length: 3 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -80,35 +90,32 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
-    vi.runOnlyPendingTimers();
 
-    expect(blocks(preview)).toHaveLength(4);
-    expect(frames).toHaveLength(1);
-    frames.shift()?.(16);
+    expect(blocks(preview)).toHaveLength(1);
+    expect(frames).toHaveLength(0);
     vi.runOnlyPendingTimers();
-    expect(blocks(preview)).toHaveLength(8);
-    expect(frames).toHaveLength(1);
-    frames.shift()?.(32);
+    expect(blocks(preview)).toHaveLength(2);
+    expect(frames).toHaveLength(0);
     vi.runOnlyPendingTimers();
-    expect(blocks(preview)).toHaveLength(12);
+    expect(blocks(preview)).toHaveLength(3);
+    expect(frames).toHaveLength(1);
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start", "preview-apply-end",
+      "preview-apply-start", "preview-apply-end",
+      "preview-apply-start", "preview-apply-end",
+    ]);
+    mark.mockRestore();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-10: a worker message drains at most four pending blocks", () => {
-    vi.useFakeTimers();
-    const frames = new Map<number, FrameRequestCallback>();
-    let nextFrame = 1;
+  it("AC-PERF-10: a fast clock applies many ordered blocks and acknowledges once", () => {
+    const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      const handle = nextFrame;
-      nextFrame += 1;
-      frames.set(handle, callback);
-      return handle;
+      frames.push(callback);
+      return frames.length;
     });
-    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
-      frames.delete(handle);
-    });
-    const { worker, preview } = wiring();
+    const { worker, preview } = wiring({ now: () => 0 });
     const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -127,18 +134,14 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
-    send(worker, { op: "resync", id: 2, docId: "doc", epoch: 1, version: 1 });
-
-    expect(blocks(preview).map((block) => block.dataset["blockId"]))
-      .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]);
-    expect(frames).toHaveLength(1);
-    for (const frame of [...frames.values()]) {
-      frame(16);
-    }
-    vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(renderedBlocks.map((block) => block.id));
-    vi.useRealTimers();
+    expect(frames).toHaveLength(1);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    frames[0]?.(16);
+    expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
+      op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
+    });
     vi.unstubAllGlobals();
   });
 
@@ -263,7 +266,15 @@ describe("preview render flow", () => {
   it("AC-PERF-10: drops a pending append when the document changes", () => {
     vi.useFakeTimers();
     const version = { docId: "doc", epoch: 1, version: 1 };
-    const { worker, preview } = wiring({ version });
+    let currentTime = 0;
+    const { worker, preview } = wiring({
+      version,
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 8;
+        return html;
+      },
+    });
     const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -286,7 +297,7 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
 
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
-      .toEqual(["b0", "b1", "b2", "b3"]);
+      .toEqual(["b0"]);
     expect(worker.postMessage).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -305,7 +316,15 @@ describe("preview render flow", () => {
       frames.delete(handle);
     });
     const version = { docId: "doc", epoch: 1, version: 1 };
-    const { worker, preview } = wiring({ version });
+    let currentTime = 0;
+    const { worker, preview } = wiring({
+      version,
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 8;
+        return html;
+      },
+    });
     const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -341,7 +360,7 @@ describe("preview render flow", () => {
     }
 
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
-      .toEqual(["b0", "b1", "b2", "b3"]);
+      .toEqual(["b0"]);
     expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
     vi.unstubAllGlobals();

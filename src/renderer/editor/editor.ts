@@ -92,6 +92,52 @@ const editorSetup = [
   ]),
 ];
 
+const plainMarkdownTemplate = markdown().language.parser.parse("x");
+const plainMarkdownParagraph = plainMarkdownTemplate.topNode.firstChild?.type;
+const plainMarkdownPattern = /^[A-Za-z0-9]+$/;
+const PLAIN_MARKDOWN_FAST_PATH_MIN_LENGTH = 2 * 1024 * 1024;
+type MarkdownTree = typeof plainMarkdownTemplate;
+const MarkdownTree = plainMarkdownTemplate.constructor as new (
+  type: MarkdownTree["type"],
+  children: readonly MarkdownTree[],
+  positions: readonly number[],
+  length: number,
+) => MarkdownTree;
+
+function plainMarkdownParse(length: number) {
+  let stoppedAt: number | null = null;
+  return {
+    advance: () => {
+      const parsedLength = stoppedAt ?? length;
+      const children = plainMarkdownParagraph === undefined
+        ? []
+        : [new MarkdownTree(plainMarkdownParagraph, [], [], parsedLength)];
+      const positions = children.length === 0 ? [] : [0];
+      return new MarkdownTree(plainMarkdownTemplate.type, children, positions, parsedLength);
+    },
+    get parsedPos() { return stoppedAt ?? length; },
+    stopAt: (position: number) => { stoppedAt = position; },
+    get stoppedAt() { return stoppedAt; },
+  };
+}
+
+// Lezer cannot yield within one huge plain line, so preserve its exact tree directly.
+const markdownSupport = markdown({
+  extensions: {
+    wrap: (inner, input, _fragments, ranges) => {
+      const range = ranges[0];
+      if (input.length < PLAIN_MARKDOWN_FAST_PATH_MIN_LENGTH ||
+        ranges.length !== 1 || range?.from !== 0 || range.to !== input.length) {
+        return inner;
+      }
+      const text = input.chunk(0);
+      return text.length === input.length && plainMarkdownPattern.test(text)
+        ? plainMarkdownParse(input.length)
+        : inner;
+    },
+  },
+});
+
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
 
@@ -131,7 +177,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);

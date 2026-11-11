@@ -37,6 +37,7 @@ interface RenderWorkerWiring {
   currentVersion(): ReplicatedVersion;
   onResync(response: RenderResync): void;
   rewriteHtml(html: string): string;
+  now?: () => number;
 }
 
 const BLOCK_CLASS = "preview-block";
@@ -46,7 +47,9 @@ const BLOCK_CLASS = "preview-block";
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
-const APPEND_TASK_BLOCK_LIMIT = 4;
+const APPEND_TASK_BUDGET_MS = 4;
+const LARGE_APPEND_TASK_BLOCK_LIMIT = 4;
+const LARGE_PREVIEW_BLOCK_THRESHOLD = 10_000;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
@@ -112,14 +115,24 @@ function appendBlocks(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-): void {
+  budget?: { milliseconds: number; now: () => number; blockLimit?: number },
+): number {
   const start = performance.now();
+  const taskStartedAt = budget?.now() ?? 0;
+  let appendedBlockCount = 0;
   for (const block of blocks) {
     const element = createBlock(block, version, shifts, wiring);
     elements.set(block.id, element);
     placeBlock(element, wiring, layout);
+    appendedBlockCount += 1;
+    if (budget !== undefined &&
+      (appendedBlockCount === budget.blockLimit ||
+        budget.now() - taskStartedAt >= budget.milliseconds)) {
+      break;
+    }
   }
   performance.measure("preview-append", { start, end: performance.now() });
+  return appendedBlockCount;
 }
 
 function replaceBlocks(
@@ -227,14 +240,24 @@ function applyBlocks(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-): void {
+  appendBudget: { milliseconds: number; now: () => number; blockLimit?: number },
+): number {
+  let appliedBlockCount = 0;
   if (result.mode === "replace") {
     // Replaced blocks are rendered from the current document, so no old shift
     // can apply to them.
     shifts.length = 0;
     replaceBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else if (result.mode === "append") {
-    appendBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
+    appliedBlockCount = appendBlocks(
+      result.blocks,
+      result.version,
+      shifts,
+      wiring,
+      elements,
+      layout,
+      appendBudget,
+    );
   } else {
     for (const shift of result.lineShifts ?? []) {
       shifts.push({ ...shift, version: result.version });
@@ -249,7 +272,17 @@ function applyBlocks(
       layout,
     );
   }
-  wiring.preview.dataset["renderComplete"] = String(result.complete);
+  const appliedCompleteResult = result.mode !== "append" ||
+    appliedBlockCount === result.blocks.length;
+  wiring.preview.dataset["renderComplete"] = String(
+    result.complete && appliedCompleteResult,
+  );
+  return appliedBlockCount;
+}
+
+interface AppliedRenderResult {
+  accepted: boolean;
+  appliedBlockCount: number;
 }
 
 function applyRenderResult(
@@ -258,10 +291,19 @@ function applyRenderResult(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-): boolean {
-  return wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
+  appendBudget: { milliseconds: number; now: () => number; blockLimit?: number },
+): AppliedRenderResult {
+  let appliedBlockCount = 0;
+  const accepted = wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
-      applyBlocks(appliedResponse, shifts, wiring, elements, layout);
+      appliedBlockCount = applyBlocks(
+        appliedResponse,
+        shifts,
+        wiring,
+        elements,
+        layout,
+        appendBudget,
+      );
       wiring.showError();
       wiring.showStatus();
     } else {
@@ -269,6 +311,7 @@ function applyRenderResult(
       wiring.showStatus(appliedResponse.message);
     }
   });
+  return { accepted, appliedBlockCount };
 }
 
 function requestNextFill(
@@ -291,6 +334,7 @@ export function wireRenderWorker(
   wiring: RenderWorkerWiring,
 ): PreviewDocuments {
   const previews = new PreviewDocuments(wiring.preview);
+  const now = wiring.now ?? (() => performance.now());
   // Patch results are ordered deltas, so a result is stale only once a newer
   // version has actually been shown; comparing against the live editor version
   // would discard a delta the preview still needs.
@@ -335,7 +379,7 @@ export function wireRenderWorker(
   const applyAccepted = (
     response: RenderResult,
     requestFill: boolean,
-  ): boolean => {
+  ): AppliedRenderResult => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
     performance.mark("preview-apply-start");
@@ -347,9 +391,13 @@ export function wireRenderWorker(
       documentWiring,
       documentPreview.elements,
       documentPreview.layout,
+      documentPreview.elements.size >= LARGE_PREVIEW_BLOCK_THRESHOLD
+        ? { milliseconds: Number.POSITIVE_INFINITY, now,
+            blockLimit: LARGE_APPEND_TASK_BLOCK_LIMIT }
+        : { milliseconds: APPEND_TASK_BUDGET_MS, now },
     );
     performance.mark("preview-apply-end");
-    if (applied && response.ok) {
+    if (applied.accepted && response.ok) {
       documentPreview.version = response.version;
       previews.display(documentPreview);
       shown = {
@@ -357,7 +405,8 @@ export function wireRenderWorker(
         epoch: response.epoch,
         version: response.version,
       };
-      if (requestFill && response.mode === "append") {
+      if (requestFill && response.mode === "append" &&
+        applied.appliedBlockCount === response.blocks.length) {
         requestNextFill(renderWorker, response);
       }
     }
@@ -378,27 +427,22 @@ export function wireRenderWorker(
       scheduleQueuedResponse();
       return;
     }
-    if (pending.response.blocks.length <= APPEND_TASK_BLOCK_LIMIT) {
-      applyAccepted(pending.response, true);
+    const applied = applyAccepted(pending.response, true);
+    if (!applied.accepted) {
       scheduleQueuedResponse();
       return;
     }
-    const next = {
-      ...pending.response,
-      blocks: pending.response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
-      complete: false,
-    };
-    if (!applyAccepted(next, false)) {
+    if (applied.appliedBlockCount === pending.response.blocks.length) {
       scheduleQueuedResponse();
       return;
     }
     const remainder = {
       ...pending.response,
-      blocks: pending.response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
+      blocks: pending.response.blocks.slice(applied.appliedBlockCount),
     };
     const nextPending = { response: remainder, frame: 0, timer: 0 };
     pendingAppend = nextPending;
-    deferAppend(nextPending, true);
+    deferAppend(nextPending, false);
   };
 
   function handleResponse(response: RenderResponse): void {
@@ -420,19 +464,14 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    if (response.ok && response.mode === "append" &&
-      response.blocks.length > APPEND_TASK_BLOCK_LIMIT) {
-      const first = {
-        ...response,
-        blocks: response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
-        complete: false,
-      };
-      if (!applyAccepted(first, false)) {
+    if (response.ok && response.mode === "append") {
+      const applied = applyAccepted(response, true);
+      if (!applied.accepted || applied.appliedBlockCount === response.blocks.length) {
         return;
       }
       const remainder = {
         ...response,
-        blocks: response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
+        blocks: response.blocks.slice(applied.appliedBlockCount),
       };
       const pending = {
         response: remainder,
