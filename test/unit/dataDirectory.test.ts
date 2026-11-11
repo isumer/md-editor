@@ -47,8 +47,8 @@ describe("portable data directory", () => {
 
   it("AC-R9-01: resolves AppImage portable data beside the AppImage", () => {
     const exeDir = resolveExecutableDirectory(
-      path.join("tmp", ".mount_MD", "mdeditor"),
-      path.join("media", "MD-Editor.AppImage"),
+      path.join("tmp", ".mount_SolidMD", "solidmd"),
+      path.join("media", "SolidMD.AppImage"),
     );
 
     expect(resolveDataDirectory({

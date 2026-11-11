@@ -38,7 +38,7 @@ test("opening a missing file names the failure and keeps the current document", 
   tag: ["@AC-R5-13", "@AC-R5-16"],
   annotation: [{ type: "AC-R5-13" }, { type: "AC-R5-16" }],
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-missing-open-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-missing-open-"));
   const missingPath = path.join(temporaryDirectory, "missing.md");
   try {
     await expectFailedOpenToPreserveDocument(
@@ -54,7 +54,7 @@ test("opening a directory names the failure and keeps the current document", {
   tag: ["@AC-R5-13", "@AC-R5-16"],
   annotation: [{ type: "AC-R5-13" }, { type: "AC-R5-16" }],
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-directory-open-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-directory-open-"));
   try {
     await expectFailedOpenToPreserveDocument(
       temporaryDirectory,
@@ -70,7 +70,7 @@ if (process.platform !== "win32") {
     tag: ["@AC-R5-13", "@AC-R5-16"],
     annotation: [{ type: "AC-R5-13" }, { type: "AC-R5-16" }],
   }, async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-unreadable-"));
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-unreadable-"));
     const unreadablePath = path.join(temporaryDirectory, "unreadable.md");
     await fs.writeFile(unreadablePath, "# Must not open\n", { mode: 0o600 });
     await fs.chmod(unreadablePath, 0o000);

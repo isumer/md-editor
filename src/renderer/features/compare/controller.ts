@@ -1,4 +1,5 @@
-import { formatMessage } from "../../../shared/messages/en";
+import "./compare.css";
+
 import type {
   CompareState,
   CompareWorkerRequest,
@@ -6,6 +7,7 @@ import type {
   HighlightMode,
 } from "../../../shared/workers/compare";
 import type { DocumentRecord } from "../../core/document";
+import { formatMessage } from "../../core/messages";
 import { moveDifference } from "./state";
 import { CompareView } from "./view";
 

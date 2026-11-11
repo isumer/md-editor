@@ -1,4 +1,4 @@
-# MD Editor — plan
+# SolidMD — plan
 
 A standalone **text and code editor with first-class Markdown**:
 it should cover everyday text and code editing,

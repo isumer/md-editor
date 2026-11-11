@@ -2,7 +2,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { formatMessage } from "../../src/shared/messages/en";
+import { formatMessage } from "../../src/renderer/core/messages";
 
 const ok = <T>(value: T) => ({ ok: true, value } as const);
 const failure = {

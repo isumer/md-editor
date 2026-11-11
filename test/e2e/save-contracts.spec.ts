@@ -32,7 +32,7 @@ test("Save As writes the chosen path and later Save uses it", {
   tag: "@AC-R5-10",
   annotation: { type: "AC-R5-10" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-save-as-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-save-as-"));
   const originalPath = path.join(temporaryDirectory, "original.md");
   const adoptedPath = path.join(temporaryDirectory, "adopted.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
@@ -71,7 +71,7 @@ test("Save on an untitled document asks for a path and writes it", {
   tag: "@AC-R5-11",
   annotation: { type: "AC-R5-11" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-untitled-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-untitled-"));
   const chosenPath = path.join(temporaryDirectory, "chosen.md");
   const { application, page } = await launchEditor();
 
@@ -98,7 +98,7 @@ test("cancelling Open leaves the dirty document and disk unchanged", {
   tag: "@AC-R5-12",
   annotation: { type: "AC-R5-12" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-cancel-open-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-cancel-open-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
   await fs.writeFile(currentPath, originalText, "utf8");
@@ -131,7 +131,7 @@ test("cancelling Save As leaves the dirty document and disk unchanged", {
   tag: "@AC-R5-12",
   annotation: { type: "AC-R5-12" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-cancel-save-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-cancel-save-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
   await fs.writeFile(currentPath, originalText, "utf8");
@@ -164,7 +164,7 @@ test("an edit made while Save is in flight stays dirty and off disk", {
   tag: "@AC-R5-14",
   annotation: { type: "AC-R5-14" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-save-race-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-save-race-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
   await fs.writeFile(currentPath, originalText, "utf8");
@@ -209,7 +209,7 @@ test("Save writes exactly the edited document version", {
   tag: "@AC-R5-18",
   annotation: { type: "AC-R5-18" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-version-save-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-version-save-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   await fs.writeFile(currentPath, "# Before\n", "utf8");
   const { application, page } = await launchEditor(currentPath);
@@ -236,7 +236,7 @@ test("the Open menu item opens the file chosen by its dialog", {
   tag: "@AC-R5-15",
   annotation: { type: "AC-R5-15" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-menu-open-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-menu-open-"));
   const openedPath = path.join(temporaryDirectory, "opened.md");
   await fs.writeFile(openedPath, "# Open menu ran\n", "utf8");
   const { application, page } = await launchEditor(fixturePath);
@@ -259,7 +259,7 @@ test("the Save menu item writes the current document", {
   tag: "@AC-R5-15",
   annotation: { type: "AC-R5-15" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-menu-save-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-menu-save-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
   await fs.writeFile(currentPath, originalText, "utf8");
@@ -284,7 +284,7 @@ test("the Save As menu item writes the path chosen by its dialog", {
   tag: "@AC-R5-15",
   annotation: { type: "AC-R5-15" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-menu-save-as-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-menu-save-as-"));
   const chosenPath = path.join(temporaryDirectory, "chosen.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
   const { application, page } = await launchEditor(fixturePath);
@@ -307,7 +307,7 @@ test("opening another file keeps the dirty document and Save still writes it", {
   tag: "@AC-R5-09",
   annotation: { type: "AC-R5-09" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-declined-open-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-declined-open-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const otherPath = path.join(temporaryDirectory, "other.md");
   await fs.writeFile(currentPath, "# Current\n", "utf8");
@@ -340,7 +340,7 @@ if (process.platform !== "win32") {
     tag: "@AC-R5-16",
     annotation: { type: "AC-R5-16" },
   }, async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-read-only-"));
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-read-only-"));
     const readOnlyPath = path.join(temporaryDirectory, "read-only.md");
     await fs.writeFile(readOnlyPath, "# Read only\n", { mode: 0o400 });
     const { application, page } = await launchEditor(readOnlyPath);
@@ -364,7 +364,7 @@ if (process.platform !== "win32") {
     tag: "@AC-R5-16",
     annotation: { type: "AC-R5-16" },
   }, async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-kept-error-"));
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-kept-error-"));
     const readOnlyPath = path.join(temporaryDirectory, "read-only.md");
     await fs.writeFile(readOnlyPath, "# Read only\n", { mode: 0o400 });
     const { application, page } = await launchEditor(readOnlyPath);

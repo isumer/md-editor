@@ -16,7 +16,7 @@ let outsidePath: string;
 
 beforeEach(async () => {
   temporaryDirectory = await fs.realpath(
-    await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-path-policy-")),
+    await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-path-policy-")),
   );
   root = path.join(temporaryDirectory, "documents");
   outsidePath = path.join(temporaryDirectory, "outside.png");
