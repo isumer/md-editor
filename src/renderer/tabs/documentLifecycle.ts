@@ -4,7 +4,7 @@ import type { DocumentReference } from "../../shared/ipc/file";
 import type { DraftDocument } from "../../shared/ipc/io";
 import type { Result } from "../../shared/ipc/result";
 import type { SessionCloseRequest } from "../../shared/ipc/session";
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "../core/messages";
 import { resolveClosePrompt } from "../core/closePrompt";
 import { markDocumentSaved, messageParams, type DocumentRecord } from "../core/document";
 import type { DocumentRegistry } from "../core/documentRegistry";
