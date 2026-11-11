@@ -90,7 +90,7 @@ function syntheticTraceEvents(): Record<string, string | number>[] {
   ];
 }
 
-test("AC-PERF-11: trace summary reports the exact three longest tasks", () => {
+test("trace summary reports the exact three longest tasks", () => {
   expect(summarizePerfTrace("synthetic", syntheticTraceEvents())).toBe(
     "synthetic trace: longtasks=[start=150.0ms duration=120.0ms gc=30.0ms " +
     "script=50.0ms style=35.0ms layout=20.0ms paint=15.0ms; " +
@@ -372,7 +372,6 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
         );
         // Observe the fill pass for a bounded performance window.
         await page.waitForTimeout(5_000);
-        await finish();
         const probe = await page.evaluate(() => {
           const scope = window as unknown as { __longTaskProbe?: LongTaskProbe };
           return {
@@ -382,6 +381,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
             blocks: document.querySelectorAll("#preview .preview-block").length,
           };
         });
+        await finish();
         const afterOpen = probe.longtasks
           .filter((entry) => entry.start >= shownAt);
         const diagnostics = openTaskDiagnostics(afterOpen, probe.marks, probe.frames);
