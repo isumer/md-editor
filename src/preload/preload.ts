@@ -36,6 +36,12 @@ import type {
   SessionLoadResponse,
 } from "../shared/ipc/session";
 import type {
+  SETTINGS_CHANNELS as SharedSettingsChannels,
+  SettingsReadResponse,
+  SettingsWriteRequest,
+  SettingsWriteResponse,
+} from "../shared/ipc/settings";
+import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
@@ -66,6 +72,10 @@ const SESSION_CHANNELS = {
   requestClose: "session:request-close",
   closeResult: "session:close-result",
 } as const satisfies typeof SharedSessionChannels;
+const SETTINGS_CHANNELS = {
+  read: "settings:read",
+  write: "settings:write",
+} as const satisfies typeof SharedSettingsChannels;
 const WORKSPACE_CHANNELS = {
   chooseRoot: "workspace:choose-root",
   listChildren: "workspace:list-children",
@@ -299,6 +309,8 @@ interface Api {
   contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
   loadSession(): Promise<Result<SessionLoadResponse>>;
+  loadSettings(): Promise<Result<SettingsReadResponse>>;
+  saveSettings(settings: SettingsWriteRequest): Promise<Result<SettingsWriteResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
   chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;
@@ -439,6 +451,14 @@ const api: Api = {
     SESSION_CHANNELS.load,
     {},
   ) as Promise<Result<SessionLoadResponse>>,
+  loadSettings: () => ipcRenderer.invoke(
+    SETTINGS_CHANNELS.read,
+    {},
+  ) as Promise<Result<SettingsReadResponse>>,
+  saveSettings: (settings) => ipcRenderer.invoke(
+    SETTINGS_CHANNELS.write,
+    settings,
+  ) as Promise<Result<SettingsWriteResponse>>,
   respondSessionClose: (result) => ipcRenderer.invoke(
     SESSION_CHANNELS.closeResult,
     result,

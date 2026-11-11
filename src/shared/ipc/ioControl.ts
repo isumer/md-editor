@@ -62,6 +62,19 @@ export interface WriteSessionRequest {
   session: StoredSession;
 }
 
+export interface ReadSettingsRequest {
+  type: "readSettings";
+  id: string;
+  path: string;
+}
+
+export interface WriteSettingsRequest {
+  type: "writeSettings";
+  id: string;
+  path: string;
+  settings: unknown;
+}
+
 export type IoControlRequest =
   | RegisterGrantRequest
   | RevokeGrantRequest
@@ -69,7 +82,9 @@ export type IoControlRequest =
   | AttachPortRequest
   | ResolveAssetRequest
   | ReadSessionRequest
-  | WriteSessionRequest;
+  | WriteSessionRequest
+  | ReadSettingsRequest
+  | WriteSettingsRequest;
 
 export interface RegisteredGrant {
   canonicalPath: string;
@@ -109,6 +124,20 @@ export interface SessionReadReply {
 }
 
 export interface SessionWriteReply {
+  id: string;
+  result:
+    | { ok: true; value: Record<string, never> }
+    | { ok: false; error: ControlError };
+}
+
+export interface SettingsReadReply {
+  id: string;
+  result:
+    | { ok: true; value: unknown }
+    | { ok: false; error: ControlError };
+}
+
+export interface SettingsWriteReply {
   id: string;
   result:
     | { ok: true; value: Record<string, never> }
@@ -290,10 +319,23 @@ function isWriteSession(value: unknown): value is WriteSessionRequest {
     isStoredSession(request["session"]);
 }
 
+function isReadSettings(value: unknown): value is ReadSettingsRequest {
+  const request = exactData(value, ["type", "id", "path"]);
+  return request !== null && request["type"] === "readSettings" &&
+    validId(request["id"]) && validSessionPath(request["path"]);
+}
+
+function isWriteSettings(value: unknown): value is WriteSettingsRequest {
+  const request = exactData(value, ["type", "id", "path", "settings"]);
+  return request !== null && request["type"] === "writeSettings" &&
+    validId(request["id"]) && validSessionPath(request["path"]);
+}
+
 export function isIoControlRequest(value: unknown): value is IoControlRequest {
   return isRegister(value) || isRevokeGrant(value) ||
     isWindowMessage(value, "revokeWindow") || isWindowMessage(value, "attachPort") ||
-    isResolveAsset(value) || isReadSession(value) || isWriteSession(value);
+    isResolveAsset(value) || isReadSession(value) || isWriteSession(value) ||
+    isReadSettings(value) || isWriteSettings(value);
 }
 
 export function controlRequestId(value: unknown): string | null {
@@ -377,6 +419,18 @@ export function isSessionReadReply(value: unknown): value is SessionReadReply {
 }
 
 export function isSessionWriteReply(value: unknown): value is SessionWriteReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], (candidate) => exactData(candidate, []) !== null);
+}
+
+export function isSettingsReadReply(value: unknown): value is SettingsReadReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], (candidate) => typeof candidate === "object" && candidate !== null);
+}
+
+export function isSettingsWriteReply(value: unknown): value is SettingsWriteReply {
   const reply = exactData(value, ["id", "result"]);
   return reply !== null && validId(reply["id"]) &&
     validResult(reply["result"], (candidate) => exactData(candidate, []) !== null);

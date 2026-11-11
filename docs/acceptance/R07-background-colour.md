@@ -13,13 +13,13 @@ When the user switches to the light theme, then picks "reset to theme default"
 Then the custom colour stays across the theme switch, and after reset the pane uses the theme's background
 
 ### AC-R7-03 — An invalid stored colour falls back to the theme
-status: planned
+status: implemented
 Given `settings.json` holds a background value that is not a valid colour
 When the app starts
 Then the pane uses the theme's background and the app does not crash
 
 ### AC-R7-04 — Text stays readable on a chosen background
-status: planned
+status: implemented
 Given the user picks a background whose contrast with the theme's text is below 4.5:1
 When it is applied
 Then the text colour switches to the light or dark text colour that meets 4.5:1

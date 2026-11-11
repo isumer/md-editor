@@ -29,6 +29,7 @@ import { CloseRequestBroker } from "./app/closeRequests";
 import { applyMenuContribution } from "./app/menu";
 import { createContributionPump } from "./app/menuContribution";
 import { SessionStore, SESSION_VERSION } from "./app/session";
+import { SettingsStore } from "./app/settings";
 import { createWindow, setMainWindow } from "./app/window";
 import { GrantTable } from "./grants/grantTable";
 import { createIoWorkerSupervisor } from "./io/ioWorker";
@@ -36,6 +37,7 @@ import { registerFileIpcHandlers } from "./ipc/file";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
 import { registerMenuIpcHandler } from "./ipc/menu";
 import { registerSessionIpcHandler } from "./ipc/session";
+import { registerSettingsIpcHandler } from "./ipc/settings";
 import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
@@ -69,6 +71,7 @@ const workspaceService = new WorkspaceService(fileDialogs, fileService);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
 let sessionStore: SessionStore | null = null;
+let settingsStore: SettingsStore | null = null;
 
 const closeRequests = new CloseRequestBroker(
   (windowId, requestId) => {
@@ -172,7 +175,9 @@ void initializeApplication(
       path.join(app.getPath("userData"), "session.json"),
       ioWorker,
     );
+    settingsStore = createSettingsStore();
     registerSessionIpcHandler(sessionStore, fileService, closeRequests);
+    registerSettingsIpcHandler(settingsStore);
     registerAppProtocol(rendererDirectory);
     registerDocAssetProtocol(ioWorker);
   },
@@ -180,3 +185,10 @@ void initializeApplication(
   logProcessEvent("startup", error);
   app.quit();
 });
+
+function createSettingsStore(): SettingsStore {
+  return new SettingsStore(
+    path.join(app.getPath("userData"), "settings.json"),
+    ioWorker,
+  );
+}
