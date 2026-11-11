@@ -12,6 +12,9 @@ import {
   foldGutter,
   foldKeymap,
   indentOnInput,
+  Language,
+  LanguageSupport,
+  ParseContext,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { lintKeymap } from "@codemirror/lint";
@@ -92,6 +95,41 @@ const editorSetup = [
   ]),
 ];
 
+const MARKDOWN_PARSE_LINE_LIMIT = 64 * 1024;
+const baseMarkdown = markdown();
+type MarkdownParser = (typeof baseMarkdown.language)["parser"];
+type MarkdownParserInput = Parameters<MarkdownParser["startParse"]>[0];
+
+const skippedMarkdownParser = ParseContext.getSkippingParser();
+
+function markdownParserFor(input: MarkdownParserInput): MarkdownParser {
+  if (input.length <= MARKDOWN_PARSE_LINE_LIMIT) return baseMarkdown.language.parser;
+  const prefix = typeof input === "string"
+    ? input.slice(0, MARKDOWN_PARSE_LINE_LIMIT)
+    : input.read(0, MARKDOWN_PARSE_LINE_LIMIT);
+  return prefix.includes("\n") ? baseMarkdown.language.parser : skippedMarkdownParser;
+}
+
+const incrementalMarkdownParser: MarkdownParser = {
+  createParse: (input, fragments, ranges) =>
+    markdownParserFor(input).createParse(input, fragments, ranges),
+  startParse: (input, fragments, ranges) =>
+    markdownParserFor(input).startParse(input, fragments, ranges),
+  parse: (input, fragments, ranges) =>
+    markdownParserFor(input).parse(input, fragments, ranges),
+};
+
+// A giant physical line cannot yield during Markdown block parsing.
+const incrementalMarkdown = new LanguageSupport(
+  new Language(
+    baseMarkdown.language.data,
+    incrementalMarkdownParser,
+    [],
+    baseMarkdown.language.name,
+  ),
+  baseMarkdown.support,
+);
+
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
 
@@ -131,7 +169,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [incrementalMarkdown] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);
