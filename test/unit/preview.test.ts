@@ -102,6 +102,7 @@ describe("preview render flow", () => {
   });
 
   it("AC-PERF-10: a fast clock applies ordered blocks and acknowledges once", () => {
+    vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
@@ -131,9 +132,12 @@ describe("preview render flow", () => {
     expect(frames).toHaveLength(1);
     expect(worker.postMessage).not.toHaveBeenCalled();
     frames[0]?.(16);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -267,6 +271,7 @@ describe("preview render flow", () => {
     for (const frame of frames) {
       frame(16);
     }
+    vi.runOnlyPendingTimers();
 
     expect(blocks(preview)).toHaveLength(8);
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
@@ -511,7 +516,8 @@ describe("preview render flow", () => {
     clearMarks.mockRestore();
   });
 
-  it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
+  it("AC-PERF-10: yields a task after the frame before the next early fill", () => {
+    vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
@@ -530,13 +536,15 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
-    vi.unstubAllGlobals();
-
     expect(worker.postMessage).not.toHaveBeenCalled();
     frames[0]?.(16);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
     expect(worker.postMessage).toHaveBeenCalledWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {

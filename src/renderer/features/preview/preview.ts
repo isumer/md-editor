@@ -51,6 +51,9 @@ const APPEND_TASK_BUDGET_MS = 4;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
+// Keep the first screens responsive, then avoid an extra task per fill once a
+// document has enough cached content for extended scrolling.
+const DEFERRED_FILL_BLOCK_LIMIT = 512;
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -318,8 +321,9 @@ function applyRenderResult(
 function requestNextFill(
   renderWorker: RenderWorkerEvents,
   response: RenderResult & { ok: true; mode: "append" },
+  deferToTask: boolean,
 ): void {
-  requestAnimationFrame(() => {
+  const postFillReady = (): void => {
     renderWorker.postMessage({
       op: "fill-ready",
       docId: response.docId,
@@ -327,6 +331,13 @@ function requestNextFill(
       version: response.version,
       token: response.fillToken,
     } satisfies RenderFillReadyMessage);
+  };
+  requestAnimationFrame(() => {
+    if (deferToTask) {
+      window.setTimeout(postFillReady, 0);
+    } else {
+      postFillReady();
+    }
   });
 }
 
@@ -405,7 +416,11 @@ export function wireRenderWorker(
       };
       if (requestFill && response.mode === "append" &&
         applied.appliedBlockCount === response.blocks.length) {
-        requestNextFill(renderWorker, response);
+        requestNextFill(
+          renderWorker,
+          response,
+          documentPreview.elements.size <= DEFERRED_FILL_BLOCK_LIMIT,
+        );
       }
     }
     return applied;
