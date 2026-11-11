@@ -635,10 +635,10 @@ describe("preview render flow", () => {
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
       .toEqual([100, 1]);
     expect(sections.map((section) => section.querySelectorAll(".preview-page").length))
-      .toEqual([2, 1]);
+      .toEqual([5, 1]);
     expect([...sections[0]?.querySelectorAll(".preview-page") ?? []]
       .map((page) => page.querySelectorAll(".preview-block").length))
-      .toEqual([50, 50]);
+      .toEqual(Array.from({ length: 5 }, () => 20));
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

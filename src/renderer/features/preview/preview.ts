@@ -45,10 +45,8 @@ const BLOCK_CLASS = "preview-block";
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
-// Fifty-block pages reduce scroll intersection targets while two pages keep
-// each visible section at the proven 100-block layout bound.
-const PAGE_BLOCK_LIMIT = 50;
-const SECTION_PAGE_LIMIT = 2;
+const PAGE_BLOCK_LIMIT = 20;
+const SECTION_PAGE_LIMIT = 5;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
 let appendMeasureCount = 0;
