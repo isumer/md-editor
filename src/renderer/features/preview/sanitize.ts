@@ -6,7 +6,13 @@ const ALLOWED_URI =
   /^(?:doc-asset:|(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 const DOC_ASSET_URL = /^\s*doc-asset:/i;
 
-DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+// A private instance configured once: a config object passed to sanitize() is
+// re-parsed on every call (default tag and attribute sets cloned each time),
+// which cost 1–3 ms per preview block regardless of its size and pushed the
+// 20 MB first screen past the 100 ms main-thread budget on slow runners.
+const purifier = DOMPurify(window);
+
+purifier.addHook("uponSanitizeAttribute", (node, data) => {
   if (!DOC_ASSET_URL.test(data.attrValue)) {
     return;
   }
@@ -18,11 +24,13 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
   }
 });
 
+purifier.setConfig({
+  ALLOW_DATA_ATTR: true,
+  ADD_ATTR: ["data-line"],
+  ALLOWED_URI_REGEXP: ALLOWED_URI,
+  FORBID_TAGS: ["style", "link", "meta", "base", "form"],
+});
+
 export function sanitizeRenderedHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ALLOW_DATA_ATTR: true,
-    ADD_ATTR: ["data-line"],
-    ALLOWED_URI_REGEXP: ALLOWED_URI,
-    FORBID_TAGS: ["style", "link", "meta", "base", "form"],
-  });
+  return purifier.sanitize(html);
 }
