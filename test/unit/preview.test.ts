@@ -19,6 +19,8 @@ interface WiringOptions {
   preview?: HTMLElement;
   version?: { docId: string; epoch: number; version: number };
   rewriteHtml?: (html: string) => string;
+  now?: () => number;
+  scheduleTask?: (callback: () => void) => () => void;
 }
 
 function wiring(options: WiringOptions = {}) {
@@ -33,6 +35,10 @@ function wiring(options: WiringOptions = {}) {
   const showError = vi.fn();
   const onResync = vi.fn();
   const rewriteHtml = options.rewriteHtml ?? ((html: string) => html);
+  const scheduleTask = options.scheduleTask ?? ((callback: () => void) => {
+    const timer = window.setTimeout(callback, 0);
+    return () => window.clearTimeout(timer);
+  });
   const documents = wireRenderWorker(worker, {
     scheduler,
     preview,
@@ -41,6 +47,8 @@ function wiring(options: WiringOptions = {}) {
     currentVersion: () => options.version ?? { docId: "doc", epoch: 1, version: 1 },
     onResync,
     rewriteHtml,
+    now: options.now,
+    scheduleTask,
   });
   return { worker, preview, showStatus, showError, onResync, rewriteHtml, documents };
 }
@@ -53,15 +61,26 @@ function blocks(preview: HTMLElement): HTMLElement[] {
   return [...preview.querySelectorAll<HTMLElement>(".preview-block")];
 }
 
+function advancingClock(milliseconds: number): () => number {
+  let currentTime = 0;
+  return () => {
+    currentTime += milliseconds;
+    return currentTime;
+  };
+}
+
 describe("preview render flow", () => {
-  it("AC-PERF-10: limits each frame-paced append to four blocks", () => {
+  it("AC-PERF-10: slow append slices yield without repeated frame delays", () => {
     vi.useFakeTimers();
+    const measure = vi.spyOn(performance, "measure");
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
     });
-    const { worker, preview } = wiring();
+    const { worker, preview } = wiring({
+      now: advancingClock(9),
+    });
     const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -82,20 +101,23 @@ describe("preview render flow", () => {
     });
     vi.runOnlyPendingTimers();
 
-    expect(blocks(preview)).toHaveLength(4);
+    expect(blocks(preview)).toHaveLength(1);
     expect(frames).toHaveLength(1);
     frames.shift()?.(16);
     vi.runOnlyPendingTimers();
-    expect(blocks(preview)).toHaveLength(8);
-    expect(frames).toHaveLength(1);
-    frames.shift()?.(32);
+    expect(blocks(preview)).toHaveLength(2);
+    expect(frames).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(1);
     vi.runOnlyPendingTimers();
-    expect(blocks(preview)).toHaveLength(12);
+    expect(blocks(preview)).toHaveLength(3);
+    expect(measure.mock.calls.filter(([name]) => name === "preview-append"))
+      .toHaveLength(1);
+    measure.mockRestore();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-10: a worker message drains at most four pending blocks", () => {
+  it("AC-PERF-10: a fast clock keeps block order and acknowledges once", () => {
     vi.useFakeTimers();
     const frames = new Map<number, FrameRequestCallback>();
     let nextFrame = 1;
@@ -108,7 +130,9 @@ describe("preview render flow", () => {
     vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
       frames.delete(handle);
     });
-    const { worker, preview } = wiring();
+    const { worker, preview } = wiring({
+      now: advancingClock(1),
+    });
     const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -127,8 +151,6 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
-    send(worker, { op: "resync", id: 2, docId: "doc", epoch: 1, version: 1 });
-
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]);
     expect(frames).toHaveLength(1);
@@ -138,6 +160,12 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(renderedBlocks.map((block) => block.id));
+    for (const frame of [...frames.values()]) {
+      frame(32);
+    }
+    expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
+      op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
+    });
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -149,7 +177,7 @@ describe("preview render flow", () => {
       frames.push(callback);
       return frames.length;
     });
-    const { worker, preview } = wiring();
+    const { worker, preview } = wiring({ now: () => 0 });
     const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -183,7 +211,7 @@ describe("preview render flow", () => {
       frames.push(callback);
       return frames.length;
     });
-    const { worker, preview } = wiring();
+    const { worker, preview } = wiring({ now: advancingClock(2) });
     const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -219,7 +247,7 @@ describe("preview render flow", () => {
   it("AC-PERF-10: applies a newer result after the deferred part", () => {
     vi.useFakeTimers();
     const version = { docId: "doc", epoch: 1, version: 1 };
-    const { worker, preview } = wiring({ version });
+    const { worker, preview } = wiring({ version, now: advancingClock(2) });
     const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -263,7 +291,7 @@ describe("preview render flow", () => {
   it("AC-PERF-10: drops a pending append when the document changes", () => {
     vi.useFakeTimers();
     const version = { docId: "doc", epoch: 1, version: 1 };
-    const { worker, preview } = wiring({ version });
+    const { worker, preview } = wiring({ version, now: advancingClock(2) });
     const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -305,7 +333,7 @@ describe("preview render flow", () => {
       frames.delete(handle);
     });
     const version = { docId: "doc", epoch: 1, version: 1 };
-    const { worker, preview } = wiring({ version });
+    const { worker, preview } = wiring({ version, now: advancingClock(2) });
     const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -354,7 +382,7 @@ describe("preview render flow", () => {
       frames.push(callback);
       return frames.length;
     });
-    const { worker, preview } = wiring();
+    const { worker, preview } = wiring({ now: () => 0 });
     const renderedBlocks = Array.from({ length: 4 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
@@ -404,8 +432,9 @@ describe("preview render flow", () => {
     mark.mockRestore();
   });
 
-  it("AC-PERF-10: clears the previous apply boundary marks", () => {
+  it("AC-PERF-10: clears previous apply marks and append measurements", () => {
     const clearMarks = vi.spyOn(performance, "clearMarks");
+    const clearMeasures = vi.spyOn(performance, "clearMeasures");
     const { worker } = wiring();
 
     send(worker, {
@@ -424,10 +453,12 @@ describe("preview render flow", () => {
       "preview-apply-start",
       "preview-apply-end",
     ]);
+    expect(clearMeasures).toHaveBeenCalledWith("preview-append");
     clearMarks.mockRestore();
+    clearMeasures.mockRestore();
   });
 
-  it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
+  it("AC-PERF-10: yields once before requesting bounded fills continuously", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
@@ -446,18 +477,30 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
-    vi.unstubAllGlobals();
-
     expect(worker.postMessage).not.toHaveBeenCalled();
     frames[0]?.(16);
-    expect(worker.postMessage).toHaveBeenCalledWith({
+    expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: [{ id: "b2", startLine: 1, endLine: 2, html: "<p>two</p>" }],
+      fillToken: 5,
+      complete: false,
+    });
+    expect(worker.postMessage).toHaveBeenCalledTimes(2);
+    expect(frames).toHaveLength(1);
+    vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
+  it("AC-PERF-09: limits each visibility section to 40 preview blocks", () => {
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 41 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -478,7 +521,7 @@ describe("preview render flow", () => {
     const sections = [...preview.querySelectorAll(".preview-section")];
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([100, 1]);
+      .toEqual([40, 1]);
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

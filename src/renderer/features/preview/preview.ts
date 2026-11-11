@@ -37,7 +37,12 @@ interface RenderWorkerWiring {
   currentVersion(): ReplicatedVersion;
   onResync(response: RenderResync): void;
   rewriteHtml(html: string): string;
+  now?: () => number;
+  scheduleTask?: TaskScheduler;
 }
+
+type CancelTask = () => void;
+type TaskScheduler = (callback: () => void) => CancelTask;
 
 const BLOCK_CLASS = "preview-block";
 // Blocks are packed into pages and pages into sections so content-visibility
@@ -45,15 +50,34 @@ const BLOCK_CLASS = "preview-block";
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 10;
-const SECTION_PAGE_LIMIT = 10;
-const APPEND_TASK_BLOCK_LIMIT = 4;
+const SECTION_PAGE_LIMIT = 4;
+const APPEND_TASK_TIME_BUDGET_MS = 8;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
-// A section also bounds the layout work when it becomes visible: 100 blocks
+// A section also bounds the layout work when it becomes visible: 40 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
+
+function createTaskScheduler(): TaskScheduler {
+  const channel = new MessageChannel();
+  const tasks: { active: boolean; callback: () => void }[] = [];
+  channel.port1.onmessage = () => {
+    const task = tasks.shift();
+    if (task?.active === true) {
+      task.callback();
+    }
+  };
+  return (callback) => {
+    const task = { active: true, callback };
+    tasks.push(task);
+    channel.port2.postMessage(undefined);
+    return () => {
+      task.active = false;
+    };
+  };
+}
 
 function placeBlock(
   element: HTMLDivElement,
@@ -64,6 +88,7 @@ function placeBlock(
     if (layout.section === null || layout.pagesInSection >= SECTION_PAGE_LIMIT) {
       const section = document.createElement("div");
       section.className = "preview-section";
+      section.style.containIntrinsicSize = "auto 4800px";
       wiring.preview.append(section);
       layout.section = section;
       layout.pagesInSection = 0;
@@ -113,6 +138,7 @@ function appendBlocks(
   elements: BlockElements,
   layout: BlockLayout,
 ): void {
+  performance.clearMeasures("preview-append");
   const start = performance.now();
   for (const block of blocks) {
     const element = createBlock(block, version, shifts, wiring);
@@ -120,6 +146,48 @@ function appendBlocks(
     placeBlock(element, wiring, layout);
   }
   performance.measure("preview-append", { start, end: performance.now() });
+}
+
+interface AppendSliceOptions {
+  blocks: readonly RenderBlock[];
+  version: number;
+  shifts: readonly LineShiftRecord[];
+  wiring: RenderWorkerWiring;
+  elements: BlockElements;
+  layout: BlockLayout;
+  now: () => number;
+  recordMeasure: boolean;
+}
+
+function appendBlocksWithinBudget(options: AppendSliceOptions): number {
+  let measureStart = 0;
+  if (options.recordMeasure) {
+    performance.clearMeasures("preview-append");
+    measureStart = performance.now();
+  }
+  const taskStart = options.now();
+  let count = 0;
+  for (const block of options.blocks) {
+    const element = createBlock(
+      block,
+      options.version,
+      options.shifts,
+      options.wiring,
+    );
+    options.elements.set(block.id, element);
+    placeBlock(element, options.wiring, options.layout);
+    count += 1;
+    if (options.now() - taskStart >= APPEND_TASK_TIME_BUDGET_MS) {
+      break;
+    }
+  }
+  if (options.recordMeasure) {
+    performance.measure("preview-append", {
+      start: measureStart,
+      end: performance.now(),
+    });
+  }
+  return count;
 }
 
 function replaceBlocks(
@@ -274,8 +342,9 @@ function applyRenderResult(
 function requestNextFill(
   renderWorker: RenderWorkerEvents,
   response: RenderResult & { ok: true; mode: "append" },
+  waitForFrame: boolean,
 ): void {
-  requestAnimationFrame(() => {
+  const request = (): void => {
     renderWorker.postMessage({
       op: "fill-ready",
       docId: response.docId,
@@ -283,7 +352,12 @@ function requestNextFill(
       version: response.version,
       token: response.fillToken,
     } satisfies RenderFillReadyMessage);
-  });
+  };
+  if (waitForFrame) {
+    requestAnimationFrame(request);
+  } else {
+    request();
+  }
 }
 
 export function wireRenderWorker(
@@ -298,10 +372,27 @@ export function wireRenderWorker(
   let pendingAppend: {
     response: RenderResult & { ok: true; mode: "append" };
     frame: number;
-    timer: number;
+    cancelTask: CancelTask;
   } | null = null;
   const queuedResponses: RenderResponse[] = [];
   let queuedResponseTimer = 0;
+  let yieldedFill: ReplicatedVersion | null = null;
+  const now = wiring.now ?? (() => performance.now());
+  const scheduleTask = wiring.scheduleTask ?? createTaskScheduler();
+
+  const requestFill = (
+    response: RenderResult & { ok: true; mode: "append" },
+  ): void => {
+    const waitForFrame = yieldedFill === null ||
+      yieldedFill.docId !== response.docId || yieldedFill.epoch !== response.epoch ||
+      yieldedFill.version !== response.version;
+    yieldedFill = {
+      docId: response.docId,
+      epoch: response.epoch,
+      version: response.version,
+    };
+    requestNextFill(renderWorker, response, waitForFrame);
+  };
 
   function scheduleQueuedResponse(): void {
     if (queuedResponses.length === 0 || queuedResponseTimer !== 0) {
@@ -323,19 +414,23 @@ export function wireRenderWorker(
     pending: NonNullable<typeof pendingAppend>,
     waitForFrame: boolean,
   ): void => {
+    const schedule = (): void => {
+      pending.cancelTask = scheduleTask(() => {
+        if (pendingAppend === pending) {
+          flushAppend();
+        }
+      });
+    };
     if (waitForFrame) {
       pending.frame = requestAnimationFrame(() => {
-        pending.timer = window.setTimeout(flushAppend, 0);
+        schedule();
       });
     } else {
-      pending.timer = window.setTimeout(flushAppend, 0);
+      schedule();
     }
   };
 
-  const applyAccepted = (
-    response: RenderResult,
-    requestFill: boolean,
-  ): boolean => {
+  const applyAccepted = (response: RenderResult): boolean => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
     performance.mark("preview-apply-start");
@@ -357,11 +452,48 @@ export function wireRenderWorker(
         epoch: response.epoch,
         version: response.version,
       };
-      if (requestFill && response.mode === "append") {
-        requestNextFill(renderWorker, response);
-      }
     }
     return applied;
+  };
+
+  const applyAppendSlice = (
+    response: RenderResult & { ok: true; mode: "append" },
+    recordMeasure: boolean,
+  ): { applied: boolean; remaining: typeof response | null } => {
+    performance.clearMarks("preview-apply-start");
+    performance.clearMarks("preview-apply-end");
+    performance.mark("preview-apply-start");
+    const documentPreview = previews.getOrCreate(response.docId, response.epoch);
+    const documentWiring = { ...wiring, preview: documentPreview.container };
+    let count = 0;
+    const applied = wiring.scheduler.applyResult(response.id, response, () => {
+      count = appendBlocksWithinBudget({
+        blocks: response.blocks,
+        version: response.version,
+        shifts: documentPreview.shifts,
+        wiring: documentWiring,
+        elements: documentPreview.elements,
+        layout: documentPreview.layout,
+        now,
+        recordMeasure,
+      });
+      documentPreview.container.dataset["renderComplete"] = String(
+        count === response.blocks.length && response.complete,
+      );
+      wiring.showError();
+      wiring.showStatus();
+    });
+    performance.mark("preview-apply-end");
+    if (!applied) {
+      return { applied, remaining: null };
+    }
+    documentPreview.version = response.version;
+    previews.display(documentPreview);
+    shown = { docId: response.docId, epoch: response.epoch, version: response.version };
+    const remaining = count < response.blocks.length
+      ? { ...response, blocks: response.blocks.slice(count) }
+      : null;
+    return { applied, remaining };
   };
 
   const flushAppend = (): void => {
@@ -370,7 +502,7 @@ export function wireRenderWorker(
       return;
     }
     cancelAnimationFrame(pending.frame);
-    window.clearTimeout(pending.timer);
+    pending.cancelTask();
     pendingAppend = null;
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
@@ -378,27 +510,23 @@ export function wireRenderWorker(
       scheduleQueuedResponse();
       return;
     }
-    if (pending.response.blocks.length <= APPEND_TASK_BLOCK_LIMIT) {
-      applyAccepted(pending.response, true);
+    const result = applyAppendSlice(pending.response, false);
+    if (!result.applied) {
       scheduleQueuedResponse();
       return;
     }
-    const next = {
-      ...pending.response,
-      blocks: pending.response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
-      complete: false,
-    };
-    if (!applyAccepted(next, false)) {
+    if (result.remaining === null) {
+      requestFill(pending.response);
       scheduleQueuedResponse();
       return;
     }
-    const remainder = {
-      ...pending.response,
-      blocks: pending.response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
+    const nextPending = {
+      response: result.remaining,
+      frame: 0,
+      cancelTask: () => undefined,
     };
-    const nextPending = { response: remainder, frame: 0, timer: 0 };
     pendingAppend = nextPending;
-    deferAppend(nextPending, true);
+    deferAppend(nextPending, false);
   };
 
   function handleResponse(response: RenderResponse): void {
@@ -420,30 +548,25 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    if (response.ok && response.mode === "append" &&
-      response.blocks.length > APPEND_TASK_BLOCK_LIMIT) {
-      const first = {
-        ...response,
-        blocks: response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
-        complete: false,
-      };
-      if (!applyAccepted(first, false)) {
+    if (response.ok && response.mode === "append") {
+      const result = applyAppendSlice(response, true);
+      if (!result.applied) {
         return;
       }
-      const remainder = {
-        ...response,
-        blocks: response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
-      };
+      if (result.remaining === null) {
+        requestFill(response);
+        return;
+      }
       const pending = {
-        response: remainder,
+        response: result.remaining,
         frame: 0,
-        timer: 0,
+        cancelTask: () => undefined,
       };
       pendingAppend = pending;
       deferAppend(pending, response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD);
       return;
     }
-    applyAccepted(response, true);
+    applyAccepted(response);
   }
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
