@@ -80,7 +80,6 @@ async function openPreview(
 interface LongTaskProbe {
   longtasks: { start: number; duration: number }[];
   marks: { name: string; start: number }[];
-  applies: { start: number; duration: number; detail: unknown }[];
   frames: LongAnimationFrame[];
 }
 
@@ -103,7 +102,7 @@ interface LongAnimationScript {
 
 async function installLongTaskProbe(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const probe: LongTaskProbe = { longtasks: [], marks: [], applies: [], frames: [] };
+    const probe: LongTaskProbe = { longtasks: [], marks: [], frames: [] };
     (window as unknown as { __longTaskProbe?: LongTaskProbe }).__longTaskProbe = probe;
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -132,15 +131,9 @@ async function installLongTaskProbe(page: Page): Promise<void> {
               sourceURL: script.sourceURL,
             })),
           });
-        } else if (entry.entryType === "measure" && entry.name === "preview-apply") {
-          probe.applies.push({
-            start: entry.startTime,
-            duration: entry.duration,
-            detail: (entry as PerformanceMeasure).detail,
-          });
         }
       }
-    }).observe({ entryTypes: ["longtask", "mark", "long-animation-frame", "measure"] });
+    }).observe({ entryTypes: ["longtask", "mark", "long-animation-frame"] });
   });
 }
 
@@ -246,7 +239,6 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
       return {
         longtasks: scope.__longTaskProbe?.longtasks ?? [],
         marks: scope.__longTaskProbe?.marks ?? [],
-        applies: scope.__longTaskProbe?.applies ?? [],
         frames: scope.__longTaskProbe?.frames ?? [],
         blocks: document.querySelectorAll("#preview .preview-block").length,
       };
@@ -259,13 +251,6 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
       `max=${Math.max(...afterOpen.map((entry) => entry.duration), 0).toFixed(1)} ms ` +
       `blocks=${String(probe.blocks)}`,
     );
-    // TEMP(AC-PERF-10 diagnosis): phase split of the first applies after the open.
-    const firstApplies = probe.applies
-      .filter((entry) => entry.start >= shownAt - 1_000)
-      .slice(0, 3)
-      .map((entry) => `${entry.start.toFixed(1)}+${entry.duration.toFixed(1)}ms ` +
-        JSON.stringify(entry.detail));
-    console.log(`AC-PERF-10 open applies: shownAt=${shownAt.toFixed(1)} ${firstApplies.join(" | ")}`);
     expect(probe.blocks).toBeGreaterThan(1);
     expect(
       afterOpen.filter((entry) => entry.duration >= 100),

@@ -6,10 +6,8 @@ const ALLOWED_URI =
   /^(?:doc-asset:|(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 const DOC_ASSET_URL = /^\s*doc-asset:/i;
 
-// A private instance configured once: a config object passed to sanitize() is
-// re-parsed on every call (default tag and attribute sets cloned each time),
-// which cost 1–3 ms per preview block regardless of its size and pushed the
-// 20 MB first screen past the 100 ms main-thread budget on slow runners.
+// A private instance configured once, so the hook and settings apply to every
+// call without a config object being re-parsed per preview block.
 const purifier = DOMPurify(window);
 
 purifier.addHook("uponSanitizeAttribute", (node, data) => {
