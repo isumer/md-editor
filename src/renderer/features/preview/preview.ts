@@ -44,16 +44,24 @@ const BLOCK_CLASS = "preview-block";
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
-const PAGE_BLOCK_LIMIT = 10;
-const SECTION_PAGE_LIMIT = 10;
+// Each content-visibility element is an intersection target on every scrolled
+// frame, so 20 x 20 grouping cuts that work fourfold against 10 x 10.
+const PAGE_BLOCK_LIMIT = 20;
+const SECTION_PAGE_LIMIT = 20;
 const APPEND_TASK_BLOCK_LIMIT = 4;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
-// A section also bounds the layout work when it becomes visible: 100 blocks
-// keep each layout task short, at the cost of more containment elements.
+// A section also bounds the layout work when it becomes visible: its pages
+// stay skipped until they near the viewport, so layout remains bounded.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
+
+function finishWarmSection(section: HTMLDivElement | null): void {
+  if (section?.classList.contains("preview-section-warm") !== true) return;
+  void section.offsetHeight;
+  section.classList.remove("preview-section-warm");
+}
 
 function placeBlock(
   element: HTMLDivElement,
@@ -62,8 +70,13 @@ function placeBlock(
 ): void {
   if (layout.page === null || layout.blocksInPage >= PAGE_BLOCK_LIMIT) {
     if (layout.section === null || layout.pagesInSection >= SECTION_PAGE_LIMIT) {
+      finishWarmSection(layout.section);
       const section = document.createElement("div");
       section.className = "preview-section";
+      section.classList.toggle(
+        "preview-section-warm",
+        wiring.preview.childElementCount === 0,
+      );
       wiring.preview.append(section);
       layout.section = section;
       layout.pagesInSection = 0;
@@ -248,6 +261,9 @@ function applyBlocks(
       elements,
       layout,
     );
+  }
+  if (result.complete) {
+    finishWarmSection(layout.section);
   }
   wiring.preview.dataset["renderComplete"] = String(result.complete);
 }
