@@ -36,7 +36,7 @@ The brief records six isolated passes.
 
 The three diagnostic runs add nine 500 KB passes and nine 20 MB passes.
 
-The isolated and diagnostic total is 15 passes from 15 runs for each size.
+The isolated and diagnostic total is 15 case executions for each size.
 
 Run 42875705947 failed once during one full-suite run.
 
