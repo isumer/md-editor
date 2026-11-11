@@ -455,9 +455,9 @@ describe("preview render flow", () => {
     });
   });
 
-  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
+  it("AC-PERF-09: groups 20 preview blocks per page and 20 pages per section", () => {
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 401 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -478,7 +478,10 @@ describe("preview render flow", () => {
     const sections = [...preview.querySelectorAll(".preview-section")];
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([100, 1]);
+      .toEqual([400, 1]);
+    const firstSectionPages = [...sections[0]!.querySelectorAll(".preview-page")];
+    expect(firstSectionPages.map((page) => page.querySelectorAll(".preview-block").length))
+      .toEqual(Array.from({ length: 20 }, () => 20));
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {
