@@ -11,8 +11,12 @@ import {
   isResolveAssetReply,
   isSessionReadReply,
   isSessionWriteReply,
+  isSettingsReadReply,
+  isSettingsWriteReply,
   type RegisteredGrant,
   type ResolvedAsset,
+  type SettingsReadReply,
+  type SettingsWriteReply,
   type StoredSession,
 } from "../../shared/ipc/ioControl";
 import {
@@ -39,7 +43,9 @@ type ControlKind =
   | "registerGrant"
   | "resolveAsset"
   | "readSession"
-  | "writeSession";
+  | "writeSession"
+  | "readSettings"
+  | "writeSettings";
 
 function isReplyFor(kind: ControlKind, message: unknown): boolean {
   if (kind === "registerGrant") {
@@ -51,7 +57,13 @@ function isReplyFor(kind: ControlKind, message: unknown): boolean {
   if (kind === "readSession") {
     return isSessionReadReply(message);
   }
-  return isSessionWriteReply(message);
+  if (kind === "writeSession") {
+    return isSessionWriteReply(message);
+  }
+  if (kind === "readSettings") {
+    return isSettingsReadReply(message);
+  }
+  return isSettingsWriteReply(message);
 }
 
 type PortReceiver = (port: MessagePortMain) => void;
@@ -164,6 +176,20 @@ export class IoWorkerSupervisor {
     await this.generationReady;
     return this.child && !this.stopped
       ? this.sendControl<void>({ type: "writeSession", path: filePath, session })
+      : failedControl();
+  }
+
+  async readSettings(filePath: string): Promise<Result<unknown>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<unknown>({ type: "readSettings", path: filePath })
+      : failedControl();
+  }
+
+  async writeSettings(filePath: string, settings: unknown): Promise<Result<void>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<void>({ type: "writeSettings", path: filePath, settings })
       : failedControl();
   }
 
