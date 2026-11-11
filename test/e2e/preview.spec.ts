@@ -16,7 +16,7 @@ test("typing in paragraph 3 keeps every other preview paragraph's DOM node", {
   tag: "@AC-R1-09",
   annotation: { type: "AC-R1-09" },
 }, async () => {
-  const directory = await temporaryDirectory("mdeditor-identity-");
+  const directory = await temporaryDirectory("solidmd-identity-");
   const documentPath = path.join(directory, "paragraphs.md");
   await fs.writeFile(
     documentPath,
@@ -65,7 +65,7 @@ test("editing one block does not re-request another block's image", {
   tag: "@AC-R1-11",
   annotation: { type: "AC-R1-11" },
 }, async () => {
-  const directory = await temporaryDirectory("mdeditor-asset-");
+  const directory = await temporaryDirectory("solidmd-asset-");
   const documentPath = path.join(directory, "assets.md");
   const imagePath = path.join(directory, "probe.png");
   const png = Buffer.from(

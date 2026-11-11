@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MenuCommandMessage, MenuContribution } from "../../src/shared/ipc/menu";
+import { menuItems as mainMenuItems } from "../../src/main/app/menu/registry";
 
 const contributeMenu = vi.fn(async (_request: MenuContribution) =>
   ({ ok: true, value: undefined } as const));
@@ -49,14 +50,19 @@ describe("document commands", () => {
     });
     await Promise.resolve();
 
-    expect(contributeMenu.mock.calls[0]?.[0].items.map((item) => item.id)).toEqual([
-      "file-open",
-      "file-save",
-      "file-save-as",
-      "file-compare-open",
-    ]);
-    expect(contributeMenu.mock.calls[0]?.[0].items[3]?.accelerator)
-      .toBe("CmdOrCtrl+Shift+C");
+    expect(contributeMenu.mock.calls[0]?.[0]).toEqual({
+      fileMenuTitle: "File",
+      items: [
+        { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
+        { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
+        { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
+        {
+          id: "file-compare-open",
+          title: "Compare Open Files",
+          accelerator: "CmdOrCtrl+Shift+C",
+        },
+      ],
+    });
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
@@ -87,5 +93,19 @@ describe("document commands", () => {
     }));
     editor.contentDOM.blur();
     editor.destroy();
+  });
+
+  it("composes the same ordered item list as the main registry", async () => {
+    const { menuItems } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(menuItems).toEqual(mainMenuItems);
+    expect(menuItems.map((item) => item.id)).toEqual([
+      "file-open",
+      "file-save",
+      "file-save-as",
+      "file-compare-open",
+    ]);
   });
 });

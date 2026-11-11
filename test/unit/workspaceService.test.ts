@@ -10,7 +10,7 @@ import type { DocumentGrantService } from "../../src/main/services/documentGrant
 const temporaryDirectories: string[] = [];
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-unit-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-unit-"));
   temporaryDirectories.push(directory);
   return directory;
 }

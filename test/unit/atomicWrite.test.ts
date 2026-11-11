@@ -13,7 +13,7 @@ import {
 const temporaryDirectories: string[] = [];
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-atomic-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-atomic-"));
   temporaryDirectories.push(directory);
   return directory;
 }

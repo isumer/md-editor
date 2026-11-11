@@ -1,4 +1,4 @@
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "../core/messages";
 import type { DocumentRecord } from "../core/document";
 
 export function tabLabel(document: Pick<DocumentRecord, "name">): string {

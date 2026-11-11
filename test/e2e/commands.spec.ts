@@ -77,7 +77,7 @@ test("Open, Save and Save As chords run their commands and display non-native ac
   tag: "@AC-R5-20",
   annotation: { type: "AC-R5-20" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-keys-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-keys-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const adoptedPath = path.join(temporaryDirectory, "adopted.md");
   const otherPath = path.join(temporaryDirectory, "other.md");

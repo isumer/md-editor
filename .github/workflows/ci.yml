@@ -111,7 +111,7 @@ jobs:
       - name: Build Linux x64 packages
         run: npm run dist:linux -- --x64
       - name: Check packaged fuses
-        run: node scripts/check-fuses.mjs release/linux-unpacked/mdeditor
+        run: node scripts/check-fuses.mjs release/linux-unpacked/solidmd
       - name: Smoke-test the AppImage
         shell: bash
         run: |
