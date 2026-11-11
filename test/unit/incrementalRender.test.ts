@@ -373,6 +373,29 @@ describe("progressive large-document rendering", () => {
     );
   });
 
+  it("AC-PERF-11: reuses an over-budget lookahead in the next batch", () => {
+    const text = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let renders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => {
+        renders += 1;
+        return "😀".repeat(20 * 1024);
+      },
+    );
+
+    const initial = state.initial();
+    const fill = state.fill();
+
+    expect(renders).toBe(initial.blocks.length + fill.blocks.length + 1);
+  });
+
   it("AC-PERF-11: one huge chunk is the only block in its fill batch", () => {
     const prefix = Array.from(
       { length: 12 },

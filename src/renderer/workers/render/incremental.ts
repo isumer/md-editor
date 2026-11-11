@@ -55,6 +55,11 @@ interface PreparedBlock {
   labels: Set<string>;
 }
 
+interface PendingBlock {
+  chunk: RenderChunk;
+  prepared: PreparedBlock;
+}
+
 interface LineSegment {
   // Chunk index where this base starts; bases are absolute line offsets.
   start: number;
@@ -154,6 +159,7 @@ export class IncrementalRenderState {
   private readonly dirty = new Set<RenderChunk>();
   private readonly removed = new Set<string>();
   private pendingLineShifts: RenderLineShift[] = [];
+  private pendingBlock: PendingBlock | null = null;
   private references: Record<string, ReferenceDefinition> = {};
   private segments: LineSegment[] = [{ start: 0, base: 0 }];
   private nextId = 1;
@@ -273,9 +279,14 @@ export class IncrementalRenderState {
     // first chunk that has never been rendered.
     while (this.cursor < end) {
       const chunk = this.chunks[this.cursor] as RenderChunk;
-      const prepared = this.prepare(chunk, this.cursor);
+      const pending = this.pendingBlock;
+      const prepared = pending?.chunk === chunk
+        ? pending.prepared
+        : this.prepare(chunk, this.cursor);
+      this.pendingBlock = null;
       const blockBytes = UTF8_ENCODER.encode(prepared.block.html).byteLength;
       if (blocks.length > 0 && bytes + blockBytes > RENDER_BATCH_BYTE_LIMIT) {
+        this.pendingBlock = { chunk, prepared };
         break;
       }
       this.commit(chunk, prepared);
@@ -302,6 +313,7 @@ export class IncrementalRenderState {
       this.document = after;
       return;
     }
+    this.pendingBlock = null;
 
     const changed = this.changedLines(before, bounds);
     const lineDelta = after.lines - before.lines;
@@ -684,6 +696,7 @@ export class IncrementalRenderState {
     if (changed.size === 0) {
       return;
     }
+    this.pendingBlock = null;
     this.references = next;
     for (const chunk of this.chunks) {
       if (!chunk.rendered) {
