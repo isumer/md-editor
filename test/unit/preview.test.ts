@@ -141,6 +141,51 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
+  it("AC-PERF-10: a slow first screen spreads over tasks and sends no fill-ready", () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    let currentTime = 0;
+    const { worker, preview } = wiring({
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 4;
+        return html;
+      },
+    });
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        { id: "b2", startLine: 1, endLine: 2, html: "<p>two</p>" },
+        { id: "b3", startLine: 2, endLine: 3, html: "<p>three</p>" },
+      ],
+      complete: true,
+    });
+
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(["b1"]);
+    expect(preview.dataset["renderComplete"]).toBe("false");
+    vi.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
+    expect(blocks(preview).map((block) => block.dataset["blockId"]))
+      .toEqual(["b1", "b2", "b3"]);
+    expect(preview.dataset["renderComplete"]).toBe("true");
+    frames.forEach((frame) => frame(16));
+    vi.runOnlyPendingTimers();
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it("AC-PERF-10: a large preview keeps the time budget and acknowledges once", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
