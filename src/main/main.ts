@@ -43,6 +43,19 @@ import { WorkspaceService } from "./services/workspace";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
+
+const startupMarks = new Set<string>();
+
+// Cold-start marks stay in the main process timeline for the AC-PERF-03 report.
+function markStartup(name: string): void {
+  if (!startupMarks.has(name)) {
+    startupMarks.add(name);
+    performance.mark(`startup:${name}`);
+  }
+}
+
+markStartup("main-script-start");
+
 // Electron accepts this registration only once, so both schemes go in one call.
 protocol.registerSchemesAsPrivileged([
   APP_SCHEME_PRIVILEGES,
@@ -129,6 +142,7 @@ function createApplicationWindow(): void {
     },
   );
   setMainWindow(window);
+  markStartup("window-created");
 }
 
 async function attachIoPort(window: BrowserWindow): Promise<void> {
@@ -168,6 +182,7 @@ void initializeApplication(
   () => ioWorker.start(),
   openRequests,
   () => {
+    markStartup("app-ready");
     sessionStore = new SessionStore(
       path.join(app.getPath("userData"), "session.json"),
       ioWorker,

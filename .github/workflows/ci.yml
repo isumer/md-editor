@@ -110,6 +110,11 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Build Linux x64 packages
         run: npm run dist:linux -- --x64
+      - name: Check the deb ships the app icon
+        run: |
+          deb=$(find release -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$deb"
+          dpkg-deb -c "$deb" | grep -q 'usr/share/icons/hicolor/256x256/apps/solidmd.png'
       - name: Check packaged fuses
         run: node scripts/check-fuses.mjs release/linux-unpacked/solidmd
       - name: Smoke-test the AppImage

@@ -23,11 +23,8 @@ import {
   createEditorState,
   type EditorCallbacks,
 } from "./editor/editor";
-import { CompareController } from "./features/compare/controller";
-import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
-import "./features/compare/compare.css";
-import { MergeView } from "./features/merge/mergeView";
-import "./features/merge/merge.css";
+import type { CompareController } from "./features/compare/controller";
+import type { MergeView } from "./features/merge/mergeView";
 import {
   initializeMarkerMerge,
   markerMergeExtension,
@@ -54,6 +51,20 @@ import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
 import "./styles.css";
+
+const startupMarks = new Set<string>();
+
+// Cold-start marks stay in the renderer timeline for the AC-PERF-03 report.
+function markStartup(name: string): void {
+  if (!startupMarks.has(name)) {
+    startupMarks.add(name);
+    performance.mark(`startup:${name}`);
+  }
+}
+
+markStartup("script-start");
+
+performance.mark("renderer-script-start");
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -84,10 +95,15 @@ let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
 let statusFromPreview = false;
 let editor: EditorView;
-let mergeView: MergeView;
+let mergeView: MergeView | null = null;
+let mergeViewLoading: Promise<void> | null = null;
+let editorEditableMarked = false;
+let documentTextMarked = false;
+const pendingMerges: { document: DocumentRecord; text: string }[] = [];
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let compareController: CompareController | null = null;
+let compareLoading: Promise<void> | null = null;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -95,15 +111,25 @@ function showStatus(message = ""): void {
 }
 
 function openCompare(): void {
-  compareController ??= new CompareController({
-    documents: () => registry.all(),
-    editor: editorHost,
-    preview,
-    showStatus,
-    workspace,
-    workerUrl: new URL(compareWorkerUrl, window.location.href),
-  });
-  compareController.open();
+  if (compareController) {
+    compareController.open();
+    return;
+  }
+  compareLoading ??= import("./features/compare/controller").then(async ({ CompareController }) => {
+    const [workerModule] = await Promise.all([
+      import("./features/compare/compare.worker.ts?worker&url"),
+      import("./features/compare/compare.css"),
+    ]);
+    compareController = new CompareController({
+      documents: () => registry.all(),
+      editor: editorHost,
+      preview,
+      showStatus,
+      workspace,
+      workerUrl: new URL(workerModule.default, window.location.href),
+    });
+    compareController.open();
+  }).catch(showUnexpectedError);
 }
 
 // A successful render clears only the preview's own error, never a file failure.
@@ -182,12 +208,30 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
-mergeView = new MergeView({
-  editorHost,
-  preview,
-  workspace,
-  editor,
-});
+markStartup("editor-mounted");
+
+// Merge UI is not needed for the first screen, so its chunk loads after the editor is ready.
+function loadMergeView(): Promise<void> {
+  if (!mergeViewLoading) {
+    mergeViewLoading = import("./features/merge/mergeView").then(async ({ MergeView: MergeViewClass }) => {
+      await import("./features/merge/merge.css");
+      const view = new MergeViewClass({ editorHost, preview, workspace, editor });
+      mergeView = view;
+      for (const pending of pendingMerges.splice(0)) {
+        view.detect(pending.document.id, pending.text,
+          (merge) => installMerge(pending.document, pending.text, merge, view));
+      }
+    }).catch((error: unknown) => {
+      mergeViewLoading = null;
+      showUnexpectedError(error);
+    });
+  }
+  return mergeViewLoading;
+}
+
+function loadDeferredFeatures(): void {
+  void loadMergeView();
+}
 
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
@@ -236,6 +280,9 @@ function activateDocument(document: DocumentRecord): void {
   documentState.applyingDocument = true;
   editor.setState(document.state);
   documentState.applyingDocument = false;
+  if (document.grant !== null) {
+    markStartup("file-text-shown");
+  }
   syncDocumentState(document);
   editor.scrollDOM.scrollTop = document.scrollTop;
   requestAnimationFrame(() => {
@@ -247,8 +294,15 @@ function activateDocument(document: DocumentRecord): void {
   tabStrip.render();
   showPreviewError();
   renderController.activate(document);
-  mergeView.activate(document.id, document.state);
+  mergeView?.activate(document.id, document.state);
   editor.focus();
+  if (document.grant !== null) {
+    markStartup("editable");
+  }
+  if (!editorEditableMarked) {
+    editorEditableMarked = true;
+    loadDeferredFeatures();
+  }
 }
 
 function newDocument(input: {
@@ -278,20 +332,30 @@ function newDocument(input: {
   return document;
 }
 
-function installMerge(document: DocumentRecord, source: string, merge: MarkerMergeState): void {
+function installMerge(
+  document: DocumentRecord,
+  source: string,
+  merge: MarkerMergeState,
+  view: MergeView,
+): void {
   if (!registry.get(document.id)) return;
   const spec = initializeMarkerMerge(document.state, source, merge);
   if (spec === null) return;
   if (activeDocument === document) {
     editor.dispatch(spec);
-    mergeView.activate(document.id, editor.state);
+    view.activate(document.id, editor.state);
   } else {
     document.state = document.state.update(spec).state;
   }
 }
 
 function detectMerge(document: DocumentRecord, text: string): void {
-  mergeView.detect(document.id, text, (merge) => installMerge(document, text, merge));
+  const view = mergeView;
+  if (!view) {
+    pendingMerges.push({ document, text });
+    return;
+  }
+  view.detect(document.id, text, (merge) => installMerge(document, text, merge, view));
 }
 
 function createUntitled(): DocumentRecord {
@@ -340,7 +404,7 @@ function removeDocument(document: DocumentRecord): void {
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
-  mergeView.forget(document.id);
+  mergeView?.forget(document.id);
   dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderController.detach(document.id);

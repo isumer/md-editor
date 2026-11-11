@@ -159,6 +159,7 @@ const electron = vi.hoisted(() => {
 
   const app = {
     getName: vi.fn(() => "SolidMD"),
+    getAppPath: vi.fn(() => "/repo"),
     getPath: vi.fn(() => "/profiles/default"),
     isPackaged: false,
     requestSingleInstanceLock: vi.fn(() => true),
@@ -358,10 +359,16 @@ beforeEach(() => {
   fileSystem.unlink.mockResolvedValue(undefined);
   electron.shell.openExternal.mockResolvedValue(undefined);
   process.argv = ["electron", "."];
+  // Electron provides this path; the Node harness must model it for packaged runs.
+  Object.defineProperty(process, "resourcesPath", {
+    configurable: true,
+    value: "/resources",
+  });
 });
 
 afterEach(() => {
   process.argv = originalArgv;
+  Reflect.deleteProperty(process, "resourcesPath");
   if (originalAppImage === undefined) {
     delete process.env.APPIMAGE;
   } else {
@@ -384,6 +391,37 @@ describe("main process", () => {
       value: { notice: null, productName: "SolidMD", windowId: 1 },
     });
     expect(electron.app.setPath).toHaveBeenCalledWith("userData", "/profiles/default");
+  });
+
+  it("creates the main window with the shipped 512 px icon on Linux", async () => {
+    await withPlatform("linux", async () => {
+      await loadMain();
+      await readyApplication();
+
+      expect(electron.BrowserWindowMock.instances[0]?.options.icon).toBe(
+        path.join("/repo", "build", "icons", "512x512.png"),
+      );
+    });
+  });
+
+  it("creates the main window with the shipped 512 px icon on Windows", async () => {
+    await withPlatform("win32", async () => {
+      await loadMain();
+      await readyApplication();
+
+      expect(electron.BrowserWindowMock.instances[0]?.options.icon).toBe(
+        path.join("/repo", "build", "icons", "512x512.png"),
+      );
+    });
+  });
+
+  it("leaves the main window icon to the app bundle on macOS", async () => {
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+
+      expect(electron.BrowserWindowMock.instances[0]?.options).not.toHaveProperty("icon");
+    });
   });
 
   it("AC-R9-01 AC-R9-03: takes the single-instance lock only after choosing the data directory", async () => {

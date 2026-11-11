@@ -10,6 +10,11 @@ files:
 extraResources:
   - from: dist/THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
+  - from: build/icon.png
+    to: icon.png
+  # The window icon is a 512 px PNG inside the installed app.
+  - from: build/icons/512x512.png
+    to: window-icon.png
   - LICENSE.md
 afterAllArtifactBuild: ./scripts/add-portable-marker.mjs
 electronFuses:
@@ -20,6 +25,7 @@ electronFuses:
   enableEmbeddedAsarIntegrityValidation: true
   enableCookieEncryption: true
 win:
+  icon: build/icon.ico
   artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
   target:
     - target: nsis
@@ -31,6 +37,9 @@ win:
         - x64
         - arm64
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
   oneClick: false
   perMachine: false
@@ -39,6 +48,7 @@ nsis:
   include: build/installer.nsh
   license: LICENSE.md
 mac:
+  icon: build/icon.icns
   hardenedRuntime: true
   target:
     - target: dmg
@@ -49,6 +59,7 @@ dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 linux:
   # A noreply address so no personal e-mail ships inside public packages.
+  icon: build/icons
   maintainer: "isumer <isumer@users.noreply.github.com>"
   # electron-builder writes Categories from this field; desktop.entry.Categories is ignored.
   category: Utility;TextEditor;Development

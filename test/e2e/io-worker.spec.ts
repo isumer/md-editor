@@ -105,6 +105,32 @@ if (process.platform !== "win32") {
   });
 }
 
+interface StartupMark {
+  name: string;
+  at: number;
+}
+
+async function printStartupMarks(
+  application: ElectronApplication,
+  page: Page,
+): Promise<void> {
+  const main = await application.evaluate(() =>
+    performance.getEntriesByType("mark")
+      .filter((entry) => entry.name.startsWith("startup:"))
+      .map((entry) => ({ name: entry.name, at: Math.round(entry.startTime) })));
+  const renderer = await page.evaluate(() =>
+    performance.getEntriesByType("mark")
+      .filter((entry) => entry.name.startsWith("startup:"))
+      .map((entry) => ({ name: entry.name, at: Math.round(entry.startTime) })));
+  const lines = [
+    ...(main as StartupMark[]).map((mark) =>
+      `main ${mark.name} ${String(mark.at)} ms`),
+    ...(renderer as StartupMark[]).map((mark) =>
+      `renderer ${mark.name} ${String(mark.at)} ms`),
+  ];
+  console.log(`AC-PERF-03 startup marks:\n${lines.join("\n")}`);
+}
+
 test("an argv file is editable within the cold-start budget", {
   tag: "@AC-PERF-03",
   annotation: { type: "AC-PERF-03" },
@@ -118,6 +144,7 @@ test("an argv file is editable within the cold-start budget", {
     await page.keyboard.press("Control+End");
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
+    await printStartupMarks(application, page);
 
     expect(performance.now() - startedAt).toBeLessThan(2_000);
   } finally {

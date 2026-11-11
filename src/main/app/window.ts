@@ -5,6 +5,7 @@ import {
   unregisterTrustedWindow,
 } from "../ipc/handle";
 import { APP_ENTRY_URL } from "./appProtocol";
+import { resolveWindowIcon } from "./windowIcon";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -56,7 +57,14 @@ export function createWindow(
   preloadPath: string,
   dependencies: WindowDependencies,
 ): BrowserWindow {
+  const icon = resolveWindowIcon(
+    process.platform,
+    app.isPackaged,
+    app.getAppPath(),
+    process.resourcesPath,
+  );
   const window = new BrowserWindow({
+    ...(icon === undefined ? {} : { icon }),
     width: 1200,
     height: 800,
     title: app.getName(),
