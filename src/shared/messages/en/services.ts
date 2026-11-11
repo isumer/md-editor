@@ -1,0 +1,21 @@
+export const serviceMessages = {
+  "request.invalid": "The request was not valid.",
+  "grant.invalid": "The file permission is no longer valid.",
+  "file.workerRestarted": "Could not save “{file}”: the file service restarted. Try again.",
+  "file.outOfSync":
+    "Could not save “{file}”: the file service lost track of the document. Try again.",
+  "sender.forbidden": "This frame is not allowed to use application services.",
+  "link.invalid": "The link is not a valid URL.",
+  "link.unsupportedScheme": "This kind of link cannot be opened.",
+  "file.notFound": "Could not access “{file}”: it was not found.",
+  "file.isDirectory": "Could not open “{file}”: it is a folder.",
+  "file.permissionDenied": "Could not access “{file}”: permission was denied.",
+  "file.diskFull": "Could not save “{file}”: the disk is full.",
+  "file.conflict": "Could not save “{file}”: it changed on disk.",
+  "file.tooLarge": "Could not access “{file}”: it is too large.",
+  "file.binary": "Could not open “{file}”: it is a binary file.",
+  "file.alreadyOpen": "{file} is open in another tab. Close it first or choose another name.",
+  "file.openInFlight": "Could not open “{file}”: another tab is saving it. Try again.",
+  "file.saveInFlight": "Could not save “{file}”: another tab is saving it. Try again.",
+  "file.unknown": "Could not access “{file}”: {reason}.",
+} as const;
