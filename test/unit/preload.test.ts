@@ -80,6 +80,7 @@ describe("preload bridge", () => {
         "contributeMenu",
         "detachDocument",
         "draftDocument",
+        "exportDocument",
         "listDrafts",
         "listWorkspaceChildren",
         "loadSession",

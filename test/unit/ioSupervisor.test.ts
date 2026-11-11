@@ -80,6 +80,31 @@ beforeEach(() => {
 });
 
 describe("io-worker supervisor", () => {
+  it("AC-R6-01 AC-R6-03: sends export bytes through the control channel", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    const child = harness.children[0];
+    child?.emit("spawn");
+    const bytes = new Uint8Array([37, 80, 68, 70, 45]);
+
+    const write = harness.supervisor.writeExport(3, "grant", bytes);
+    await vi.waitFor(() => expect(child?.posts).toHaveLength(1));
+    const message = child?.posts[0]?.message as { id: string };
+    expect(message).toMatchObject({
+      type: "writeExport", windowId: 3, grant: "grant", bytes,
+    });
+    child?.emit("message", { id: message.id, result: { ok: true, value: {} } });
+
+    await expect(write).resolves.toEqual({ ok: true, value: {} });
+  });
+
+  it("AC-R6-01: refuses an export write while the worker is stopped", async () => {
+    const harness = createHarness();
+
+    await expect(harness.supervisor.writeExport(3, "grant", new Uint8Array()))
+      .resolves.toMatchObject({ ok: false, error: { code: "WORKER_RESTARTED" } });
+  });
+
   it("AC-R5-17: replays grants before re-issuing renderer ports", async () => {
     const grants = new GrantTable();
     const handle = grants.issue(7, "/documents/note.md", "document");

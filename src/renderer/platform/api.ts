@@ -36,8 +36,13 @@ import type {
   OpenWorkspaceFileResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
+import type { ExportDocumentRequest } from "../../shared/ipc/export";
 
 const api = window.api;
+
+export function exportDocument(request: ExportDocumentRequest): Promise<Result<void>> {
+  return api.exportDocument(request);
+}
 
 export function openFile(): Promise<Result<DocumentReference | null>> {
   return api.openFile();

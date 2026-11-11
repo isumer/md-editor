@@ -165,7 +165,8 @@ it("keeps the type union and runtime validator on the same registry", () => {
   expect(isMenuItemId(itemId)).toBe(true);
   expect(MENU_COMMAND_IDS).toContain(commandId);
   expectTypeOf<MenuItemId>().toEqualTypeOf<
-    "file-open" | "file-save" | "file-save-as" | "file-compare-open"
+    "file-open" | "file-save" | "file-save-as" | "file-export-html" |
+    "file-export-pdf" | "file-compare-open"
   >();
 });
 

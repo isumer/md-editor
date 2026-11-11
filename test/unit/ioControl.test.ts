@@ -94,6 +94,54 @@ describe("io-worker control boundary", () => {
     expect(grants.resolve(1, "grant")).toBe(targetPath);
   });
 
+  it("AC-R6-01 AC-R6-03: writes export bytes through an owned grant", async () => {
+    const { parent } = createHandler();
+    const exportPath = path.join(temporaryDirectory, "export.pdf");
+    parent.send({
+      type: "registerGrant",
+      id: "register-export",
+      windowId: 1,
+      handle: "export-grant",
+      path: exportPath,
+      mustExist: false,
+    });
+    await expect.poll(() => parent.replies.length).toBe(1);
+    const bytes = new Uint8Array([37, 80, 68, 70, 45, 0, 255]);
+
+    parent.send({
+      type: "writeExport",
+      id: "write-export",
+      windowId: 1,
+      grant: "export-grant",
+      bytes,
+    });
+    await expect.poll(() => parent.replies.length).toBe(2);
+
+    expect(parent.replies[1]).toEqual({
+      id: "write-export",
+      result: { ok: true, value: {} },
+    });
+    await expect(fs.readFile(exportPath)).resolves.toEqual(Buffer.from(bytes));
+  });
+
+  it("AC-R6-01: refuses an export write with an unknown grant", async () => {
+    const { parent } = createHandler();
+
+    parent.send({
+      type: "writeExport",
+      id: "write-export",
+      windowId: 1,
+      grant: "unknown",
+      bytes: new Uint8Array([1]),
+    });
+    await expect.poll(() => parent.replies.length).toBe(1);
+
+    expect(parent.replies[0]).toMatchObject({
+      id: "write-export",
+      result: { ok: false, error: { code: "GRANT_INVALID" } },
+    });
+  });
+
   it("AC-R4-08: reads and writes the session file in the io-worker", async () => {
     const { parent } = createHandler();
     const sessionPath = path.join(temporaryDirectory, "session.json");
