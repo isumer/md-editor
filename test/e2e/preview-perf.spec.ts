@@ -109,12 +109,15 @@ interface FakeTraceSession {
 
 function fakeTraceSession(): FakeTraceSession {
   let completeListener: ((payload: { stream: string }) => void) | undefined;
+  let dataListener: ((payload: { value: unknown[] }) => void) | undefined;
   let timestamp = 100_000;
-  let streamRead = false;
-  const traceEvents: unknown[] = [];
   const starts: unknown[] = [];
   const fake = {
     detach: async () => undefined,
+    on: (_event: string, listener: (payload: { value: unknown[] }) => void) => {
+      dataListener = listener;
+      return fake;
+    },
     once: (_event: string, listener: (payload: { stream: string }) => void) => {
       completeListener = listener;
       return fake;
@@ -122,16 +125,11 @@ function fakeTraceSession(): FakeTraceSession {
     send: async (method: string, parameters?: unknown) => {
       if (method === "Tracing.start") starts.push(parameters);
       if (method === "Tracing.end") completeListener?.({ stream: "trace-stream" });
-      if (method === "IO.read") {
-        const data = streamRead ? "" : JSON.stringify({ traceEvents });
-        streamRead = true;
-        return { data, eof: true };
-      }
       return {};
     },
   };
   const emit = (events: readonly unknown[]): void => {
-    traceEvents.push(...events);
+    dataListener?.({ value: [...events] });
   };
   return {
     emit,
@@ -158,7 +156,7 @@ test("trace starts CDP with the required categories and collects events", async 
     categories: "devtools.timeline,disabled-by-default-devtools.timeline," +
       "v8,v8.gc,blink.user_timing",
     options: "record-until-full",
-    transferMode: "ReturnAsStream",
+    transferMode: "ReportEvents",
   }]);
   expect(result.summary("captured")).toContain("duration=60.0ms");
 });
