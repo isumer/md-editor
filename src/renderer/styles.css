@@ -248,8 +248,8 @@ body {
   contain-intrinsic-size: auto 48000px;
 }
 
-/* The first section is warmed while bounded append batches build it, then
-   returned to automatic visibility after its real page sizes are cached. */
+/* Warm the first two pages so their real sizes are cached, then return the
+   section to automatic visibility before later appends can force large layout. */
 .preview-section-warm,
 .preview-section-warm > .preview-page {
   content-visibility: visible;

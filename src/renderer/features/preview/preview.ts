@@ -48,6 +48,7 @@ const BLOCK_CLASS = "preview-block";
 // frame, so 20 x 20 grouping cuts that work fourfold against 10 x 10.
 const PAGE_BLOCK_LIMIT = 20;
 const SECTION_PAGE_LIMIT = 20;
+const INITIAL_WARM_PAGE_LIMIT = 2;
 const APPEND_TASK_BLOCK_LIMIT = 4;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
@@ -69,6 +70,9 @@ function placeBlock(
   layout: BlockLayout,
 ): void {
   if (layout.page === null || layout.blocksInPage >= PAGE_BLOCK_LIMIT) {
+    if (layout.pagesInSection >= INITIAL_WARM_PAGE_LIMIT) {
+      finishWarmSection(layout.section);
+    }
     if (layout.section === null || layout.pagesInSection >= SECTION_PAGE_LIMIT) {
       finishWarmSection(layout.section);
       const section = document.createElement("div");

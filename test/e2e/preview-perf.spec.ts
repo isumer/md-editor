@@ -268,15 +268,15 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
     await installLongTaskProbe(page);
     await page.reload();
     await expect(page.getByTestId("editor").locator(".cm-content")).toBeVisible();
-    await openLargeThroughMenu(application, page, large20);
-    await expect(page.getByTestId("editor").locator(".cm-content")).toContainText(
-      firstLine,
-      { timeout: 30_000 },
-    );
-    const shownAt = await page.evaluate(() => performance.now());
     const trace = await startPerfTrace(page);
     let traceResult: PerfTraceResult | undefined;
     try {
+      await openLargeThroughMenu(application, page, large20);
+      await expect(page.getByTestId("editor").locator(".cm-content")).toContainText(
+        firstLine,
+        { timeout: 30_000 },
+      );
+      const shownAt = await trace.markStart();
       await expect(page.getByTestId("preview").locator("h1").first()).toHaveText(
         firstLine.replace(/^#+\s*/u, ""),
         { timeout: 30_000 },
@@ -581,6 +581,7 @@ test("AC-PERF-11: a 20 MB document is editable and shows its first screen in tim
     let previewAfter = 0;
     try {
       // The clock starts at the open request, not at launch.
+      await trace.markStart();
       const started = Date.now();
       const clicked = await application.evaluate(({ Menu }) => {
         const item = Menu.getApplicationMenu()?.getMenuItemById("file-open");

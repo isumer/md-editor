@@ -45,6 +45,7 @@ export interface PerfTraceResult {
 }
 
 export interface PerfTrace {
+  markStart(): Promise<number>;
   stop(): Promise<PerfTraceResult>;
 }
 
@@ -214,9 +215,12 @@ export async function startPerfTrace(page: Page): Promise<PerfTrace> {
     options: "record-until-full",
     transferMode: "ReportEvents",
   });
-  await page.evaluate((mark) => performance.mark(mark), START_MARK);
   let result: Promise<PerfTraceResult> | undefined;
   return {
+    markStart: () => page.evaluate((mark) => {
+      performance.mark(mark);
+      return performance.now();
+    }, START_MARK),
     stop: () => {
       result ??= stopTrace(page, session, rawEvents, completed);
       return result;
