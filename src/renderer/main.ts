@@ -25,6 +25,7 @@ import {
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
 import { applyBackgrounds, resetToThemeDefaults } from "./features/background/background";
+import { beginStartup } from "./features/background/startup";
 import {
   featureEditorExtensions,
   installFeatures,
@@ -380,18 +381,7 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
 });
 
-async function initialize(): Promise<void> {
-  for (const action of ["cancel", "discard", "save"] as const) {
-    const button = closePrompt.querySelector<HTMLButtonElement>(
-      `[data-action="${action}"]`,
-    );
-    if (button) {
-      button.textContent = formatMessage(`close.${action}`, {});
-    }
-  }
-  renderController.start();
-  installedFeatures.start();
-
+async function loadBackgroundSettings(): Promise<void> {
   const settingsResult = await loadSettings();
   let currentTheme: "light" | "dark" = "light";
   if (settingsResult.ok) {
@@ -417,11 +407,31 @@ async function initialize(): Promise<void> {
 
   const observer = new MutationObserver(updateTheme);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  const untitled = createUntitled();
-  activateDocument(untitled);
-  updateTitle();
+}
+
+async function initialize(): Promise<void> {
+  for (const action of ["cancel", "discard", "save"] as const) {
+    const button = closePrompt.querySelector<HTMLButtonElement>(
+      `[data-action="${action}"]`,
+    );
+    if (button) {
+      button.textContent = formatMessage(`close.${action}`, {});
+    }
+  }
+  renderController.start();
+  installedFeatures.start();
+  const readyRequest = beginStartup({
+    openInitialDocument: () => {
+      const untitled = createUntitled();
+      activateDocument(untitled);
+      updateTitle();
+    },
+    requestOpenRequests: readyForOpenRequests,
+    loadSettings: loadBackgroundSettings,
+    showError: showUnexpectedError,
+  });
   try {
-    const ready = valueOrStatus(await readyForOpenRequests());
+    const ready = valueOrStatus(await readyRequest);
     if (ready) {
       windowId = ready.windowId;
       documentState.productName = ready.productName;
@@ -439,4 +449,4 @@ async function initialize(): Promise<void> {
   }
 }
 
-void initialize();
+void initialize().catch(showUnexpectedError);

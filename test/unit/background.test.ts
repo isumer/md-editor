@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { applyBackgrounds, resetToThemeDefaults } from "../../src/renderer/features/background/background";
+import { beginStartup } from "../../src/renderer/features/background/startup";
 
 function createMockElements() {
   const editor = document.createElement("div");
@@ -107,5 +108,30 @@ describe("background feature", () => {
 
     expect(document.documentElement.style.getPropertyValue("--editor-background")).toBe("#abcdef");
     expect(document.documentElement.style.getPropertyValue("--preview-background")).toBe("#123456");
+  });
+});
+
+describe("settings startup", () => {
+  it("opens the document path before a rejected settings read", async () => {
+    const calls: string[] = [];
+    const showError = vi.fn();
+
+    const ready = beginStartup({
+      openInitialDocument: () => calls.push("document"),
+      requestOpenRequests: () => {
+        calls.push("open-requests");
+        return Promise.resolve("ready");
+      },
+      loadSettings: () => {
+        calls.push("settings");
+        return Promise.reject(new Error("settings read failed"));
+      },
+      showError,
+    });
+
+    await expect(ready).resolves.toBe("ready");
+    await Promise.resolve();
+    expect(calls).toEqual(["document", "open-requests", "settings"]);
+    expect(showError).toHaveBeenCalledWith(new Error("settings read failed"));
   });
 });
