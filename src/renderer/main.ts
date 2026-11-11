@@ -244,23 +244,37 @@ function newDocument(input: {
   text: string;
 }): DocumentRecord {
   const replication = new DocumentReplication();
+  const version = replication.current();
+  // Without "\r" the editor splits lines like split("\n") and its text equals
+  // the input. The render worker then gets the text before the editor state
+  // exists and splits its copy while this thread builds the state.
+  const isLineFeedOnly = !input.text.includes("\r");
+  if (isLineFeedOnly) {
+    renderController.attachVersion(version, input.text);
+  }
+  const state = createEditorState(
+    input.text,
+    documentState,
+    callbacks,
+    featureEditorExtensions,
+  );
   const document = createDocumentRecord({
     canonicalPath: input.canonicalPath,
     grant: input.grant,
     name: input.name,
     replication,
-    savedText: Text.of(input.savedText.split("\n")),
-    state: createEditorState(
-      input.text,
-      documentState,
-      callbacks,
-      featureEditorExtensions,
-    ),
+    // A freshly opened file shares the editor's Text: no second split, and
+    // the dirty check compares one object instead of every line.
+    savedText: isLineFeedOnly && input.savedText === input.text
+      ? state.doc
+      : Text.of(input.savedText.split("\n")),
+    state,
   });
   registry.add(document);
-  const version = replication.current();
-  const text = document.state.doc.toString();
-  renderController.attach(document, text);
+  const text = isLineFeedOnly ? input.text : state.doc.toString();
+  if (!isLineFeedOnly) {
+    renderController.attach(document, text);
+  }
   window.setTimeout(() => installedFeatures?.documentCreated(document, text), 0);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);

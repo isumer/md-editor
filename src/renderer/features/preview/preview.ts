@@ -148,11 +148,12 @@ function replaceBlocks(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-): void {
+  budget: { milliseconds: number; now: () => number },
+): number {
   elements.clear();
   wiring.preview.replaceChildren();
   resetLayout(layout);
-  appendBlocks(blocks, version, shifts, wiring, elements, layout);
+  return appendBlocks(blocks, version, shifts, wiring, elements, layout, budget);
 }
 
 function removeElement(element: HTMLDivElement, layout: BlockLayout): void {
@@ -253,7 +254,18 @@ function applyBlocks(
     // Replaced blocks are rendered from the current document, so no old shift
     // can apply to them.
     shifts.length = 0;
-    replaceBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
+    // The first screen is budgeted like a fill: sanitizing a block costs most
+    // while the sanitizer is still cold, so a slow machine can spend over
+    // 100 ms on a dozen blocks in one task.
+    appliedBlockCount = replaceBlocks(
+      result.blocks,
+      result.version,
+      shifts,
+      wiring,
+      elements,
+      layout,
+      appendBudget,
+    );
   } else if (result.mode === "append") {
     appliedBlockCount = appendBlocks(
       result.blocks,
@@ -278,7 +290,7 @@ function applyBlocks(
       layout,
     );
   }
-  const appliedCompleteResult = result.mode !== "append" ||
+  const appliedCompleteResult = result.mode === "patch" ||
     appliedBlockCount === result.blocks.length;
   wiring.preview.dataset["renderComplete"] = String(
     result.complete && appliedCompleteResult,
@@ -359,6 +371,9 @@ export function wireRenderWorker(
   let shown: { docId: string; epoch: number; version: number } | null = null;
   let pendingAppend: {
     response: RenderResult & { ok: true; mode: "append" };
+    // A first-screen remainder continues a replace; only worker fills are
+    // acknowledged with fill-ready.
+    requestFill: boolean;
     frame: number;
     timer: number;
   } | null = null;
@@ -446,7 +461,7 @@ export function wireRenderWorker(
       scheduleQueuedResponse();
       return;
     }
-    const applied = applyAccepted(pending.response, true);
+    const applied = applyAccepted(pending.response, pending.requestFill);
     if (!applied.accepted) {
       scheduleQueuedResponse();
       return;
@@ -459,7 +474,12 @@ export function wireRenderWorker(
       ...pending.response,
       blocks: pending.response.blocks.slice(applied.appliedBlockCount),
     };
-    const nextPending = { response: remainder, frame: 0, timer: 0 };
+    const nextPending = {
+      response: remainder,
+      requestFill: pending.requestFill,
+      frame: 0,
+      timer: 0,
+    };
     pendingAppend = nextPending;
     deferAppend(nextPending, false);
   };
@@ -495,6 +515,7 @@ export function wireRenderWorker(
       };
       const pending = {
         response: remainder,
+        requestFill: true,
         frame: 0,
         timer: 0,
       };
@@ -502,7 +523,24 @@ export function wireRenderWorker(
       deferAppend(pending, response.blocks.length > APPEND_FRAME_BLOCK_THRESHOLD);
       return;
     }
-    applyAccepted(response, true);
+    const applied = applyAccepted(response, true);
+    if (applied.accepted && response.ok && response.mode === "replace" &&
+      applied.appliedBlockCount < response.blocks.length) {
+      const pending = {
+        response: {
+          ...response,
+          mode: "append" as const,
+          blocks: response.blocks.slice(applied.appliedBlockCount),
+          // Never sent: requestFill is false for a replace remainder.
+          fillToken: -1,
+        },
+        requestFill: false,
+        frame: 0,
+        timer: 0,
+      };
+      pendingAppend = pending;
+      deferAppend(pending, false);
+    }
   }
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
