@@ -347,6 +347,10 @@ describe("progressive large-document rendering", () => {
     ).join("\n");
   }
 
+  it("AC-PERF-11: the render batch byte budget stays at 256 KiB", () => {
+    expect(RENDER_BATCH_BYTE_LIMIT).toBe(256 * 1024);
+  });
+
   it("AC-PERF-11: many small chunks keep each render batch within its byte limit", () => {
     const text = Array.from(
       { length: 40 },
