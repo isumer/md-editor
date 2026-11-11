@@ -1,4 +1,4 @@
-import type { MessageKey } from "../../shared/messages/en";
+import type { MessageKey } from "./messages";
 import { evaluateWhen, type ContextKeyService } from "./contextKeys";
 
 export type CommandTarget = string | undefined;

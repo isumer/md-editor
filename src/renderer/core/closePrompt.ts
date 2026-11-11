@@ -1,4 +1,4 @@
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "./messages";
 
 export type CloseAnswer = "cancel" | "discard" | "save";
 export type CloseResolution = "cancel" | "close" | "save";
