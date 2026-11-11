@@ -5,8 +5,8 @@ export interface Settings {
   version: 1;
   theme: Theme;
   fontSize: number;
-  preview: { scrollSync: boolean };
-  editor: { wrap: boolean; tabSize: number };
+  preview: { scrollSync: boolean; background: string | null };
+  editor: { wrap: boolean; tabSize: number; background: string | null };
   encoding: { default: 'utf-8'; lineEndings: LineEndingSetting };
   ignore: string[];
   [key: string]: unknown;
@@ -19,8 +19,8 @@ function createDefaultSettings(): Settings {
     version: 1,
     theme: 'system',
     fontSize: 14,
-    preview: { scrollSync: true },
-    editor: { wrap: true, tabSize: 2 },
+    preview: { scrollSync: true, background: null },
+    editor: { wrap: true, tabSize: 2, background: null },
     encoding: { default: 'utf-8', lineEndings: 'lf' },
     ignore: [...DEFAULT_IGNORE],
   };
@@ -48,23 +48,25 @@ function normalizeLineEndings(value: unknown): LineEndingSetting {
   return 'lf';
 }
 
-function normalizePreview(value: unknown): { scrollSync: boolean } {
+function normalizePreview(value: unknown): { scrollSync: boolean; background: string | null } {
   if (!isRecord(value)) {
-    return { scrollSync: true };
+    return { scrollSync: true, background: null };
   }
 
   return {
     scrollSync:
       typeof value['scrollSync'] === 'boolean' ? value['scrollSync'] : true,
+    background:
+      typeof value['background'] === 'string' ? value['background'] : null,
   };
 }
 
 function normalizeEditor(
   value: unknown,
   migrate: boolean,
-): { wrap: boolean; tabSize: number } {
+): { wrap: boolean; tabSize: number; background: string | null } {
   if (!isRecord(value)) {
-    return { wrap: true, tabSize: 2 };
+    return { wrap: true, tabSize: 2, background: null };
   }
 
   const tabSize =
@@ -75,6 +77,8 @@ function normalizeEditor(
   return {
     wrap: typeof value['wrap'] === 'boolean' ? value['wrap'] : true,
     tabSize: typeof tabSize === 'number' ? tabSize : 2,
+    background:
+      typeof value['background'] === 'string' ? value['background'] : null,
   };
 }
 

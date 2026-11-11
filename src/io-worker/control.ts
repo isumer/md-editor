@@ -2,17 +2,22 @@ import {
   controlRequestId,
   isIoControlRequest,
   type ReadSessionRequest,
+  type ReadSettingsRequest,
   type RegisterGrantReply,
   type ResolveAssetReply,
+  type SettingsReadReply,
+  type SettingsWriteReply,
   type SessionReadReply,
   type SessionWriteReply,
   type WriteSessionRequest,
+  type WriteSettingsRequest,
 } from "../shared/ipc/ioControl";
 import { serviceError, toServiceError } from "../shared/ipc/result";
 import type { IoGrantTable } from "./grants";
 import { IoPortRegistry, type IoWorkerPort } from "./port";
 import type { IoFileService } from "./services/file";
 import { SessionStore } from "./services/session";
+import { SettingsStore } from "./services/settings";
 
 export interface IoParentPort {
   on(
@@ -30,6 +35,7 @@ export class IoControlHandler {
     private readonly grants: IoGrantTable,
     private readonly files: IoFileService,
     private readonly sessions: SessionStore = new SessionStore(),
+    private readonly settings: SettingsStore = new SettingsStore(),
   ) {
     this.ports = new IoPortRegistry(files);
   }
@@ -62,6 +68,10 @@ export class IoControlHandler {
       void this.readSession(data);
     } else if (data.type === "writeSession") {
       void this.writeSession(data);
+    } else if (data.type === "readSettings") {
+      void this.readSettings(data);
+    } else if (data.type === "writeSettings") {
+      void this.writeSettings(data);
     } else if (data.type === "revokeGrant") {
       this.grants.revoke(data.windowId, data.handle);
     } else if (data.type === "revokeWindow") {
@@ -149,6 +159,36 @@ export class IoControlHandler {
         id: request.id,
         result: { ok: false, error: toServiceError(error) },
       } satisfies SessionWriteReply);
+    }
+  }
+
+  private async readSettings(request: ReadSettingsRequest): Promise<void> {
+    try {
+      const value = await this.settings.read(request.path);
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value },
+      } satisfies SettingsReadReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies SettingsReadReply);
+    }
+  }
+
+  private async writeSettings(request: WriteSettingsRequest): Promise<void> {
+    try {
+      await this.settings.write(request.path, request.settings);
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value: {} },
+      } satisfies SettingsWriteReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies SettingsWriteReply);
     }
   }
 }
