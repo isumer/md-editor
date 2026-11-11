@@ -1,5 +1,3 @@
-import type { Settings } from "../settings/settings";
-
 export const SETTINGS_CHANNELS = {
   read: "settings:read",
   write: "settings:write",
@@ -7,7 +5,16 @@ export const SETTINGS_CHANNELS = {
 
 export interface SettingsReadRequest {}
 
-export type SettingsReadResponse = Settings;
+export interface SettingsReadResponse {
+  version: 1;
+  theme: "light" | "dark" | "system";
+  fontSize: number;
+  preview: { scrollSync: boolean; background: string | null };
+  editor: { wrap: boolean; tabSize: number; background: string | null };
+  encoding: { default: "utf-8"; lineEndings: "lf" | "crlf" | "cr" };
+  ignore: string[];
+  [key: string]: unknown;
+}
 export type SettingsWriteRequest = Record<string, unknown>;
 export type SettingsWriteResponse = void;
 
