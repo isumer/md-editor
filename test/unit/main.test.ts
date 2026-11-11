@@ -158,6 +158,7 @@ const electron = vi.hoisted(() => {
   }
 
   const app = {
+    getAppPath: vi.fn(() => "/application"),
     getName: vi.fn(() => "SolidMD"),
     getPath: vi.fn(() => "/profiles/default"),
     isPackaged: false,
@@ -272,6 +273,7 @@ vi.mock("node:fs", () => ({
 
 const originalArgv = process.argv;
 const originalAppImage = process.env.APPIMAGE;
+const originalResourcesPath = process.resourcesPath;
 let addedProcessListeners: Array<{ event: "uncaughtException" | "unhandledRejection"; listener: (...args: any[]) => void }> = [];
 
 async function loadMain() {
@@ -358,10 +360,18 @@ beforeEach(() => {
   fileSystem.unlink.mockResolvedValue(undefined);
   electron.shell.openExternal.mockResolvedValue(undefined);
   process.argv = ["electron", "."];
+  Object.defineProperty(process, "resourcesPath", {
+    configurable: true,
+    value: "/application/resources",
+  });
 });
 
 afterEach(() => {
   process.argv = originalArgv;
+  Object.defineProperty(process, "resourcesPath", {
+    configurable: true,
+    value: originalResourcesPath,
+  });
   if (originalAppImage === undefined) {
     delete process.env.APPIMAGE;
   } else {
@@ -375,6 +385,44 @@ afterEach(() => {
 });
 
 describe("main process", () => {
+  it.each(["linux", "win32"] as const)(
+    "main window uses the packaged icon on %s",
+    async (platform) => {
+      electron.app.isPackaged = true;
+
+      await withPlatform(platform, async () => {
+        await loadMain();
+        await readyApplication();
+      });
+
+      expect(electron.BrowserWindowMock.instances[0]?.options).toMatchObject({
+        icon: path.join(process.resourcesPath, "window-icon.png"),
+      });
+    },
+  );
+
+  it("main window uses the repository icon outside a package on linux", async () => {
+    await withPlatform("linux", async () => {
+      await loadMain();
+      await readyApplication();
+    });
+
+    expect(electron.BrowserWindowMock.instances[0]?.options).toMatchObject({
+      icon: path.join("/application", "build", "icons", "512x512.png"),
+    });
+  });
+
+  it("main window keeps the bundle icon on macOS", async () => {
+    electron.app.isPackaged = true;
+
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+    });
+
+    expect(electron.BrowserWindowMock.instances[0]?.options).not.toHaveProperty("icon");
+  });
+
   it("AC-R5-01: starts without an open-with file", async () => {
     await loadMain();
     await readyApplication();
