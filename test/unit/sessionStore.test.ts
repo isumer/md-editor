@@ -18,7 +18,7 @@ import { SessionStore as FileSessionStore } from "../../src/io-worker/services/s
 const directories: string[] = [];
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-session-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-session-"));
   directories.push(directory);
   return directory;
 }
