@@ -18,7 +18,7 @@ AC-R7-01 and AC-R7-02 remain planned.
 
 R08 owns their settings dialog and theme controls.
 
-No changed file is outside the allowed list.
+One branch file is outside the allowed list: `src/renderer/editor/editor.ts`.
 
 ## Red and mutation evidence
 
@@ -129,3 +129,53 @@ The final source removes one uncovered branch from the 97.21% report.
 The expected final branch value is 97.24%.
 
 No coverage threshold or baseline changed.
+
+## Owner rerun
+
+The owner rerun used the merged candidate at `76fbf6c`.
+
+`/opt/pipeline/locked-npm run typecheck`
+
+Result: passed.
+
+`/opt/pipeline/locked-npm run check:deps`
+
+Result: passed with 153 modules and 333 dependencies.
+
+`/opt/pipeline/locked-npm run test:unit`
+
+Result: passed 1,169 tests in 114 files.
+
+Coverage measured 99.07% statements and 97.28% branches.
+
+Coverage measured 99.23% functions and 99.21% lines.
+
+`/opt/pipeline/locked-npm run check:coverage`
+
+Result: passed all four ratchets.
+
+`/opt/pipeline/locked-npm run build`
+
+Result: passed.
+
+`/opt/pipeline/locked-npm exec -- node scripts/run-e2e.cjs --grep-invert @AC-PERF test/e2e/settings.spec.ts test/e2e/editor.spec.ts test/e2e/ipc-contracts.spec.ts`
+
+Result: 30 tests passed and one test failed.
+
+AC-R7-03, AC-R7-04, and the failed-settings startup row passed.
+
+The AC-SEC-11 allowlist lacks `loadSettings` and `saveSettings`.
+
+The correct fix requires `test/e2e/ipc-contracts.spec.ts`.
+
+The allowed-files list excludes that file.
+
+Hiding the methods would weaken the security test and violate ADR-0007.
+
+`/opt/pipeline/locked-npm run check:acceptance`
+
+AC-R7-03 and AC-R7-04 passed.
+
+The command stayed red because the targeted e2e report omits unrelated implemented criteria.
+
+No AC-PERF test ran.
