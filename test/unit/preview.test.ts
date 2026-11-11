@@ -516,6 +516,32 @@ describe("preview render flow", () => {
     clearMarks.mockRestore();
   });
 
+  it("AC-PERF-10: samples one append timing in every 64 batches", () => {
+    const clearMeasures = vi.spyOn(performance, "clearMeasures");
+    const measure = vi.spyOn(performance, "measure");
+    for (let index = 0; index < 128; index += 1) {
+      const { worker } = wiring();
+      send(worker, {
+        id: 1,
+        docId: "doc",
+        epoch: 1,
+        version: 1,
+        ok: true,
+        mode: "append",
+        blocks: [{ id: `b${String(index)}`, startLine: 0, endLine: 1, html: "<p>one</p>" }],
+        fillToken: 4,
+        complete: false,
+      });
+    }
+
+    expect(clearMeasures).toHaveBeenCalledTimes(2);
+    expect(clearMeasures).toHaveBeenCalledWith("preview-append");
+    expect(measure).toHaveBeenCalledTimes(2);
+    expect(measure).toHaveBeenCalledWith("preview-append", expect.any(Object));
+    clearMeasures.mockRestore();
+    measure.mockRestore();
+  });
+
   it("AC-PERF-10: unchanged split completion state mutates the host once", async () => {
     vi.useFakeTimers();
     const preview = document.createElement("div");
@@ -608,6 +634,11 @@ describe("preview render flow", () => {
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
       .toEqual([100, 1]);
+    expect(sections.map((section) => section.querySelectorAll(".preview-page").length))
+      .toEqual([2, 1]);
+    expect([...sections[0]?.querySelectorAll(".preview-page") ?? []]
+      .map((page) => page.querySelectorAll(".preview-block").length))
+      .toEqual([50, 50]);
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

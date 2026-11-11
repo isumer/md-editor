@@ -45,9 +45,13 @@ const BLOCK_CLASS = "preview-block";
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
-const PAGE_BLOCK_LIMIT = 10;
-const SECTION_PAGE_LIMIT = 10;
+// Fifty-block pages reduce scroll intersection targets while two pages keep
+// each visible section at the proven 100-block layout bound.
+const PAGE_BLOCK_LIMIT = 50;
+const SECTION_PAGE_LIMIT = 2;
 const APPEND_TASK_BUDGET_MS = 4;
+const APPEND_MEASURE_INTERVAL = 64;
+let appendMeasureCount = 0;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
@@ -131,7 +135,11 @@ function appendBlocks(
       break;
     }
   }
-  performance.measure("preview-append", { start, end: performance.now() });
+  if (appendMeasureCount === 0) {
+    performance.clearMeasures("preview-append");
+    performance.measure("preview-append", { start, end: performance.now() });
+  }
+  appendMeasureCount = (appendMeasureCount + 1) % APPEND_MEASURE_INTERVAL;
   return appendedBlockCount;
 }
 
