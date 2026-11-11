@@ -186,6 +186,56 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
+  it("AC-R4-01: switching during a paced first screen keeps every cached block", () => {
+    vi.useFakeTimers();
+    let currentTime = 0;
+    const version = { docId: "alpha", epoch: 1, version: 1 };
+    const { worker, preview, documents } = wiring({
+      version,
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 4;
+        return html;
+      },
+    });
+    send(worker, {
+      id: 1,
+      docId: "alpha",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "a1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        { id: "a2", startLine: 1, endLine: 2, html: "<p>two</p>" },
+        { id: "a3", startLine: 2, endLine: 3, html: "<p>three</p>" },
+      ],
+      complete: true,
+    });
+    const first = blocks(preview)[0];
+    version.docId = "beta";
+
+    send(worker, {
+      id: 2,
+      docId: "beta",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>beta</p>" }],
+      complete: true,
+    });
+    vi.runAllTimers();
+    version.docId = "alpha";
+    documents.show(version);
+
+    const restored = blocks(preview);
+    expect(restored.map((block) => block.dataset["blockId"]))
+      .toEqual(["a1", "a2", "a3"]);
+    expect(restored[0]?.isSameNode(first ?? null)).toBe(true);
+    vi.useRealTimers();
+  });
+
   it("AC-PERF-10: a large preview keeps the time budget and acknowledges once", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];

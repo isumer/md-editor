@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { BrowserWindow, protocol, type WebContents } from "electron";
+import { app, BrowserWindow, protocol, type WebContents } from "electron";
 
 export interface PdfMargins {
   top: number;
@@ -138,6 +138,14 @@ export async function createPdfBytes(value: unknown): Promise<Uint8Array> {
   });
   denyNavigation(window.webContents);
   documents.set(documentId, secureHtml(value.html));
+  let destroyed = false;
+  const destroyWindow = (): void => {
+    if (!destroyed) {
+      destroyed = true;
+      window.destroy();
+    }
+  };
+  app.once("before-quit", destroyWindow);
   try {
     await window.loadURL(`${DOCUMENT_SCHEME}://${DOCUMENT_HOST}/${documentId}`);
     const bytes = await window.webContents.printToPDF({
@@ -148,7 +156,8 @@ export async function createPdfBytes(value: unknown): Promise<Uint8Array> {
     });
     return new Uint8Array(bytes);
   } finally {
+    app.removeListener("before-quit", destroyWindow);
     documents.delete(documentId);
-    window.destroy();
+    destroyWindow();
   }
 }

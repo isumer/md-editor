@@ -412,6 +412,7 @@ export function wireRenderWorker(
   const applyAccepted = (
     response: RenderResult,
     requestFill: boolean,
+    display: boolean = true,
   ): AppliedRenderResult => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
@@ -429,7 +430,9 @@ export function wireRenderWorker(
     performance.mark("preview-apply-end");
     if (applied.accepted && response.ok) {
       documentPreview.version = response.version;
-      previews.display(documentPreview);
+      if (display) {
+        previews.display(documentPreview);
+      }
       shown = {
         docId: response.docId,
         epoch: response.epoch,
@@ -458,10 +461,14 @@ export function wireRenderWorker(
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
       pending.response.epoch !== current.epoch) {
-      scheduleQueuedResponse();
-      return;
+      if (pending.requestFill) {
+        scheduleQueuedResponse();
+        return;
+      }
     }
-    const applied = applyAccepted(pending.response, pending.requestFill);
+    const display = pending.response.docId === current.docId &&
+      pending.response.epoch === current.epoch;
+    const applied = applyAccepted(pending.response, pending.requestFill, display);
     if (!applied.accepted) {
       scheduleQueuedResponse();
       return;
