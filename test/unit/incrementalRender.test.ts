@@ -8,11 +8,22 @@ import {
   shiftChunkDataLines,
   splitChunks,
 } from "../../src/renderer/workers/render/chunks";
-import { IncrementalRenderState } from "../../src/renderer/workers/render/incremental";
+import {
+  IncrementalRenderState,
+  RENDER_BATCH_BYTE_LIMIT,
+} from "../../src/renderer/workers/render/incremental";
 import { RenderWorkerHandler } from "../../src/renderer/workers/render/handler";
 
 function textFrom(source: string): Text {
   return Text.of(source.split("\n"));
+}
+
+function renderedBytes(blocks: readonly { html: string }[]): number {
+  const encoder = new TextEncoder();
+  return blocks.reduce(
+    (total, block) => total + encoder.encode(block.html).byteLength,
+    0,
+  );
 }
 
 function changeJson(
@@ -335,6 +346,146 @@ describe("progressive large-document rendering", () => {
       (_, index) => `paragraph ${String(index)} ${"x".repeat(20_000)}\n`,
     ).join("\n");
   }
+
+  it("AC-PERF-11: many small chunks keep each render batch within its byte limit", () => {
+    const text = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => "😀".repeat(20 * 1024),
+    );
+
+    const initial = state.initial();
+    const fill = state.fill();
+
+    expect(initial.blocks.length).toBeGreaterThan(1);
+    expect(renderedBytes(initial.blocks)).toBeLessThanOrEqual(
+      RENDER_BATCH_BYTE_LIMIT,
+    );
+    expect(fill.blocks.length).toBeGreaterThan(1);
+    expect(renderedBytes(fill.blocks)).toBeLessThanOrEqual(
+      RENDER_BATCH_BYTE_LIMIT,
+    );
+  });
+
+  it("AC-PERF-11: reuses an over-budget lookahead in the next batch", () => {
+    const text = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let renders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => {
+        renders += 1;
+        return "😀".repeat(20 * 1024);
+      },
+    );
+
+    const initial = state.initial();
+    const fill = state.fill();
+
+    expect(renders).toBe(initial.blocks.length + fill.blocks.length + 1);
+  });
+
+  it("AC-PERF-11: a reference change discards an over-budget lookahead", () => {
+    const text = [
+      "[target]: /old",
+      "[first][target]",
+      "[second][target]",
+      "[third][target]",
+    ].join("\n\n");
+    let thirdRenders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      (source, environment) => {
+        if (!source.includes("][target]")) {
+          return source;
+        }
+        if (source.includes("third")) {
+          thirdRenders += 1;
+        }
+        const href = environment?.references?.["TARGET"]?.href ?? "missing";
+        return `${href}:${"x".repeat(100 * 1024)}`;
+      },
+    );
+    const document = textFrom(text);
+    const initial = state.initial();
+    const href = document.toString().indexOf("old");
+    const { changes, after } = changeJson(document, href, "new", href + 3);
+
+    state.applyChange(document, after, 0, 1, changes);
+    const patch = state.patch();
+    const fill = state.fill();
+
+    expect(initial.blocks).toHaveLength(3);
+    expect(patch.blocks).toHaveLength(3);
+    expect(thirdRenders).toBe(2);
+    expect(fill.blocks[0]?.html).toContain("/new");
+  });
+
+  it("AC-PERF-11: one huge chunk is the only block in its fill batch", () => {
+    const prefix = Array.from(
+      { length: 12 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let afterRenders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(`${prefix}\n\nhuge\n\nafter`),
+      (source) => {
+        if (source.startsWith("huge")) {
+          return "x".repeat(RENDER_BATCH_BYTE_LIMIT + 1);
+        }
+        if (source.startsWith("after")) {
+          afterRenders += 1;
+        }
+        return source;
+      },
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.blocks).toHaveLength(1);
+    expect(renderedBytes(fill.blocks)).toBeGreaterThan(RENDER_BATCH_BYTE_LIMIT);
+    expect(afterRenders).toBe(0);
+  });
+
+  it("AC-PERF-11: one multibyte chunk larger than the byte limit is sent alone", () => {
+    const prefix = Array.from(
+      { length: 12 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(`${prefix}\n\nmultibyte\n\nafter`),
+      (source) => source.startsWith("multibyte")
+        ? "😀".repeat(100 * 1024)
+        : source,
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.blocks).toHaveLength(1);
+    expect(renderedBytes(fill.blocks)).toBeGreaterThan(RENDER_BATCH_BYTE_LIMIT);
+  });
 
   it("AC-PERF-11: publishes the first screen, then appends the rest in the background", async () => {
     vi.useFakeTimers();
