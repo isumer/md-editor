@@ -147,7 +147,7 @@ The current evidence does not distinguish these candidates for both failures.
 
 ## Proposed next step
 
-Capture Chromium content tracing only when the JavaScript probe observes a frame above 32 ms.
+Start Chromium content tracing before each fling and retain it only when the JavaScript probe observes a frame above 32 ms.
 
 The trace must include renderer, compositor, GPU, scheduler, and host scheduling events.
 
@@ -165,11 +165,11 @@ If a failure shows idle renderer threads, report runner or xvfb scheduling to th
 
 `npm run check:deps` passed with 147 modules and 312 dependencies.
 
-`npm run test:unit` passed 1,132 tests in 110 files.
+`npm run test:unit` passed 1,140 tests in 111 files.
 
 Statement coverage was 99.05 percent.
 
-Branch coverage was 97.28 percent.
+Branch coverage was 97.29 percent.
 
 Function coverage was 99.21 percent.
 
