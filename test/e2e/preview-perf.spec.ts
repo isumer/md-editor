@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type CDPSession, type Page } from "@playwright/test";
 
 import {
   closeEditor,
@@ -13,6 +13,12 @@ import {
   launchEditor,
   stubOpenDialog,
 } from "./helpers";
+import {
+  runPerfTrace,
+  startPerfTrace,
+  startPerfTraceWithSession,
+  summarizePerfTrace,
+} from "./perf-trace";
 
 const run = promisify(execFile);
 const SAMPLES = 30;
@@ -62,6 +68,136 @@ function report(label: string, values: readonly number[]): void {
   );
   console.log(`${label} distribution: ${distribution(values)}`);
 }
+
+function syntheticTraceEvents(): Record<string, string | number>[] {
+  const complete = (name: string, ts: number, dur: number, cat = "") =>
+    ({ name, ts, dur, cat, ph: "X", pid: 1, tid: 2 });
+  return [
+    complete("perf-diagnostic-window-start", 100_000, 0),
+    complete("RunTask", 120_000, 80_000),
+    complete("RunTask", 250_000, 120_000),
+    complete("RunTask", 400_000, 60_000),
+    complete("RunTask", 480_000, 55_000),
+    complete("V8.GCScavenger", 240_000, 30_000, "v8.gc"),
+    complete("V8.GCCompactor", 260_000, 20_000, "v8.gc"),
+    complete("FunctionCall", 260_000, 40_000),
+    complete("EvaluateScript", 280_000, 30_000),
+    complete("UpdateLayoutTree", 320_000, 20_000),
+    complete("RecalculateStyles", 335_000, 20_000),
+    complete("Layout", 350_000, 30_000),
+    complete("Paint", 245_000, 20_000),
+    complete("perf-diagnostic-window-end", 600_000, 0),
+  ];
+}
+
+test("trace summary reports the exact three longest tasks", () => {
+  expect(summarizePerfTrace("synthetic", syntheticTraceEvents())).toBe(
+    "synthetic trace: longtasks=[start=150.0ms duration=120.0ms gc=30.0ms " +
+    "script=50.0ms style=35.0ms layout=20.0ms paint=15.0ms; " +
+    "start=20.0ms duration=80.0ms gc=0.0ms script=0.0ms style=0.0ms " +
+    "layout=0.0ms paint=0.0ms; start=300.0ms duration=60.0ms gc=0.0ms " +
+    "script=0.0ms style=0.0ms layout=0.0ms paint=0.0ms]",
+  );
+});
+
+interface FakeTraceSession {
+  emit(events: readonly unknown[]): void;
+  mark(name: string): Promise<number>;
+  session: CDPSession;
+  starts: unknown[];
+}
+
+function fakeTraceSession(): FakeTraceSession {
+  let completeListener: ((payload: { stream: string }) => void) | undefined;
+  let dataListener: ((payload: { value: unknown[] }) => void) | undefined;
+  let timestamp = 100_000;
+  const starts: unknown[] = [];
+  const fake = {
+    detach: async () => undefined,
+    on: (_event: string, listener: (payload: { value: unknown[] }) => void) => {
+      dataListener = listener;
+      return fake;
+    },
+    once: (_event: string, listener: (payload: { stream: string }) => void) => {
+      completeListener = listener;
+      return fake;
+    },
+    send: async (method: string, parameters?: unknown) => {
+      if (method === "Tracing.start") starts.push(parameters);
+      if (method === "Tracing.end") completeListener?.({ stream: "trace-stream" });
+      return {};
+    },
+  };
+  const emit = (events: readonly unknown[]): void => {
+    dataListener?.({ value: [...events] });
+  };
+  return {
+    emit,
+    mark: async (name) => {
+      emit([{ name, ts: timestamp, dur: 0, cat: "blink.user_timing",
+        ph: "X", pid: 1, tid: 2 }]);
+      timestamp += 100_000;
+      return timestamp / 1_000;
+    },
+    session: fake as unknown as CDPSession,
+    starts,
+  };
+}
+
+test("trace starts CDP with the required categories and collects events", async () => {
+  const source = fakeTraceSession();
+  const trace = await startPerfTraceWithSession(source.session, source.mark);
+  await trace.markStart();
+  source.emit([{ name: "RunTask", ts: 120_000, dur: 60_000, cat: "toplevel",
+    ph: "X", pid: 1, tid: 2 }]);
+  const result = await trace.stop();
+
+  expect(source.starts).toEqual([{
+    categories: "devtools.timeline,disabled-by-default-devtools.timeline," +
+      "v8,v8.gc,blink.user_timing",
+    options: "record-until-full",
+    transferMode: "ReportEvents",
+  }]);
+  expect(result.summary("captured")).toContain("duration=60.0ms");
+});
+
+test("a failed traced window writes its trace events", async ({}, testInfo) => {
+  const source = fakeTraceSession();
+  const trace = await startPerfTraceWithSession(source.session, source.mark);
+  const failurePath = testInfo.outputPath("failed-trace.json");
+  await trace.markStart();
+
+  await expect(runPerfTrace(trace, "failed", failurePath, async () => {
+    source.emit([{ name: "RunTask", ts: 120_000, dur: 60_000, cat: "toplevel",
+      ph: "X", pid: 1, tid: 2 }]);
+    throw new Error("forced failure");
+  })).rejects.toThrow("forced failure");
+
+  const saved: unknown = JSON.parse(await fs.readFile(failurePath, "utf8"));
+  expect(saved).toEqual({ traceEvents: expect.arrayContaining([
+    expect.objectContaining({ name: "RunTask" }),
+  ]) });
+  await fs.rm(failurePath);
+});
+
+test("a successful traced window does not write a failure trace", async ({}, testInfo) => {
+  const source = fakeTraceSession();
+  const trace = await startPerfTraceWithSession(source.session, source.mark);
+  const failurePath = testInfo.outputPath("successful-trace.json");
+  const summaries: string[] = [];
+  const originalLog = console.log;
+  await trace.markStart();
+
+  console.log = (...values: unknown[]) => summaries.push(values.map(String).join(" "));
+  try {
+    await runPerfTrace(trace, "successful", failurePath, async () => undefined);
+  } finally {
+    console.log = originalLog;
+  }
+
+  await expect(fs.access(failurePath)).rejects.toThrow();
+  expect(summaries).toEqual(["successful trace: longtasks=[]"]);
+});
 
 async function openPreview(
   page: Page,
@@ -215,47 +351,56 @@ async function openLargeThroughMenu(
 test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 100 ms", {
   tag: "@AC-PERF-10",
   annotation: { type: "AC-PERF-10" },
-}, async () => {
+}, async ({}, testInfo) => {
   const firstLine = (await fs.readFile(large20, "utf8")).split("\n")[0] ?? "";
   const { application, page } = await launchEditor();
   try {
     await installLongTaskProbe(page);
     await page.reload();
     await expect(page.getByTestId("editor").locator(".cm-content")).toBeVisible();
-    await openLargeThroughMenu(application, page, large20);
-    await expect(page.getByTestId("editor").locator(".cm-content")).toContainText(
-      firstLine,
-      { timeout: 30_000 },
+    const trace = await startPerfTrace(page);
+    await runPerfTrace(
+      trace,
+      "AC-PERF-10 open",
+      testInfo.outputPath("ac-perf-10-trace.json"),
+      async (finish) => {
+        await openLargeThroughMenu(application, page, large20);
+        await expect(page.getByTestId("editor").locator(".cm-content")).toContainText(
+          firstLine,
+          { timeout: 30_000 },
+        );
+        const shownAt = await trace.markStart();
+        await expect(page.getByTestId("preview").locator("h1").first()).toHaveText(
+          firstLine.replace(/^#+\s*/u, ""),
+          { timeout: 30_000 },
+        );
+        // Observe the fill pass for a bounded performance window.
+        await page.waitForTimeout(5_000);
+        const probe = await page.evaluate(() => {
+          const scope = window as unknown as { __longTaskProbe?: LongTaskProbe };
+          return {
+            longtasks: scope.__longTaskProbe?.longtasks ?? [],
+            marks: scope.__longTaskProbe?.marks ?? [],
+            frames: scope.__longTaskProbe?.frames ?? [],
+            blocks: document.querySelectorAll("#preview .preview-block").length,
+          };
+        });
+        await finish();
+        const afterOpen = probe.longtasks
+          .filter((entry) => entry.start >= shownAt);
+        const diagnostics = openTaskDiagnostics(afterOpen, probe.marks, probe.frames);
+        console.log(
+          `AC-PERF-10 open longtasks: n=${String(afterOpen.length)} ` +
+          `max=${Math.max(...afterOpen.map((entry) => entry.duration), 0).toFixed(1)} ms ` +
+          `blocks=${String(probe.blocks)} ${diagnostics}`,
+        );
+        expect(probe.blocks).toBeGreaterThan(1);
+        expect(
+          afterOpen.filter((entry) => entry.duration >= 100),
+          `AC-PERF-10 open task failed. ${diagnostics}`,
+        ).toEqual([]);
+      },
     );
-    const shownAt = await page.evaluate(() => performance.now());
-    await expect(page.getByTestId("preview").locator("h1").first()).toHaveText(
-      firstLine.replace(/^#+\s*/u, ""),
-      { timeout: 30_000 },
-    );
-    // Observe the fill pass for a bounded performance window.
-    await page.waitForTimeout(5_000);
-    const probe = await page.evaluate(() => {
-      const scope = window as unknown as { __longTaskProbe?: LongTaskProbe };
-      return {
-        longtasks: scope.__longTaskProbe?.longtasks ?? [],
-        marks: scope.__longTaskProbe?.marks ?? [],
-        frames: scope.__longTaskProbe?.frames ?? [],
-        blocks: document.querySelectorAll("#preview .preview-block").length,
-      };
-    });
-    const afterOpen = probe.longtasks
-      .filter((entry) => entry.start >= shownAt);
-    const diagnostics = openTaskDiagnostics(afterOpen, probe.marks, probe.frames);
-    console.log(
-      `AC-PERF-10 open longtasks: n=${String(afterOpen.length)} ` +
-      `max=${Math.max(...afterOpen.map((entry) => entry.duration), 0).toFixed(1)} ms ` +
-      `blocks=${String(probe.blocks)}`,
-    );
-    expect(probe.blocks).toBeGreaterThan(1);
-    expect(
-      afterOpen.filter((entry) => entry.duration >= 100),
-      `AC-PERF-10 open task failed. ${diagnostics}`,
-    ).toEqual([]);
   } finally {
     await closeEditor(application, page);
   }
@@ -511,7 +656,7 @@ test("AC-PERF-09: fling-scrolling the 20 MB preview has no frame over 32 ms", {
 test("AC-PERF-11: a 20 MB document is editable and shows its first screen in time", {
   tag: "@AC-PERF-11",
   annotation: { type: "AC-PERF-11" },
-}, async () => {
+}, async ({}, testInfo) => {
   const firstLine = (await fs.readFile(large20, "utf8")).split("\n")[0] ?? "";
   const { application, page } = await launchEditor();
   try {
@@ -520,31 +665,43 @@ test("AC-PERF-11: a 20 MB document is editable and shows its first screen in tim
     await expect.poll(() => application.evaluate(({ Menu }) =>
       Boolean(Menu.getApplicationMenu()?.getMenuItemById("file-open"))),
     { timeout: 5_000 }).toBe(true);
-    // The clock starts at the open request, not at launch.
-    const started = Date.now();
-    const clicked = await application.evaluate(({ Menu }) => {
-      const item = Menu.getApplicationMenu()?.getMenuItemById("file-open");
-      if (!item) {
-        return false;
-      }
-      item.click();
-      return true;
-    });
-    expect(clicked).toBe(true);
-    const editor = page.getByTestId("editor").locator(".cm-content");
-    await expect(editor).toContainText(firstLine, { timeout: 10_000 });
-    const editableAfter = Date.now() - started;
-    await expect(page.getByTestId("preview").locator("h1").first()).toHaveText(
-      firstLine.replace(/^#+\s*/u, ""),
-      { timeout: 10_000 },
+    const trace = await startPerfTrace(page);
+    let editableAfter = 0;
+    let previewAfter = 0;
+    await runPerfTrace(
+      trace,
+      "AC-PERF-11",
+      testInfo.outputPath("ac-perf-11-trace.json"),
+      async (finish) => {
+        // The clock starts at the open request, not at launch.
+        await trace.markStart();
+        const started = Date.now();
+        const clicked = await application.evaluate(({ Menu }) => {
+          const item = Menu.getApplicationMenu()?.getMenuItemById("file-open");
+          if (!item) {
+            return false;
+          }
+          item.click();
+          return true;
+        });
+        expect(clicked).toBe(true);
+        const editor = page.getByTestId("editor").locator(".cm-content");
+        await expect(editor).toContainText(firstLine, { timeout: 10_000 });
+        editableAfter = Date.now() - started;
+        await expect(page.getByTestId("preview").locator("h1").first()).toHaveText(
+          firstLine.replace(/^#+\s*/u, ""),
+          { timeout: 10_000 },
+        );
+        previewAfter = Date.now() - started;
+        await finish();
+        console.log(
+          `AC-PERF-11 20MB open: editable=${String(editableAfter)}ms ` +
+          `firstPreview=${String(previewAfter)}ms`,
+        );
+        expect(editableAfter).toBeLessThan(1_500);
+        expect(previewAfter).toBeLessThan(1_000);
+      },
     );
-    const previewAfter = Date.now() - started;
-    console.log(
-      `AC-PERF-11 20MB open: editable=${String(editableAfter)}ms ` +
-      `firstPreview=${String(previewAfter)}ms`,
-    );
-    expect(editableAfter).toBeLessThan(1_500);
-    expect(previewAfter).toBeLessThan(1_000);
   } finally {
     await closeEditor(application, page);
   }
