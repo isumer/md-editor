@@ -43,6 +43,7 @@ import {
   sendChanges,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
+import { DocumentCommands } from "./tabs/documentCommands";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
@@ -52,7 +53,6 @@ performance.mark("renderer-script-start");
 
 type CompareController = import("./features/compare/controller").CompareController;
 type MergeView = import("./features/merge/mergeView").MergeView;
-type DocumentCommands = import("./tabs/documentCommands").DocumentCommands;
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -254,7 +254,6 @@ function activateDocument(document: DocumentRecord): void {
   editor.focus();
   if (document.grant !== null) {
     performance.mark("editor-editable");
-    loadSecondaryFeatures();
   }
 }
 
@@ -397,6 +396,16 @@ new WorkspaceSidebar({
   openDocument: (reference) => lifecycle.openReference(reference),
   showStatus,
 });
+documentCommands = new DocumentCommands({
+  compare: openCompare,
+  editor,
+  onError: showUnexpectedError,
+  onResult: (result) => {
+    valueOrStatus(result);
+  },
+  open: () => lifecycle.open(),
+  save: (saveAs) => lifecycle.saveActive(saveAs),
+});
 
 function loadSecondaryFeatures(): void {
   if (secondaryFeaturesStarted) return;
@@ -404,22 +413,11 @@ function loadSecondaryFeatures(): void {
   void Promise.all([
     import("./features/merge/mergeView"),
     import("./features/merge/merge.css"),
-    import("./tabs/documentCommands"),
-  ]).then(([mergeModule, , commandsModule]) => {
+  ]).then(([mergeModule]) => {
     mergeView = new mergeModule.MergeView({ editorHost, preview, workspace, editor });
     for (const document of registry.all()) {
       detectMerge(document, document.state.doc.toString());
     }
-    documentCommands = new commandsModule.DocumentCommands({
-      compare: openCompare,
-      editor,
-      onError: showUnexpectedError,
-      onResult: (result) => {
-        valueOrStatus(result);
-      },
-      open: () => lifecycle.open(),
-      save: (saveAs) => lifecycle.saveActive(saveAs),
-    });
   }).catch(showUnexpectedError);
 }
 
