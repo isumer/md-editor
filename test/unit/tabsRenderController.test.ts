@@ -189,8 +189,9 @@ describe("render controller", () => {
       fillToken: 4,
       complete: true,
     } } as unknown as MessageEvent<RenderResponse>);
-    // Fill acknowledgements are paced to the next animation frame.
+    // Fill acknowledgements yield after the next frame so edits go first.
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(worker?.messages).toContainEqual({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });

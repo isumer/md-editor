@@ -92,6 +92,33 @@ const editorSetup = [
   ]),
 ];
 
+function plainTextRunEnd(text: string, start: number): number {
+  let end = start;
+  while (end < text.length) {
+    const code = text.charCodeAt(end);
+    const isDigit = code >= 48 && code <= 57;
+    const isLetter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (!isDigit && !isLetter) break;
+    end += 1;
+  }
+  return end;
+}
+
+// Plain word runs contain no Markdown delimiters, so parse them in one step.
+const markdownSupport = markdown({
+  extensions: {
+    parseInline: [{
+      name: "PlainTextRun",
+      before: "Escape",
+      parse: (context, _next, position) => {
+        const start = position - context.offset;
+        const end = plainTextRunEnd(context.text, start);
+        return end === start ? -1 : context.offset + end;
+      },
+    }],
+  },
+});
+
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
 
@@ -131,7 +158,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);
