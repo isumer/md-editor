@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { constants } from "node:fs";
 import path from "node:path";
+import { atomicWrite } from "../../node-shared/atomicWrite";
 import type { Result } from "../../shared/ipc/result";
 import { toServiceError } from "../../shared/ipc/result";
 
@@ -26,15 +27,7 @@ export class SettingsStore {
   async write(filePath: string, settings: unknown): Promise<void> {
     const dir = path.dirname(filePath);
     await fs.mkdir(dir, { recursive: true });
-    const tempPath = `${filePath}.tmp`;
     const content = `${JSON.stringify(settings, null, 2)}\n`;
-    const fd = await fs.open(tempPath, "w");
-    try {
-      await fd.writeFile(content, "utf8");
-      await fd.sync();
-    } finally {
-      await fd.close();
-    }
-    await fs.rename(tempPath, filePath);
+    await atomicWrite(filePath, content);
   }
 }

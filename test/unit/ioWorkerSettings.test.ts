@@ -1,37 +1,28 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
-import { constants } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { SettingsStore } from "../../src/io-worker/services/settings";
 
-const TEST_DIR = "/tmp/test-settings-store";
-
-async function cleanup() {
-  try {
-    await fs.rm(TEST_DIR, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
-}
+let testDirectory: string;
 
 describe("SettingsStore (io-worker)", () => {
   beforeEach(async () => {
-    await cleanup();
-    await fs.mkdir(TEST_DIR, { recursive: true });
+    testDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-settings-"));
   });
 
   afterEach(async () => {
-    await cleanup();
+    await fs.rm(testDirectory, { recursive: true, force: true });
   });
 
   it("returns empty object for non-existent file", async () => {
     const store = new SettingsStore();
-    const result = await store.read(path.join(TEST_DIR, "nonexistent.json"));
+    const result = await store.read(path.join(testDirectory, "nonexistent.json"));
     expect(result).toEqual({});
   });
 
   it("reads and parses valid JSON", async () => {
-    const filePath = path.join(TEST_DIR, "settings.json");
+    const filePath = path.join(testDirectory, "settings.json");
     await fs.writeFile(filePath, '{"theme": "dark", "fontSize": 16}', "utf8");
 
     const store = new SettingsStore();
@@ -41,7 +32,7 @@ describe("SettingsStore (io-worker)", () => {
   });
 
   it("throws on invalid JSON", async () => {
-    const filePath = path.join(TEST_DIR, "settings.json");
+    const filePath = path.join(testDirectory, "settings.json");
     await fs.writeFile(filePath, "invalid json", "utf8");
 
     const store = new SettingsStore();
@@ -49,7 +40,7 @@ describe("SettingsStore (io-worker)", () => {
   });
 
   it("writes settings atomically", async () => {
-    const filePath = path.join(TEST_DIR, "settings.json");
+    const filePath = path.join(testDirectory, "settings.json");
     const store = new SettingsStore();
 
     await store.write(filePath, { theme: "dark", fontSize: 16 });
@@ -59,7 +50,7 @@ describe("SettingsStore (io-worker)", () => {
   });
 
   it("creates parent directories", async () => {
-    const filePath = path.join(TEST_DIR, "nested", "settings.json");
+    const filePath = path.join(testDirectory, "nested", "settings.json");
     const store = new SettingsStore();
 
     await store.write(filePath, { theme: "dark" });
@@ -69,7 +60,7 @@ describe("SettingsStore (io-worker)", () => {
   });
 
   it("overwrites existing file", async () => {
-    const filePath = path.join(TEST_DIR, "settings.json");
+    const filePath = path.join(testDirectory, "settings.json");
     const store = new SettingsStore();
 
     await store.write(filePath, { theme: "light" });
@@ -77,5 +68,18 @@ describe("SettingsStore (io-worker)", () => {
 
     const content = await fs.readFile(filePath, "utf8");
     expect(JSON.parse(content)).toEqual({ theme: "dark" });
+  });
+
+  it("serializes concurrent writes without a temporary file collision", async () => {
+    const filePath = path.join(testDirectory, "settings.json");
+    const store = new SettingsStore();
+
+    await expect(Promise.all([
+      store.write(filePath, { sequence: 1 }),
+      store.write(filePath, { sequence: 2 }),
+    ])).resolves.toEqual([undefined, undefined]);
+
+    const content = await fs.readFile(filePath, "utf8");
+    expect(JSON.parse(content)).toEqual({ sequence: 2 });
   });
 });
