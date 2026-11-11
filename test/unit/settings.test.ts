@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  isSettingsReadRequest,
+  isSettingsWriteRequest,
+  SETTINGS_CHANNELS,
+} from "../../src/shared/ipc/settings";
+import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   parseSettings,
@@ -173,5 +178,27 @@ describe("AC-R08-01: settings load, migrate and save", () => {
     expect(first).not.toBe(second);
     expect(first.preview).not.toBe(second.preview);
     expect(first.ignore).not.toBe(second.ignore);
+  });
+});
+
+describe("settings IPC contract", () => {
+  it("uses fixed settings channels", () => {
+    expect(SETTINGS_CHANNELS).toEqual({
+      read: "settings:read",
+      write: "settings:write",
+    });
+  });
+
+  it("accepts only an empty object for settings reads", () => {
+    expect(isSettingsReadRequest({})).toBe(true);
+    expect(isSettingsReadRequest({ extra: true })).toBe(false);
+    expect(isSettingsReadRequest(null)).toBe(false);
+    expect(isSettingsReadRequest([])).toBe(false);
+  });
+
+  it("accepts settings objects with unknown keys but rejects arrays and null", () => {
+    expect(isSettingsWriteRequest({ futureOption: true })).toBe(true);
+    expect(isSettingsWriteRequest([])).toBe(false);
+    expect(isSettingsWriteRequest(null)).toBe(false);
   });
 });

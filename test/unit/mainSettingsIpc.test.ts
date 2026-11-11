@@ -74,4 +74,31 @@ describe("registerSettingsIpcHandler", () => {
 
     expect(result).toEqual({ ok: true, value: DEFAULT_SETTINGS });
   });
+
+  it("settings write rejects arrays and null", async () => {
+    await registerHandlers(mockStore);
+    const handler = ipcHandlers.get("settings:write");
+
+    await expect(handler?.(trustedEvent(), [])).resolves.toMatchObject({
+      ok: false,
+      error: { code: "BAD_REQUEST" },
+    });
+    await expect(handler?.(trustedEvent(), null)).resolves.toMatchObject({
+      ok: false,
+      error: { code: "BAD_REQUEST" },
+    });
+    expect(mockStore.write).not.toHaveBeenCalled();
+  });
+
+  it("settings write keeps unknown keys", async () => {
+    await registerHandlers(mockStore);
+    const handler = ipcHandlers.get("settings:write");
+
+    await expect(
+      handler?.(trustedEvent(), { futureOption: { density: "compact" } }),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(mockStore.write).toHaveBeenCalledWith(expect.objectContaining({
+      futureOption: { density: "compact" },
+    }));
+  });
 });

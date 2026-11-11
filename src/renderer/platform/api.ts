@@ -26,12 +26,16 @@ import type {
   SessionLoadResponse,
 } from "../../shared/ipc/session";
 import type {
+  SettingsReadResponse,
+  SettingsWriteRequest,
+  SettingsWriteResponse,
+} from "../../shared/ipc/settings";
+import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
-import type { Settings } from "../../shared/settings/settings";
 
 const api = window.api;
 
@@ -43,11 +47,13 @@ export function loadSession(): Promise<Result<SessionLoadResponse>> {
   return api.loadSession();
 }
 
-export function loadSettings(): Promise<Result<Settings>> {
+export function loadSettings(): Promise<Result<SettingsReadResponse>> {
   return api.loadSettings();
 }
 
-export function saveSettings(settings: Settings): Promise<Result<void>> {
+export function saveSettings(
+  settings: SettingsWriteRequest,
+): Promise<Result<SettingsWriteResponse>> {
   return api.saveSettings(settings);
 }
 

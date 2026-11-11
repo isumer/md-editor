@@ -26,12 +26,16 @@ import type {
   SessionLoadResponse,
 } from "../../shared/ipc/session";
 import type {
+  SettingsReadResponse,
+  SettingsWriteRequest,
+  SettingsWriteResponse,
+} from "../../shared/ipc/settings";
+import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
-import type { Settings } from "../../shared/settings/settings";
 
 interface Api {
   openFile(): Promise<Result<DocumentReference | null>>;
@@ -51,8 +55,8 @@ interface Api {
   contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
   loadSession(): Promise<Result<SessionLoadResponse>>;
-  loadSettings(): Promise<Result<Settings>>;
-  saveSettings(settings: Settings): Promise<Result<void>>;
+  loadSettings(): Promise<Result<SettingsReadResponse>>;
+  saveSettings(settings: SettingsWriteRequest): Promise<Result<SettingsWriteResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
   chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;

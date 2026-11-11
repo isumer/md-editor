@@ -1,20 +1,18 @@
 import { handle } from "./handle";
+import { settingsContracts } from "../../shared/ipc/settings";
 import type { Settings } from "../../shared/settings/settings";
 import { normalizeSettings } from "../../shared/settings/settings";
 
-function isEmptyObject(value: unknown): value is Record<string, never> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
+interface SettingsStore {
+  read(): Promise<Settings>;
+  write(settings: Settings): Promise<void>;
 }
 
-function isSettingsObject(value: unknown): value is Settings {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function registerSettingsIpcHandler(store: { read: () => Promise<Settings>; write: (settings: Settings) => Promise<void> }): void {
-  handle({ channel: "settings:read", validate: isEmptyObject }, async () => {
+export function registerSettingsIpcHandler(store: SettingsStore): void {
+  handle(settingsContracts.read, async () => {
     return store.read();
   });
-  handle({ channel: "settings:write", validate: isSettingsObject }, async (settings: Settings) => {
+  handle(settingsContracts.write, async (settings) => {
     const normalized = normalizeSettings(settings);
     await store.write(normalized);
   });
