@@ -2,9 +2,41 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { IoControlHandler, type IoParentPort } from "../../src/io-worker/control";
+import type { IoWorkerPort } from "../../src/io-worker/port";
 import { SettingsStore } from "../../src/io-worker/services/settings";
 
 let testDirectory: string;
+
+class SettingsParent implements IoParentPort {
+  readonly replies: unknown[] = [];
+
+  on(
+    _event: "message",
+    _listener: (event: { data: unknown; ports: IoWorkerPort[] }) => void,
+  ): this {
+    return this;
+  }
+
+  postMessage(message: unknown): void {
+    this.replies.push(message);
+  }
+}
+
+function createControl(settings: SettingsStore): {
+  handler: IoControlHandler;
+  parent: SettingsParent;
+} {
+  const parent = new SettingsParent();
+  const handler = new IoControlHandler(
+    parent,
+    {} as never,
+    {} as never,
+    {} as never,
+    settings,
+  );
+  return { handler, parent };
+}
 
 describe("SettingsStore (io-worker)", () => {
   beforeEach(async () => {
@@ -81,5 +113,51 @@ describe("SettingsStore (io-worker)", () => {
 
     const content = await fs.readFile(filePath, "utf8");
     expect(JSON.parse(content)).toEqual({ sequence: 2 });
+  });
+
+  it("reads and writes settings through the io-worker control boundary", async () => {
+    const filePath = path.join(testDirectory, "settings.json");
+    const { handler, parent } = createControl(new SettingsStore());
+
+    handler.handle({
+      type: "writeSettings",
+      id: "write",
+      path: filePath,
+      settings: { theme: "dark" },
+    }, []);
+    await expect.poll(() => parent.replies.length).toBe(1);
+    handler.handle({ type: "readSettings", id: "read", path: filePath }, []);
+    await expect.poll(() => parent.replies.length).toBe(2);
+
+    expect(parent.replies).toEqual([
+      { id: "write", result: { ok: true, value: {} } },
+      { id: "read", result: { ok: true, value: { theme: "dark" } } },
+    ]);
+  });
+
+  it("returns typed failures when settings control operations throw", async () => {
+    const settings = {
+      read: async () => { throw new Error("read failed"); },
+      write: async () => { throw new Error("write failed"); },
+    } as never;
+    const { handler, parent } = createControl(settings);
+
+    handler.handle({
+      type: "readSettings",
+      id: "read",
+      path: "/profiles/settings.json",
+    }, []);
+    handler.handle({
+      type: "writeSettings",
+      id: "write",
+      path: "/profiles/settings.json",
+      settings: {},
+    }, []);
+    await expect.poll(() => parent.replies.length).toBe(2);
+
+    expect(parent.replies).toEqual(expect.arrayContaining([
+      { id: "read", result: { ok: false, error: expect.any(Object) } },
+      { id: "write", result: { ok: false, error: expect.any(Object) } },
+    ]));
   });
 });

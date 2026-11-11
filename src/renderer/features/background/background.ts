@@ -12,12 +12,17 @@ const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
 const EDITOR_SELECTOR = "#editor .cm-editor";
 const PREVIEW_SELECTOR = "#preview";
 
-function resolveColor(custom: string | null, themeDefault: string): { color: string; isCustom: boolean } {
+interface ResolvedColor {
+  color: string;
+  custom: Rgb | null;
+}
+
+function resolveColor(custom: string | null, themeDefault: string): ResolvedColor {
   const parsed = parseHexColor(custom);
   if (parsed !== null) {
-    return { color: formatHexColor(parsed), isCustom: true };
+    return { color: formatHexColor(parsed), custom: parsed };
   }
-  return { color: themeDefault, isCustom: false };
+  return { color: themeDefault, custom: null };
 }
 
 function getThemeDefaults(theme: "light" | "dark"): { editor: string; preview: string; text: string } {
@@ -27,15 +32,14 @@ function getThemeDefaults(theme: "light" | "dark"): { editor: string; preview: s
   return { editor: "#ffffff", preview: "#ffffff", text: "#1f2328" };
 }
 
-function getContrastTextColor(background: string, theme: "light" | "dark", isCustom: boolean): string {
-  if (!isCustom) {
+function getContrastTextColor(
+  color: ResolvedColor,
+  theme: "light" | "dark",
+): string {
+  if (color.custom === null) {
     return getThemeDefaults(theme).text;
   }
-  const parsed = parseHexColor(background);
-  if (parsed === null) {
-    return getThemeDefaults(theme).text;
-  }
-  return textColorFor(parsed);
+  return textColorFor(color.custom);
 }
 
 function applyBackground(
@@ -55,8 +59,8 @@ export function applyBackgrounds(
   const defaults = getThemeDefaults(theme);
   const editorResult = resolveColor(settings.editor, defaults.editor);
   const previewResult = resolveColor(settings.preview, defaults.preview);
-  const editorText = getContrastTextColor(editorResult.color, theme, editorResult.isCustom);
-  const previewText = getContrastTextColor(previewResult.color, theme, previewResult.isCustom);
+  const editorText = getContrastTextColor(editorResult, theme);
+  const previewText = getContrastTextColor(previewResult, theme);
 
   const editor = document.querySelector<HTMLElement>(EDITOR_SELECTOR);
   const preview = document.querySelector<HTMLElement>(PREVIEW_SELECTOR);

@@ -99,6 +99,21 @@ const electron = vi.hoisted(() => {
           result: { ok: true, value: {} },
         }));
       }
+      if (message.type === "readSettings") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: {
+            ok: true,
+            value: { editor: { background: "#123456" } },
+          },
+        }));
+      }
+      if (message.type === "writeSettings") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: {} },
+        }));
+      }
     }
   }
 
@@ -467,6 +482,14 @@ describe("main process", () => {
       "settings:read",
       "settings:write",
     ]);
+    await expect(invoke("settings:read", {})).resolves.toMatchObject({
+      ok: true,
+      value: { editor: { background: "#123456" } },
+    });
+    await expect(invoke("settings:write", { futureOption: true })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
       await expect(invoke("link:open-external", { url })).resolves.toEqual({

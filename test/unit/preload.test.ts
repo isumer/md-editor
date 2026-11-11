@@ -108,6 +108,8 @@ describe("preload bridge", () => {
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
     await api.loadSession();
+    await api.loadSettings();
+    await api.saveSettings({ futureOption: true });
     await api.respondSessionClose({ allow: true, documents: [], id: 1 });
     await api.contributeMenu({
       fileMenuTitle: "File",
@@ -123,6 +125,8 @@ describe("preload bridge", () => {
       ["link:open-external", { url: "https://example.com" }],
       ["file:open-requests-ready", {}],
       ["session:load", {}],
+      ["settings:read", {}],
+      ["settings:write", { futureOption: true }],
       ["session:close-result", { allow: true, documents: [], id: 1 }],
       ["menu:contribute", {
         fileMenuTitle: "File",

@@ -134,6 +134,18 @@ describe("background feature", () => {
     expect(document.documentElement.style.getPropertyValue("--preview-text-color")).toBe("#e6edf3");
   });
 
+  it("applies root defaults when pane elements are absent", () => {
+    document.body.innerHTML = "";
+
+    applyBackgrounds({ editor: null, preview: null }, "light");
+    resetToThemeDefaults("dark");
+
+    expect(document.documentElement.style.getPropertyValue("--editor-background"))
+      .toBe("#0d1117");
+    expect(document.documentElement.style.getPropertyValue("--preview-background"))
+      .toBe("#0d1117");
+  });
+
   it("handles 3-digit hex colors", () => {
     applyBackgrounds({ editor: "#abc", preview: "#def" }, "light");
 
@@ -172,6 +184,16 @@ describe("system theme", () => {
 
     expect(changed).toHaveBeenCalledWith("dark");
     expect(media.remove).toHaveBeenCalledOnce();
+  });
+
+  it("reports a system change back to light", () => {
+    const media = mockSystemTheme(true);
+    const changed = vi.fn();
+
+    watchSystemTheme(changed);
+    media.dispatch(false);
+
+    expect(changed).toHaveBeenCalledWith("light");
   });
 });
 
