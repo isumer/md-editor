@@ -1,0 +1,15 @@
+export const compareMessages = {
+  "menu.compareOpen": "Compare Open Files",
+  "compare.needTwo": "Open two files before you compare them.",
+  "compare.workerFailed": "The compare worker stopped unexpectedly.",
+  "compare.view": "File comparison",
+  "compare.highlight": "Highlight:",
+  "compare.highlight.words": "Words",
+  "compare.highlight.characters": "Characters",
+  "compare.highlight.lines": "Lines",
+  "compare.highlight.none": "None",
+  "compare.previous": "Previous difference",
+  "compare.next": "Next difference",
+  "compare.close": "Close compare",
+  "compare.difference": "Difference {number}",
+} as const;
