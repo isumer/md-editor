@@ -3,11 +3,13 @@
   "theme": "system",
   "fontSize": 14,
   "preview": {
-    "scrollSync": true
+    "scrollSync": true,
+    "background": null
   },
   "editor": {
     "wrap": true,
-    "tabSize": 2
+    "tabSize": 2,
+    "background": null
   },
   "encoding": {
     "default": "utf-8",
