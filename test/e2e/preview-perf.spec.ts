@@ -167,10 +167,9 @@ test("a failed traced window writes its trace events", async ({}, testInfo) => {
   const failurePath = testInfo.outputPath("failed-trace.json");
   await trace.markStart();
 
-  await expect(runPerfTrace(trace, "failed", failurePath, async (finish) => {
+  await expect(runPerfTrace(trace, "failed", failurePath, async () => {
     source.emit([{ name: "RunTask", ts: 120_000, dur: 60_000, cat: "toplevel",
       ph: "X", pid: 1, tid: 2 }]);
-    await finish();
     throw new Error("forced failure");
   })).rejects.toThrow("forced failure");
 
@@ -178,19 +177,26 @@ test("a failed traced window writes its trace events", async ({}, testInfo) => {
   expect(saved).toEqual({ traceEvents: expect.arrayContaining([
     expect.objectContaining({ name: "RunTask" }),
   ]) });
+  await fs.rm(failurePath);
 });
 
 test("a successful traced window does not write a failure trace", async ({}, testInfo) => {
   const source = fakeTraceSession();
   const trace = await startPerfTraceWithSession(source.session, source.mark);
   const failurePath = testInfo.outputPath("successful-trace.json");
+  const summaries: string[] = [];
+  const originalLog = console.log;
   await trace.markStart();
 
-  await runPerfTrace(trace, "successful", failurePath, async (finish) => {
-    await finish();
-  });
+  console.log = (...values: unknown[]) => summaries.push(values.map(String).join(" "));
+  try {
+    await runPerfTrace(trace, "successful", failurePath, async () => undefined);
+  } finally {
+    console.log = originalLog;
+  }
 
   await expect(fs.access(failurePath)).rejects.toThrow();
+  expect(summaries).toEqual(["successful trace: longtasks=[]"]);
 });
 
 async function openPreview(
