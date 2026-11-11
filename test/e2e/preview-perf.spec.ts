@@ -27,7 +27,7 @@ let large20 = "";
 test.describe.configure({ timeout: 420_000 });
 
 test.beforeAll(async () => {
-  temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-big-"));
+  temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-big-"));
   large20 = path.join(temporaryDirectory, "large-20mb.md");
   await run("node", [
     path.join(repositoryRoot, "test/fixtures/big/generate.mjs"),

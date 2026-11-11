@@ -37,7 +37,7 @@ let targetPath: string;
 
 beforeEach(async () => {
   temporaryDirectory = await fs.realpath(
-    await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-io-worker-")),
+    await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-io-worker-")),
   );
   targetPath = path.join(temporaryDirectory, "protected.md");
   await fs.writeFile(targetPath, "original", "utf8");

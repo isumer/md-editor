@@ -35,7 +35,7 @@ test("saving succeeds after the io-worker restarts", {
   tag: "@AC-R5-17",
   annotation: { type: "AC-R5-17" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-restart-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-restart-"));
   const currentPath = path.join(temporaryDirectory, "current.md");
   const originalText = await fs.readFile(fixturePath, "utf8");
   await fs.writeFile(currentPath, originalText, "utf8");
@@ -76,7 +76,7 @@ if (process.platform !== "win32") {
     tag: "@AC-R5-17",
     annotation: { type: "AC-R5-17" },
   }, async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-in-flight-"));
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-in-flight-"));
     const currentPath = path.join(temporaryDirectory, "current.md");
     await fs.writeFile(currentPath, "# Current\n", "utf8");
     const { application, page } = await launchEditor(currentPath);

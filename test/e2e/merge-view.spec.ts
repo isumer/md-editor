@@ -25,7 +25,7 @@ test("a conflict-marker file resolves each conflict and saves the result", {
     { type: "AC-R15-06" },
   ],
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-merge-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-merge-"));
   const mergedFile = path.join(temporaryDirectory, "conflicted.txt");
   await fs.copyFile(markerFixture, mergedFile);
   const { application, page } = await launchEditor(mergedFile);

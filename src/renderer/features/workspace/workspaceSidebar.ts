@@ -1,6 +1,7 @@
 import type { DocumentReference } from "../../../shared/ipc/file";
 import type { ServiceError } from "../../../shared/ipc/result";
-import { formatMessage } from "../../../shared/messages/en";
+import { formatMessage } from "../../core/messages";
+import type { FeatureRegistration } from "../../editor/featureWiring";
 import {
   chooseWorkspaceRoot,
   listWorkspaceChildren,
@@ -150,3 +151,29 @@ export class WorkspaceSidebar {
     this.options.elements.empty.hidden = this.filter === "" || rows.length > 0;
   }
 }
+
+function requiredElement<T extends HTMLElement>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) {
+    throw new Error(`Missing required element: ${selector}`);
+  }
+  return element;
+}
+
+export const workspaceFeature: FeatureRegistration = {
+  editorExtensions: [],
+  create: ({ openDocument, showStatus }) => {
+    new WorkspaceSidebar({
+      elements: {
+        empty: requiredElement<HTMLElement>("#workspace-empty"),
+        filter: requiredElement<HTMLInputElement>("#workspace-filter"),
+        open: requiredElement<HTMLButtonElement>("#workspace-open"),
+        title: requiredElement<HTMLElement>("#workspace-title"),
+        tree: requiredElement<HTMLElement>("#workspace-tree"),
+      },
+      openDocument,
+      showStatus,
+    });
+    return {};
+  },
+};
