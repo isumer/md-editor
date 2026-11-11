@@ -128,6 +128,7 @@ function createApplicationWindow(): void {
       },
     },
   );
+  performance.mark("window-created");
   setMainWindow(window);
 }
 
@@ -168,6 +169,7 @@ void initializeApplication(
   () => ioWorker.start(),
   openRequests,
   () => {
+    performance.mark("app-ready");
     sessionStore = new SessionStore(
       path.join(app.getPath("userData"), "session.json"),
       ioWorker,

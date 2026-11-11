@@ -21,18 +21,12 @@ import {
 import {
   createEditor,
   createEditorState,
-  type EditorCallbacks,
-} from "./editor/editor";
-import { CompareController } from "./features/compare/controller";
-import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
-import "./features/compare/compare.css";
-import { MergeView } from "./features/merge/mergeView";
-import "./features/merge/merge.css";
-import {
   initializeMarkerMerge,
   markerMergeExtension,
+  type EditorCallbacks,
   type MarkerMergeState,
-} from "./features/merge/markerMergeState";
+} from "./editor/editor";
+import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
 import {
   wirePreviewLinks,
 } from "./features/preview/preview";
@@ -49,11 +43,16 @@ import {
   sendChanges,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
-import { DocumentCommands } from "./tabs/documentCommands";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
 import "./styles.css";
+
+performance.mark("renderer-script-start");
+
+type CompareController = import("./features/compare/controller").CompareController;
+type MergeView = import("./features/merge/mergeView").MergeView;
+type DocumentCommands = import("./tabs/documentCommands").DocumentCommands;
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -84,10 +83,11 @@ let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
 let statusFromPreview = false;
 let editor: EditorView;
-let mergeView: MergeView;
+let mergeView: MergeView | null = null;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let compareController: CompareController | null = null;
+let secondaryFeaturesStarted = false;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -95,15 +95,20 @@ function showStatus(message = ""): void {
 }
 
 function openCompare(): void {
-  compareController ??= new CompareController({
-    documents: () => registry.all(),
-    editor: editorHost,
-    preview,
-    showStatus,
-    workspace,
-    workerUrl: new URL(compareWorkerUrl, window.location.href),
-  });
-  compareController.open();
+  void Promise.all([
+    import("./features/compare/controller"),
+    import("./features/compare/compare.css"),
+  ]).then(([module]) => {
+    compareController ??= new module.CompareController({
+      documents: () => registry.all(),
+      editor: editorHost,
+      preview,
+      showStatus,
+      workspace,
+      workerUrl: new URL(compareWorkerUrl, window.location.href),
+    });
+    compareController.open();
+  }).catch(showUnexpectedError);
 }
 
 // A successful render clears only the preview's own error, never a file failure.
@@ -182,12 +187,7 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
-mergeView = new MergeView({
-  editorHost,
-  preview,
-  workspace,
-  editor,
-});
+performance.mark("editor-mounted");
 
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
@@ -236,6 +236,9 @@ function activateDocument(document: DocumentRecord): void {
   documentState.applyingDocument = true;
   editor.setState(document.state);
   documentState.applyingDocument = false;
+  if (document.grant !== null) {
+    performance.mark("file-text-shown");
+  }
   syncDocumentState(document);
   editor.scrollDOM.scrollTop = document.scrollTop;
   requestAnimationFrame(() => {
@@ -247,8 +250,12 @@ function activateDocument(document: DocumentRecord): void {
   tabStrip.render();
   showPreviewError();
   renderController.activate(document);
-  mergeView.activate(document.id, document.state);
+  mergeView?.activate(document.id, document.state);
   editor.focus();
+  if (document.grant !== null) {
+    performance.mark("editor-editable");
+    loadSecondaryFeatures();
+  }
 }
 
 function newDocument(input: {
@@ -284,14 +291,14 @@ function installMerge(document: DocumentRecord, source: string, merge: MarkerMer
   if (spec === null) return;
   if (activeDocument === document) {
     editor.dispatch(spec);
-    mergeView.activate(document.id, editor.state);
+    mergeView?.activate(document.id, editor.state);
   } else {
     document.state = document.state.update(spec).state;
   }
 }
 
 function detectMerge(document: DocumentRecord, text: string): void {
-  mergeView.detect(document.id, text, (merge) => installMerge(document, text, merge));
+  mergeView?.detect(document.id, text, (merge) => installMerge(document, text, merge));
 }
 
 function createUntitled(): DocumentRecord {
@@ -340,7 +347,7 @@ function removeDocument(document: DocumentRecord): void {
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
-  mergeView.forget(document.id);
+  mergeView?.forget(document.id);
   dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderController.detach(document.id);
@@ -390,16 +397,31 @@ new WorkspaceSidebar({
   openDocument: (reference) => lifecycle.openReference(reference),
   showStatus,
 });
-documentCommands = new DocumentCommands({
-  compare: openCompare,
-  editor,
-  onError: showUnexpectedError,
-  onResult: (result) => {
-    valueOrStatus(result);
-  },
-  open: () => lifecycle.open(),
-  save: (saveAs) => lifecycle.saveActive(saveAs),
-});
+
+function loadSecondaryFeatures(): void {
+  if (secondaryFeaturesStarted) return;
+  secondaryFeaturesStarted = true;
+  void Promise.all([
+    import("./features/merge/mergeView"),
+    import("./features/merge/merge.css"),
+    import("./tabs/documentCommands"),
+  ]).then(([mergeModule, , commandsModule]) => {
+    mergeView = new mergeModule.MergeView({ editorHost, preview, workspace, editor });
+    for (const document of registry.all()) {
+      detectMerge(document, document.state.doc.toString());
+    }
+    documentCommands = new commandsModule.DocumentCommands({
+      compare: openCompare,
+      editor,
+      onError: showUnexpectedError,
+      onResult: (result) => {
+        valueOrStatus(result);
+      },
+      open: () => lifecycle.open(),
+      save: (saveAs) => lifecycle.saveActive(saveAs),
+    });
+  }).catch(showUnexpectedError);
+}
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));
 onSessionCloseRequest((request) => {
@@ -444,6 +466,7 @@ async function initialize(): Promise<void> {
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
   }
+  window.setTimeout(loadSecondaryFeatures, 1_000);
 }
 
 void initialize();

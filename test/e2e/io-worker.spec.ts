@@ -15,6 +15,40 @@ import {
   stubSaveDialog,
 } from "./helpers";
 
+const STARTUP_MARKS = [
+  "app-ready",
+  "window-created",
+  "renderer-script-start",
+  "editor-mounted",
+  "file-text-shown",
+  "editor-editable",
+] as const;
+
+interface StartupMark {
+  name: string;
+  startTime: number;
+}
+
+async function startupMarks(
+  application: ElectronApplication,
+  page: Page,
+): Promise<readonly StartupMark[]> {
+  const mainMarks = await application.evaluate(() =>
+    performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+  );
+  const rendererMarks = await page.evaluate(() =>
+    performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+  );
+  return [...mainMarks, ...rendererMarks].filter(({ name }) =>
+    STARTUP_MARKS.some((startupMark) => startupMark === name));
+}
+
 async function ioWorkerPid(application: ElectronApplication): Promise<number | null> {
   return application.evaluate(({ app }) => {
     const worker = app.getAppMetrics().find((metric) =>
@@ -118,6 +152,10 @@ test("an argv file is editable within the cold-start budget", {
     await page.keyboard.press("Control+End");
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
+
+    const marks = await startupMarks(application, page);
+    console.log(`AC-PERF-03 marks: ${JSON.stringify(marks)}`);
+    expect(marks.map(({ name }) => name).sort()).toEqual([...STARTUP_MARKS].sort());
 
     expect(performance.now() - startedAt).toBeLessThan(2_000);
   } finally {
