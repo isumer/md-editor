@@ -114,8 +114,10 @@ export class PreviewDocuments {
       this.host.firstChild !== preview.container) {
       this.host.replaceChildren(preview.container);
     }
-    this.host.dataset["renderComplete"] =
-      preview.container.dataset["renderComplete"] ?? "false";
+    const renderComplete = preview.container.dataset["renderComplete"] ?? "false";
+    if (this.host.dataset["renderComplete"] !== renderComplete) {
+      this.host.dataset["renderComplete"] = renderComplete;
+    }
   }
 
   drop(docId: string): void {
