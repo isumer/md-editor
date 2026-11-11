@@ -24,6 +24,7 @@ import {
   type EditorCallbacks,
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
+import { applyBackgrounds, resetToThemeDefaults } from "./features/background/background";
 import {
   featureEditorExtensions,
   installFeatures,
@@ -34,6 +35,7 @@ import {
   attachDocument,
   clearDraft,
   detachDocument,
+  loadSettings,
   onOpenRequest,
   onSessionCloseRequest,
   readyForOpenRequests,
@@ -389,6 +391,32 @@ async function initialize(): Promise<void> {
   }
   renderController.start();
   installedFeatures.start();
+
+  const settingsResult = await loadSettings();
+  let currentTheme: "light" | "dark" = "light";
+  if (settingsResult.ok) {
+    applyBackgrounds(
+      { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
+      currentTheme,
+    );
+  } else {
+    resetToThemeDefaults(currentTheme);
+  }
+
+  const updateTheme = () => {
+    currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    if (settingsResult.ok) {
+      applyBackgrounds(
+        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
+        currentTheme,
+      );
+    } else {
+      resetToThemeDefaults(currentTheme);
+    }
+  };
+
+  const observer = new MutationObserver(updateTheme);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   const untitled = createUntitled();
   activateDocument(untitled);
   updateTitle();

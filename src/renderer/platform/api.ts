@@ -31,6 +31,7 @@ import type {
   OpenWorkspaceFileResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
+import type { Settings } from "../../shared/settings/settings";
 
 const api = window.api;
 
@@ -40,6 +41,14 @@ export function openFile(): Promise<Result<DocumentReference | null>> {
 
 export function loadSession(): Promise<Result<SessionLoadResponse>> {
   return api.loadSession();
+}
+
+export function loadSettings(): Promise<Result<Settings>> {
+  return api.loadSettings();
+}
+
+export function saveSettings(settings: Settings): Promise<Result<void>> {
+  return api.saveSettings(settings);
 }
 
 export function respondSessionClose(result: SessionCloseResult): Promise<Result<void>> {

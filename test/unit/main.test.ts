@@ -464,6 +464,8 @@ describe("main process", () => {
       "workspace:open-file",
       "session:load",
       "session:close-result",
+      "settings:read",
+      "settings:write",
     ]);
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
