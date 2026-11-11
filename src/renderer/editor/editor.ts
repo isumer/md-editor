@@ -92,6 +92,24 @@ const editorSetup = [
   ]),
 ];
 
+const plainMarkdownPattern = /^[A-Za-z0-9]+$/;
+const PLAIN_MARKDOWN_FAST_PATH_MIN_LENGTH = 2 * 1024 * 1024;
+
+// Lezer otherwise dispatches every inline parser for each character in a huge plain line.
+const markdownSupport = markdown({
+  extensions: {
+    parseInline: [{
+      name: "PlainTextRun",
+      before: "Escape",
+      parse: (context, _next, position) =>
+        context.text.length > PLAIN_MARKDOWN_FAST_PATH_MIN_LENGTH &&
+          position === context.offset && plainMarkdownPattern.test(context.text)
+          ? context.end
+          : -1,
+    }],
+  },
+});
+
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
 
@@ -131,7 +149,7 @@ export function createEditorState(
     extensions: [
       editorSetup,
       extension,
-      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdown()] : []),
+      ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         handleDocumentUpdate(update, documentState, callbacks);

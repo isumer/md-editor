@@ -167,6 +167,17 @@ describe("AC-R08-01: settings load, migrate and save", () => {
     }
   });
 
+  it("preserves stored editor and preview backgrounds", () => {
+    const settings = normalizeSettings({
+      version: 1,
+      preview: { background: "#123456" },
+      editor: { background: "#abcdef" },
+    });
+
+    expect(settings.preview.background).toBe("#123456");
+    expect(settings.editor.background).toBe("#abcdef");
+  });
+
   it("AC-R08-01: returns a fresh object and never mutates the input", () => {
     const input = { version: 0, editor: { tabWidth: 4 } };
 
