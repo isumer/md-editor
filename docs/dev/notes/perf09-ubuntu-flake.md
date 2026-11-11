@@ -158,3 +158,31 @@ Do not raise the budget, retry the test, or skip it.
 If a failure shows renderer lifecycle work, add a failing regression test before a product fix.
 
 If a failure shows idle renderer threads, report runner or xvfb scheduling to the owner.
+
+## Validation
+
+`npm run typecheck` passed.
+
+`npm run check:deps` passed with 147 modules and 312 dependencies.
+
+`npm run test:unit` passed 1,132 tests in 110 files.
+
+Statement coverage was 99.05 percent.
+
+Branch coverage was 97.28 percent.
+
+Function coverage was 99.21 percent.
+
+Line coverage was 99.20 percent.
+
+`npm run check:coverage` passed every ratchet.
+
+The ten e2e criteria needed to complete the partial JUnit report passed.
+
+AC-PERF-02 measured 30.0 ms p95 against 50 ms.
+
+AC-PERF-07 measured 46.2 ms p95 against 150 ms.
+
+AC-PERF-08 measured 1.8 ms p95 against 8 ms.
+
+`npm run check:acceptance` passed after those results replaced the partial report.
