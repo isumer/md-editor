@@ -81,11 +81,29 @@ interface LongTaskProbe {
   longtasks: { start: number; duration: number }[];
   marks: { name: string; start: number }[];
   applies: { start: number; duration: number; detail: unknown }[];
+  frames: LongAnimationFrame[];
+}
+
+interface LongAnimationFrame {
+  start: number;
+  duration: number;
+  blockingDuration: number;
+  renderStart: number;
+  styleAndLayoutStart: number;
+  scripts: LongAnimationScript[];
+}
+
+interface LongAnimationScript {
+  duration: number;
+  forcedStyleAndLayoutDuration: number;
+  invoker: string;
+  sourceFunctionName: string;
+  sourceURL: string;
 }
 
 async function installLongTaskProbe(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const probe: LongTaskProbe = { longtasks: [], marks: [], applies: [] };
+    const probe: LongTaskProbe = { longtasks: [], marks: [], applies: [], frames: [] };
     (window as unknown as { __longTaskProbe?: LongTaskProbe }).__longTaskProbe = probe;
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -93,6 +111,27 @@ async function installLongTaskProbe(page: Page): Promise<void> {
           probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
         } else if (entry.entryType === "mark") {
           probe.marks.push({ name: entry.name, start: entry.startTime });
+        } else if (entry.entryType === "long-animation-frame") {
+          const frame = entry as PerformanceEntry & {
+            blockingDuration: number;
+            renderStart: number;
+            styleAndLayoutStart: number;
+            scripts: LongAnimationScript[];
+          };
+          probe.frames.push({
+            start: frame.startTime,
+            duration: frame.duration,
+            blockingDuration: frame.blockingDuration,
+            renderStart: frame.renderStart,
+            styleAndLayoutStart: frame.styleAndLayoutStart,
+            scripts: frame.scripts.map((script) => ({
+              duration: script.duration,
+              forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+              invoker: script.invoker,
+              sourceFunctionName: script.sourceFunctionName,
+              sourceURL: script.sourceURL,
+            })),
+          });
         } else if (entry.entryType === "measure" && entry.name === "preview-apply") {
           probe.applies.push({
             start: entry.startTime,
@@ -101,13 +140,45 @@ async function installLongTaskProbe(page: Page): Promise<void> {
           });
         }
       }
-    }).observe({ entryTypes: ["longtask", "mark", "measure"] });
+    }).observe({ entryTypes: ["longtask", "mark", "long-animation-frame", "measure"] });
   });
+}
+
+function frameDiagnostics(
+  task: { start: number; duration: number },
+  frames: readonly LongAnimationFrame[],
+): string {
+  const taskEnd = task.start + task.duration;
+  const overlapping = frames.filter((frame) =>
+    frame.start < taskEnd && frame.start + frame.duration > task.start);
+  return overlapping.map((frame) => {
+    const renderDelay = frame.renderStart > 0
+      ? frame.renderStart - frame.start
+      : frame.duration;
+    const preLayout = frame.styleAndLayoutStart > 0
+      ? frame.styleAndLayoutStart - frame.renderStart
+      : 0;
+    const styleLayoutPaint = frame.styleAndLayoutStart > 0
+      ? frame.start + frame.duration - frame.styleAndLayoutStart
+      : 0;
+    const scripts = frame.scripts.map((script) => {
+      const source = script.sourceURL.split("/").at(-1) ?? script.sourceURL;
+      return `${script.sourceFunctionName || script.invoker || "anonymous"} ` +
+        `${script.duration.toFixed(1)} ms forcedStyle=` +
+        `${script.forcedStyleAndLayoutDuration.toFixed(1)} ms source=${source}`;
+    }).join("; ");
+    return `start ${frame.start.toFixed(1)} ms duration ${frame.duration.toFixed(1)} ms ` +
+      `blocking=${frame.blockingDuration.toFixed(1)} ms ` +
+      `renderDelay=${renderDelay.toFixed(1)} ms ` +
+      `preLayout=${preLayout.toFixed(1)} ms ` +
+      `styleLayoutPaint=${styleLayoutPaint.toFixed(1)} ms scripts=[${scripts}]`;
+  }).join("; ");
 }
 
 function openTaskDiagnostics(
   tasks: readonly { start: number; duration: number }[],
   marks: readonly { name: string; start: number }[],
+  frames: readonly LongAnimationFrame[],
 ): string {
   const largest = tasks.reduce<typeof tasks[number] | undefined>(
     (current, task) => current === undefined || task.duration > current.duration
@@ -116,7 +187,7 @@ function openTaskDiagnostics(
     undefined,
   );
   if (largest === undefined) {
-    return "largest=none marks=[]";
+    return "largest=none marks=[] frames=[]";
   }
   const taskEnd = largest.start + largest.duration;
   const nearby = marks.filter((mark) =>
@@ -124,7 +195,8 @@ function openTaskDiagnostics(
   const markSummary = nearby.map((mark) =>
     `${mark.name}@${mark.start.toFixed(1)}`).join(", ");
   return `largest=start ${largest.start.toFixed(1)} ms duration ` +
-    `${largest.duration.toFixed(1)} ms marks=[${markSummary}]`;
+    `${largest.duration.toFixed(1)} ms marks=[${markSummary}] ` +
+    `frames=[${frameDiagnostics(largest, frames)}]`;
 }
 
 async function openLargeThroughMenu(
@@ -175,16 +247,17 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
         longtasks: scope.__longTaskProbe?.longtasks ?? [],
         marks: scope.__longTaskProbe?.marks ?? [],
         applies: scope.__longTaskProbe?.applies ?? [],
+        frames: scope.__longTaskProbe?.frames ?? [],
         blocks: document.querySelectorAll("#preview .preview-block").length,
       };
     });
     const afterOpen = probe.longtasks
       .filter((entry) => entry.start >= shownAt);
-    const diagnostics = openTaskDiagnostics(afterOpen, probe.marks);
+    const diagnostics = openTaskDiagnostics(afterOpen, probe.marks, probe.frames);
     console.log(
       `AC-PERF-10 open longtasks: n=${String(afterOpen.length)} ` +
       `max=${Math.max(...afterOpen.map((entry) => entry.duration), 0).toFixed(1)} ms ` +
-      `blocks=${String(probe.blocks)} ${diagnostics}`,
+      `blocks=${String(probe.blocks)}`,
     );
     // TEMP(AC-PERF-10 diagnosis): phase split of the first applies after the open.
     const firstApplies = probe.applies

@@ -427,6 +427,43 @@ describe("preview render flow", () => {
     clearMarks.mockRestore();
   });
 
+  it("AC-PERF-10: unchanged split completion state mutates the host once", async () => {
+    vi.useFakeTimers();
+    const preview = document.createElement("div");
+    const mutations: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => mutations.push(...records));
+    observer.observe(preview, {
+      attributes: true,
+      attributeFilter: ["data-render-complete"],
+    });
+    const { worker } = wiring({ preview });
+    const renderedBlocks = Array.from({ length: 8 }, (_, index) => ({
+      id: `b${String(index)}`,
+      startLine: index,
+      endLine: index + 1,
+      html: `<p>${String(index)}</p>`,
+    }));
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "append",
+      blocks: renderedBlocks,
+      fillToken: 4,
+      complete: false,
+    });
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
+
+    expect(mutations).toHaveLength(1);
+    expect(preview.dataset["renderComplete"]).toBe("false");
+    observer.disconnect();
+    vi.useRealTimers();
+  });
+
   it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
