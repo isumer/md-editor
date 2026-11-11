@@ -18,7 +18,7 @@ import {
   recordShiftTable,
   resetLayout,
 } from "./previewDocuments";
-import { sanitizeRenderedHtml, sanitizeRenderedHtmlBatch } from "./sanitize";
+import { sanitizeRenderedHtml } from "./sanitize";
 
 export { PreviewDocuments } from "./previewDocuments";
 export { blockLine } from "./previewDocuments";
@@ -46,13 +46,8 @@ const BLOCK_CLASS = "preview-block";
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 10;
 const SECTION_PAGE_LIMIT = 10;
-const WIDE_SECTION_PAGE_LIMIT = 30;
-const WIDE_SECTION_START = 40;
-const WIDE_BLOCK_START = WIDE_SECTION_START * SECTION_PAGE_LIMIT * PAGE_BLOCK_LIMIT;
-const PREWARM_SECTION_LIMIT = 8;
 const APPEND_TASK_BLOCK_LIMIT = 4;
-const INITIAL_REPLACE_BLOCK_LIMIT = 12;
-// Worker fills have at most three blocks; only a larger unexpected append is
+// Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // A section also bounds the layout work when it becomes visible: 100 blocks
@@ -66,14 +61,9 @@ function placeBlock(
   layout: BlockLayout,
 ): void {
   if (layout.page === null || layout.blocksInPage >= PAGE_BLOCK_LIMIT) {
-    const pageLimit = layout.section?.classList.contains("preview-section-wide")
-      ? WIDE_SECTION_PAGE_LIMIT
-      : SECTION_PAGE_LIMIT;
-    if (layout.section === null || layout.pagesInSection >= pageLimit) {
-      const wide = wiring.preview.childElementCount >= WIDE_SECTION_START;
+    if (layout.section === null || layout.pagesInSection >= SECTION_PAGE_LIMIT) {
       const section = document.createElement("div");
       section.className = "preview-section";
-      section.classList.toggle("preview-section-wide", wide);
       wiring.preview.append(section);
       layout.section = section;
       layout.pagesInSection = 0;
@@ -94,12 +84,11 @@ function createBlock(
   version: number,
   shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
-  html = sanitizeRenderedHtml(block.html),
 ): HTMLDivElement {
   const element = document.createElement("div");
   element.className = BLOCK_CLASS;
   element.dataset["blockId"] = block.id;
-  updateBlock(element, block, version, shifts, wiring, html);
+  updateBlock(element, block, version, shifts, wiring);
   return element;
 }
 
@@ -109,12 +98,11 @@ function updateBlock(
   version: number,
   shifts: readonly LineShiftRecord[],
   wiring: RenderWorkerWiring,
-  html = sanitizeRenderedHtml(block.html),
 ): void {
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
-  element.innerHTML = wiring.rewriteHtml(html);
+  element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
 }
 
 function appendBlocks(
@@ -124,14 +112,10 @@ function appendBlocks(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-  sanitizedHtml?: readonly string[],
 ): void {
   const start = performance.now();
-  const sanitized = sanitizedHtml ??
-    sanitizeRenderedHtmlBatch(blocks.map((block) => block.html));
-  for (const [index, block] of blocks.entries()) {
-    const html = sanitized[index] ?? sanitizeRenderedHtml(block.html);
-    const element = createBlock(block, version, shifts, wiring, html);
+  for (const block of blocks) {
+    const element = createBlock(block, version, shifts, wiring);
     elements.set(block.id, element);
     placeBlock(element, wiring, layout);
   }
@@ -145,12 +129,11 @@ function replaceBlocks(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-  sanitizedHtml?: readonly string[],
 ): void {
   elements.clear();
   wiring.preview.replaceChildren();
   resetLayout(layout);
-  appendBlocks(blocks, version, shifts, wiring, elements, layout, sanitizedHtml);
+  appendBlocks(blocks, version, shifts, wiring, elements, layout);
 }
 
 function removeElement(element: HTMLDivElement, layout: BlockLayout): void {
@@ -244,19 +227,14 @@ function applyBlocks(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-  sanitizedHtml?: readonly string[],
 ): void {
   if (result.mode === "replace") {
     // Replaced blocks are rendered from the current document, so no old shift
     // can apply to them.
     shifts.length = 0;
-    replaceBlocks(
-      result.blocks, result.version, shifts, wiring, elements, layout, sanitizedHtml,
-    );
+    replaceBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else if (result.mode === "append") {
-    appendBlocks(
-      result.blocks, result.version, shifts, wiring, elements, layout, sanitizedHtml,
-    );
+    appendBlocks(result.blocks, result.version, shifts, wiring, elements, layout);
   } else {
     for (const shift of result.lineShifts ?? []) {
       shifts.push({ ...shift, version: result.version });
@@ -280,11 +258,10 @@ function applyRenderResult(
   wiring: RenderWorkerWiring,
   elements: BlockElements,
   layout: BlockLayout,
-  sanitizedHtml?: readonly string[],
 ): boolean {
   return wiring.scheduler.applyResult(result.id, result, (appliedResponse) => {
     if (appliedResponse.ok) {
-      applyBlocks(appliedResponse, shifts, wiring, elements, layout, sanitizedHtml);
+      applyBlocks(appliedResponse, shifts, wiring, elements, layout);
       wiring.showError();
       wiring.showStatus();
     } else {
@@ -298,13 +275,15 @@ function requestNextFill(
   renderWorker: RenderWorkerEvents,
   response: RenderResult & { ok: true; mode: "append" },
 ): void {
-  renderWorker.postMessage({
-    op: "fill-ready",
-    docId: response.docId,
-    epoch: response.epoch,
-    version: response.version,
-    token: response.fillToken,
-  } satisfies RenderFillReadyMessage);
+  requestAnimationFrame(() => {
+    renderWorker.postMessage({
+      op: "fill-ready",
+      docId: response.docId,
+      epoch: response.epoch,
+      version: response.version,
+      token: response.fillToken,
+    } satisfies RenderFillReadyMessage);
+  });
 }
 
 export function wireRenderWorker(
@@ -318,52 +297,11 @@ export function wireRenderWorker(
   let shown: { docId: string; epoch: number; version: number } | null = null;
   let pendingAppend: {
     response: RenderResult & { ok: true; mode: "append" };
-    sanitizedHtml?: readonly string[];
-    requestFill: boolean;
     frame: number;
     timer: number;
   } | null = null;
   const queuedResponses: RenderResponse[] = [];
   let queuedResponseTimer = 0;
-  const compactionVersions = new WeakMap<HTMLElement, number>();
-
-  function finishCompaction(
-    documentPreview: ReturnType<PreviewDocuments["getOrCreate"]>,
-    version: number,
-  ): void {
-    requestAnimationFrame(() => {
-      if (compactionVersions.get(documentPreview.container) !== version) {
-        return;
-      }
-      void documentPreview.container.offsetHeight;
-      requestAnimationFrame(() => {
-        if (compactionVersions.get(documentPreview.container) === version) {
-          documentPreview.container.dataset["renderComplete"] = "true";
-          previews.display(documentPreview);
-        }
-      });
-    });
-  }
-
-  function compactCompletedPreview(
-    documentPreview: ReturnType<PreviewDocuments["getOrCreate"]>,
-    version: number,
-  ): void {
-    const sections = [...documentPreview.container
-      .querySelectorAll<HTMLDivElement>(".preview-section")];
-    if (sections.length < 2) {
-      return;
-    }
-    documentPreview.container.dataset["renderComplete"] = "false";
-    previews.display(documentPreview);
-    for (const section of sections.slice(0, PREWARM_SECTION_LIMIT)) {
-      section.classList.add("preview-section-prewarm");
-      for (const page of section.querySelectorAll<HTMLElement>(".preview-page")) {
-        page.style.contentVisibility = "visible";
-      }
-    }
-    finishCompaction(documentPreview, version);
-  }
 
   function scheduleQueuedResponse(): void {
     if (queuedResponses.length === 0 || queuedResponseTimer !== 0) {
@@ -397,14 +335,11 @@ export function wireRenderWorker(
   const applyAccepted = (
     response: RenderResult,
     requestFill: boolean,
-    sanitizedHtml?: readonly string[],
   ): boolean => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
     performance.mark("preview-apply-start");
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
-    const compactionVersion = (compactionVersions.get(documentPreview.container) ?? 0) + 1;
-    compactionVersions.set(documentPreview.container, compactionVersion);
     const documentWiring = { ...wiring, preview: documentPreview.container };
     const applied = applyRenderResult(
       response,
@@ -412,7 +347,6 @@ export function wireRenderWorker(
       documentWiring,
       documentPreview.elements,
       documentPreview.layout,
-      sanitizedHtml,
     );
     performance.mark("preview-apply-end");
     if (applied && response.ok) {
@@ -423,9 +357,6 @@ export function wireRenderWorker(
         epoch: response.epoch,
         version: response.version,
       };
-      if (response.complete && response.mode !== "patch") {
-        compactCompletedPreview(documentPreview, compactionVersion);
-      }
       if (requestFill && response.mode === "append") {
         requestNextFill(renderWorker, response);
       }
@@ -448,7 +379,7 @@ export function wireRenderWorker(
       return;
     }
     if (pending.response.blocks.length <= APPEND_TASK_BLOCK_LIMIT) {
-      applyAccepted(pending.response, pending.requestFill, pending.sanitizedHtml);
+      applyAccepted(pending.response, true);
       scheduleQueuedResponse();
       return;
     }
@@ -457,9 +388,7 @@ export function wireRenderWorker(
       blocks: pending.response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
       complete: false,
     };
-    if (!applyAccepted(
-      next, false, pending.sanitizedHtml?.slice(0, APPEND_TASK_BLOCK_LIMIT),
-    )) {
+    if (!applyAccepted(next, false)) {
       scheduleQueuedResponse();
       return;
     }
@@ -467,13 +396,7 @@ export function wireRenderWorker(
       ...pending.response,
       blocks: pending.response.blocks.slice(APPEND_TASK_BLOCK_LIMIT),
     };
-    const nextPending = {
-      response: remainder,
-      sanitizedHtml: pending.sanitizedHtml?.slice(APPEND_TASK_BLOCK_LIMIT),
-      requestFill: pending.requestFill,
-      frame: 0,
-      timer: 0,
-    };
+    const nextPending = { response: remainder, frame: 0, timer: 0 };
     pendingAppend = nextPending;
     deferAppend(nextPending, true);
   };
@@ -497,47 +420,14 @@ export function wireRenderWorker(
       shown.epoch === response.epoch && response.version < shown.version) {
       return;
     }
-    if (response.ok && response.mode === "replace" &&
-      response.blocks.length > APPEND_TASK_BLOCK_LIMIT &&
-      response.blocks.length <= INITIAL_REPLACE_BLOCK_LIMIT) {
-      const firstBlockCount = response.blocks.length - APPEND_TASK_BLOCK_LIMIT;
-      const first = {
-        ...response,
-        blocks: response.blocks.slice(0, firstBlockCount),
-        complete: false,
-      };
-      if (!applyAccepted(first, false)) {
-        return;
-      }
-      const pending = {
-        response: {
-          ...response,
-          mode: "append" as const,
-          blocks: response.blocks.slice(firstBlockCount),
-          fillToken: 0,
-        },
-        requestFill: false,
-        frame: 0,
-        timer: 0,
-      };
-      pendingAppend = pending;
-      deferAppend(pending, false);
-      return;
-    }
     if (response.ok && response.mode === "append" &&
       response.blocks.length > APPEND_TASK_BLOCK_LIMIT) {
-      const documentPreview = previews.getOrCreate(response.docId, response.epoch);
-      const sanitizedHtml = documentPreview.elements.size >= WIDE_BLOCK_START
-        ? sanitizeRenderedHtmlBatch(response.blocks.map((block) => block.html))
-        : undefined;
       const first = {
         ...response,
         blocks: response.blocks.slice(0, APPEND_TASK_BLOCK_LIMIT),
         complete: false,
       };
-      if (!applyAccepted(
-        first, false, sanitizedHtml?.slice(0, APPEND_TASK_BLOCK_LIMIT),
-      )) {
+      if (!applyAccepted(first, false)) {
         return;
       }
       const remainder = {
@@ -546,8 +436,6 @@ export function wireRenderWorker(
       };
       const pending = {
         response: remainder,
-        sanitizedHtml: sanitizedHtml?.slice(APPEND_TASK_BLOCK_LIMIT),
-        requestFill: true,
         frame: 0,
         timer: 0,
       };

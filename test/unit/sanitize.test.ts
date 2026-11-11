@@ -2,10 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  sanitizeRenderedHtml,
-  sanitizeRenderedHtmlBatch,
-} from "../../src/renderer/features/preview/sanitize";
+import { sanitizeRenderedHtml } from "../../src/renderer/features/preview/sanitize";
 
 describe("sanitizeRenderedHtml", () => {
   it("AC-SEC-04: removes active document elements and event handlers", () => {
@@ -59,16 +56,5 @@ describe("sanitizeRenderedHtml", () => {
     const result = sanitizeRenderedHtml('<img src="images/pic.png">');
 
     expect(result).toBe('<img src="images/pic.png">');
-  });
-
-  it("AC-PERF-09 AC-SEC-04: batch sanitizing keeps blocks isolated", () => {
-    const blocks = [
-      '</div><script>bad()</script><p data-line="1">one</p>',
-      '<img src="safe.png" onerror="bad()"><p>two</p>',
-    ];
-
-    expect(sanitizeRenderedHtmlBatch(blocks)).toEqual(
-      blocks.map((block) => sanitizeRenderedHtml(block)),
-    );
   });
 });

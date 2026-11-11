@@ -171,7 +171,7 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
 
     expect(blocks(preview)).toHaveLength(8);
-    expect(frames).toHaveLength(0);
+    expect(frames).toHaveLength(1);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -375,39 +375,10 @@ describe("preview render flow", () => {
     });
 
     expect(blocks(preview)).toHaveLength(4);
-    expect(frames).toHaveLength(0);
+    expect(frames).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
     vi.unstubAllGlobals();
-  });
-
-  it("AC-PERF-11: defers the final four initial blocks", () => {
-    vi.useFakeTimers();
-    const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 12 }, (_, index) => ({
-      id: `b${String(index)}`,
-      startLine: index,
-      endLine: index + 1,
-      html: `<p>${String(index)}</p>`,
-    }));
-
-    send(worker, {
-      id: 1,
-      docId: "doc",
-      epoch: 1,
-      version: 1,
-      ok: true,
-      mode: "replace",
-      blocks: renderedBlocks,
-      complete: false,
-    });
-
-    expect(blocks(preview).map((block) => block.dataset["blockId"]))
-      .toEqual(["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]);
-    vi.runOnlyPendingTimers();
-    expect(blocks(preview).map((block) => block.dataset["blockId"]))
-      .toEqual(renderedBlocks.map((block) => block.id));
-    vi.useRealTimers();
   });
 
   it("AC-PERF-10: records the apply boundary marker names", () => {
@@ -456,7 +427,7 @@ describe("preview render flow", () => {
     clearMarks.mockRestore();
   });
 
-  it("AC-PERF-10: requests the next fill after applying the current batch", () => {
+  it("AC-PERF-10: waits for a frame before it requests the next fill batch", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
@@ -475,11 +446,13 @@ describe("preview render flow", () => {
       fillToken: 4,
       complete: false,
     });
+    vi.unstubAllGlobals();
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    frames[0]?.(16);
     expect(worker.postMessage).toHaveBeenCalledWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });
-    expect(frames).toHaveLength(0);
-    vi.unstubAllGlobals();
   });
 
   it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
@@ -506,63 +479,6 @@ describe("preview render flow", () => {
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
       .toEqual([100, 1]);
-  });
-
-  it("AC-PERF-09: prewarms bounded sections before showing a completed preview", () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frames.push(callback);
-      return frames.length;
-    });
-    const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 801 }, (_, index) => ({
-      id: `b${String(index)}`,
-      startLine: index,
-      endLine: index + 1,
-      html: `<p>${String(index)}</p>`,
-    }));
-
-    send(worker, {
-      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
-      mode: "replace", blocks: renderedBlocks, complete: true,
-    });
-
-    const sections = [...preview.querySelectorAll(".preview-section")];
-    expect(preview.dataset["renderComplete"]).toBe("false");
-    expect(sections).toHaveLength(9);
-    expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([100, 100, 100, 100, 100, 100, 100, 100, 1]);
-    expect(sections.slice(0, 8).every((section) =>
-      section.classList.contains("preview-section-prewarm"))).toBe(true);
-    expect(sections.slice(0, 8).every((section) =>
-      [...section.querySelectorAll<HTMLElement>(".preview-page")].every((page) =>
-        page.style.contentVisibility === "visible"))).toBe(true);
-    expect(sections[8]?.classList.contains("preview-section-prewarm")).toBe(false);
-    frames.shift()?.(16);
-    frames.shift()?.(32);
-    expect(preview.dataset["renderComplete"]).toBe("true");
-    vi.unstubAllGlobals();
-  });
-
-  it("AC-PERF-09: uses wider sections after the first four thousand blocks", () => {
-    const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 4_001 }, (_, index) => ({
-      id: `b${String(index)}`,
-      startLine: index,
-      endLine: index + 1,
-      html: `<p>${String(index)}</p>`,
-    }));
-
-    send(worker, {
-      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
-      mode: "replace", blocks: renderedBlocks, complete: true,
-    });
-
-    const sections = [...preview.querySelectorAll(".preview-section")];
-    expect(sections).toHaveLength(41);
-    expect(sections[39]?.classList.contains("preview-section-wide")).toBe(false);
-    expect(sections[40]?.classList.contains("preview-section-wide")).toBe(true);
-    expect(sections[40]?.querySelectorAll(".preview-block")).toHaveLength(1);
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

@@ -13,7 +13,12 @@ import {
   launchEditor,
   stubOpenDialog,
 } from "./helpers";
-import { startPerfTrace, type PerfTrace, type PerfTraceResult } from "./perf-trace";
+import {
+  startPerfTrace,
+  summarizePerfTrace,
+  type PerfTrace,
+  type PerfTraceResult,
+} from "./perf-trace";
 
 const run = promisify(execFile);
 const SAMPLES = 30;
@@ -63,6 +68,37 @@ function report(label: string, values: readonly number[]): void {
   );
   console.log(`${label} distribution: ${distribution(values)}`);
 }
+
+function syntheticTraceEvents(): Record<string, string | number>[] {
+  const complete = (name: string, ts: number, dur: number, cat = "") =>
+    ({ name, ts, dur, cat, ph: "X", pid: 1, tid: 2 });
+  return [
+    complete("perf-diagnostic-window-start", 100_000, 0),
+    complete("RunTask", 120_000, 80_000),
+    complete("RunTask", 250_000, 120_000),
+    complete("RunTask", 400_000, 60_000),
+    complete("RunTask", 480_000, 55_000),
+    complete("V8.GCScavenger", 240_000, 30_000, "v8.gc"),
+    complete("V8.GCCompactor", 260_000, 20_000, "v8.gc"),
+    complete("FunctionCall", 260_000, 40_000),
+    complete("EvaluateScript", 280_000, 30_000),
+    complete("UpdateLayoutTree", 320_000, 20_000),
+    complete("RecalculateStyles", 335_000, 20_000),
+    complete("Layout", 350_000, 30_000),
+    complete("Paint", 245_000, 20_000),
+    complete("perf-diagnostic-window-end", 600_000, 0),
+  ];
+}
+
+test("AC-PERF-11: trace summary reports the exact three longest tasks", () => {
+  expect(summarizePerfTrace("synthetic", syntheticTraceEvents())).toBe(
+    "synthetic trace: longtasks=[start=150.0ms duration=120.0ms gc=30.0ms " +
+    "script=50.0ms style=35.0ms layout=20.0ms paint=15.0ms; " +
+    "start=20.0ms duration=80.0ms gc=0.0ms script=0.0ms style=0.0ms " +
+    "layout=0.0ms paint=0.0ms; start=300.0ms duration=60.0ms gc=0.0ms " +
+    "script=0.0ms style=0.0ms layout=0.0ms paint=0.0ms]",
+  );
+});
 
 async function openPreview(
   page: Page,

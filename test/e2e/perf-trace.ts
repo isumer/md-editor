@@ -159,7 +159,10 @@ function taskSummary(
     `layout=${milliseconds(costs.layout)}ms paint=${milliseconds(costs.paint)}ms`;
 }
 
-function traceSummary(label: string, rawEvents: readonly unknown[]): string {
+export function summarizePerfTrace(
+  label: string,
+  rawEvents: readonly unknown[],
+): string {
   const events = rawEvents.map(parseTraceEvent).filter(
     (event): event is TraceEvent => event !== undefined,
   );
@@ -194,7 +197,7 @@ async function stopTrace(
   await completed;
   await session.detach();
   return {
-    summary: (label) => traceSummary(label, rawEvents),
+    summary: (label) => summarizePerfTrace(label, rawEvents),
     write: async (filePath) => {
       await fs.writeFile(filePath, JSON.stringify({ traceEvents: rawEvents }));
     },
