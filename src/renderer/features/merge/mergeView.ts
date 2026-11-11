@@ -1,6 +1,6 @@
 import type { ChunkChoice } from "../../../shared/merge/mergeChunks";
 import { mergeCounts } from "../../../shared/merge/mergeChunks";
-import { formatMessage } from "../../../shared/messages/en";
+import { formatMessage } from "../../core/messages";
 import type {
   MergeEditorState,
   MergeTransactionSpec,
