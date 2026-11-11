@@ -40,6 +40,10 @@ interface RenderWorkerWiring {
 }
 
 const BLOCK_CLASS = "preview-block";
+// TEMP(AC-PERF-10 diagnosis): per-apply phase timings published as a
+// "preview-apply" performance measure; removed once the CI numbers are in.
+const applyPhases = { sanitizeMs: 0, rewriteMs: 0, htmlMs: 0, blocks: 0, htmlBytes: 0 };
+let sanitizeCalls = 0;
 // Blocks are packed into pages and pages into sections so content-visibility
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
@@ -107,7 +111,19 @@ function updateBlock(
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
-  element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
+  const sanitizeStart = performance.now();
+  const clean = sanitizeRenderedHtml(block.html);
+  sanitizeCalls += 1;
+  const rewriteStart = performance.now();
+  const html = wiring.rewriteHtml(clean);
+  const htmlStart = performance.now();
+  element.innerHTML = html;
+  const htmlEnd = performance.now();
+  applyPhases.sanitizeMs += rewriteStart - sanitizeStart;
+  applyPhases.rewriteMs += htmlStart - rewriteStart;
+  applyPhases.htmlMs += htmlEnd - htmlStart;
+  applyPhases.blocks += 1;
+  applyPhases.htmlBytes += block.html.length;
 }
 
 function appendBlocks(
@@ -343,7 +359,9 @@ export function wireRenderWorker(
   ): boolean => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
-    performance.mark("preview-apply-start");
+    const applyStart = performance.mark("preview-apply-start").startTime;
+    const firstSanitize = sanitizeCalls === 0;
+    Object.assign(applyPhases, { sanitizeMs: 0, rewriteMs: 0, htmlMs: 0, blocks: 0, htmlBytes: 0 });
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
     const documentWiring = { ...wiring, preview: documentPreview.container };
     const applied = applyRenderResult(
@@ -354,6 +372,11 @@ export function wireRenderWorker(
       documentPreview.layout,
     );
     performance.mark("preview-apply-end");
+    performance.measure("preview-apply", {
+      start: applyStart,
+      end: performance.now(),
+      detail: { ...applyPhases, firstSanitize, mode: response.ok ? response.mode : "error" },
+    });
     if (applied && response.ok) {
       documentPreview.version = response.version;
       previews.display(documentPreview);
