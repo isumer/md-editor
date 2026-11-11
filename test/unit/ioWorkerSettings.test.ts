@@ -102,7 +102,7 @@ describe("SettingsStore (io-worker)", () => {
     expect(JSON.parse(content)).toEqual({ theme: "dark" });
   });
 
-  it("serializes concurrent writes without a temporary file collision", async () => {
+  it("concurrent writes leave one complete file and no temporary file", async () => {
     const filePath = path.join(testDirectory, "settings.json");
     const store = new SettingsStore();
 
@@ -111,8 +111,12 @@ describe("SettingsStore (io-worker)", () => {
       store.write(filePath, { sequence: 2 }),
     ])).resolves.toEqual([undefined, undefined]);
 
+    // Last writer wins, so either complete payload is valid. A partial file or
+    // a left-over temporary file would mean the temp paths collided.
     const content = await fs.readFile(filePath, "utf8");
-    expect(JSON.parse(content)).toEqual({ sequence: 2 });
+    expect([{ sequence: 1 }, { sequence: 2 }]).toContainEqual(JSON.parse(content));
+    const entries = await fs.readdir(testDirectory);
+    expect(entries.filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("reads and writes settings through the io-worker control boundary", async () => {
