@@ -87,7 +87,7 @@ const electron = vi.hoisted(() => {
   };
 
   return {
-    app: { getName: () => "MD Editor" },
+    app: { getName: () => "SolidMD" },
     BrowserWindow: {},
     FakeMenu,
     Menu,
@@ -155,7 +155,7 @@ function fileSubmenu(template: MenuItemConstructorOptions[]): TemplateShape[] {
 
 describe("menu skeleton", () => {
   it("AC-R5-21: has no File action items and works without a renderer", () => {
-    const template = buildSkeletonTemplate("linux", "MD Editor");
+    const template = buildSkeletonTemplate("linux", "SolidMD");
     const shaped = asShape(template);
 
     expect(shaped.map((item) => item.label ?? item.role)).toEqual([
@@ -176,10 +176,10 @@ describe("menu skeleton", () => {
   });
 
   it("AC-R5-21: uses role-supplied labels for the macOS application menu", () => {
-    const template = buildSkeletonTemplate("darwin", "MD Editor");
+    const template = buildSkeletonTemplate("darwin", "SolidMD");
     const appMenu = asShape(template)[0] ?? {};
 
-    expect(appMenu.label).toBe("MD Editor");
+    expect(appMenu.label).toBe("SolidMD");
     expect((appMenu.submenu ?? []).map((item) => item.role ?? item.label ?? item.type))
       .toEqual([
         "about",
@@ -200,7 +200,7 @@ describe("menu skeleton", () => {
 describe("contributed menu template", () => {
   it("AC-R5-21: shows catalog titles and chords without registering accelerators", () => {
     const send = vi.fn();
-    const template = buildContributionTemplate("linux", "MD Editor", contribution, send);
+    const template = buildContributionTemplate("linux", "SolidMD", contribution, send);
     const submenu = fileSubmenu(template);
 
     expect(asShape(template)[0]?.label).toBe("File");
@@ -232,7 +232,7 @@ describe("contributed menu template", () => {
   it("AC-R5-21: leaves only Quit when the contribution has no items", () => {
     const template = buildContributionTemplate(
       "linux",
-      "MD Editor",
+      "SolidMD",
       { fileMenuTitle: "File", items: [] },
       vi.fn(),
     );
@@ -240,7 +240,7 @@ describe("contributed menu template", () => {
   });
 
   it("AC-R5-21: creates the File menu after the macOS app menu", () => {
-    const template = buildContributionTemplate("darwin", "MD Editor", contribution, vi.fn());
+    const template = buildContributionTemplate("darwin", "SolidMD", contribution, vi.fn());
 
     expect(asShape(template)[1]?.label).toBe("File");
     expect((asShape(template)[1]?.submenu ?? []).map((item) => item.id)).toEqual([
@@ -255,7 +255,7 @@ describe("contributed menu template", () => {
 describe("menu patch in place", () => {
   it("AC-R5-21: updates label, enabled and checked without rebuilding", () => {
     const menu = new electron.FakeMenu(
-      buildContributionTemplate("linux", "MD Editor", contribution, vi.fn()) as never,
+      buildContributionTemplate("linux", "SolidMD", contribution, vi.fn()) as never,
     );
     const patched: MenuContribution = {
       fileMenuTitle: "Documents",
@@ -283,7 +283,7 @@ describe("menu patch in place", () => {
       .not.toThrow();
     expect(() => patchContribution(
       new electron.FakeMenu(
-        buildSkeletonTemplate("linux", "MD Editor") as never,
+        buildSkeletonTemplate("linux", "SolidMD") as never,
       ),
       contribution,
       "linux",
@@ -291,7 +291,7 @@ describe("menu patch in place", () => {
   });
 
   it("AC-PERF-06: a representative patch stays under 2 ms at p95", () => {
-    const template = buildContributionTemplate("linux", "MD Editor", contribution, vi.fn());
+    const template = buildContributionTemplate("linux", "SolidMD", contribution, vi.fn());
     const samples: number[] = [];
     for (let sample = 0; sample < 30; sample += 1) {
       const menu = new electron.FakeMenu(template as never);
@@ -317,7 +317,7 @@ describe("menu controller", () => {
     const getApplicationMenu = vi.fn(() => current);
     const send = vi.fn();
     const host = { buildFromTemplate, setApplicationMenu, getApplicationMenu };
-    const menu = createMenuController("linux", "MD Editor", host, send);
+    const menu = createMenuController("linux", "SolidMD", host, send);
     return { buildFromTemplate, menu, setApplicationMenu, currentMenu: () => current };
   }
 
