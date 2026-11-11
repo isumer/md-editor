@@ -49,6 +49,8 @@ export interface PerfTrace {
   stop(): Promise<PerfTraceResult>;
 }
 
+type FinishTrace = () => Promise<PerfTraceResult>;
+
 function numberField(value: Record<string, unknown>, name: string): number | undefined {
   const field = value[name];
   return typeof field === "number" ? field : undefined;
@@ -181,22 +183,73 @@ export function summarizePerfTrace(
   return `${label} trace: longtasks=[${summaries.join("; ")}]`;
 }
 
-function waitForTraceCompletion(session: CDPSession): Promise<void> {
-  return new Promise((resolve) => {
-    session.once("Tracing.tracingComplete", () => resolve());
+function waitForTraceCompletion(session: CDPSession): Promise<string> {
+  return new Promise((resolve, reject) => {
+    session.once("Tracing.tracingComplete", (payload) => {
+      if (payload.stream === undefined) {
+        reject(new Error("Tracing completed without a stream"));
+        return;
+      }
+      resolve(payload.stream);
+    });
   });
 }
 
-async function stopTrace(
-  page: Page,
+async function readTraceEvents(session: CDPSession, handle: string): Promise<unknown[]> {
+  const chunks: string[] = [];
+  let complete = false;
+  while (!complete) {
+    const chunk = await session.send("IO.read", { handle });
+    chunks.push(chunk.base64Encoded
+      ? Buffer.from(chunk.data, "base64").toString("utf8")
+      : chunk.data);
+    complete = chunk.eof ?? false;
+  }
+  const parsed: unknown = JSON.parse(chunks.join(""));
+  if (typeof parsed !== "object" || parsed === null ||
+      !("traceEvents" in parsed) || !Array.isArray(parsed.traceEvents)) {
+    throw new Error("Tracing returned an invalid stream");
+  }
+  return parsed.traceEvents;
+}
+
+export async function startPerfTraceWithSession(
   session: CDPSession,
-  rawEvents: unknown[],
-  completed: Promise<void>,
+  mark: (name: string) => Promise<number>,
+): Promise<PerfTrace> {
+  const completed = waitForTraceCompletion(session);
+  await session.send("Tracing.start", {
+    categories: TRACE_CATEGORIES,
+    options: "record-until-full",
+    transferMode: "ReturnAsStream",
+  });
+  let result: Promise<PerfTraceResult> | undefined;
+  return {
+    markStart: () => mark(START_MARK),
+    stop: () => {
+      result ??= stopTraceWithMark(mark, session, completed);
+      return result;
+    },
+  };
+}
+
+async function stopTraceWithMark(
+  mark: (name: string) => Promise<number>,
+  session: CDPSession,
+  completed: Promise<string>,
 ): Promise<PerfTraceResult> {
-  await page.evaluate((mark) => performance.mark(mark), END_MARK);
+  await mark(END_MARK);
   await session.send("Tracing.end");
-  await completed;
-  await session.detach();
+  const handle = await completed;
+  try {
+    return traceResult(await readTraceEvents(session, handle));
+  } finally {
+    await session.send("IO.close", { handle });
+    await session.detach();
+  }
+}
+
+function traceResult(rawEvents: unknown[]): PerfTraceResult {
   return {
     summary: (label) => summarizePerfTrace(label, rawEvents),
     write: async (filePath) => {
@@ -207,23 +260,33 @@ async function stopTrace(
 
 export async function startPerfTrace(page: Page): Promise<PerfTrace> {
   const session = await page.context().newCDPSession(page);
-  const rawEvents: unknown[] = [];
-  session.on("Tracing.dataCollected", (payload) => rawEvents.push(...payload.value));
-  const completed = waitForTraceCompletion(session);
-  await session.send("Tracing.start", {
-    categories: TRACE_CATEGORIES,
-    options: "record-until-full",
-    transferMode: "ReportEvents",
-  });
+  return startPerfTraceWithSession(session, (name) => page.evaluate((mark) => {
+    performance.mark(mark);
+    return performance.now();
+  }, name));
+}
+
+export async function runPerfTrace<T>(
+  trace: PerfTrace,
+  label: string,
+  failurePath: string,
+  action: (finish: FinishTrace) => Promise<T>,
+): Promise<T> {
   let result: Promise<PerfTraceResult> | undefined;
-  return {
-    markStart: () => page.evaluate((mark) => {
-      performance.mark(mark);
-      return performance.now();
-    }, START_MARK),
-    stop: () => {
-      result ??= stopTrace(page, session, rawEvents, completed);
-      return result;
-    },
+  const finish = async (): Promise<PerfTraceResult> => {
+    result ??= trace.stop().then((stopped) => {
+      console.log(stopped.summary(label));
+      return stopped;
+    });
+    return result;
   };
+  try {
+    const value = await action(finish);
+    await finish();
+    return value;
+  } catch (error) {
+    const stopped = await finish();
+    await stopped.write(failurePath);
+    throw error;
+  }
 }
