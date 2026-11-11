@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to MD Editor will be documented in this file.
+All notable changes to SolidMD will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Renamed to SolidMD.
+- No visible change: each feature (compare, merge, preview, workspace) now keeps its own files for its menu entries, messages and editor wiring, so features no longer share one big file. Menus, messages and shortcuts stay exactly as they were.
 - Documents above 4 MiB now open without Markdown syntax highlighting, Markdown indentation on input and fold markers, so they open without a long freeze. Bracket matching still works.
 - Typing in a large document now updates only the preview blocks you changed. Other blocks stay as they are.
 - The preview keeps up with typing on 50 KB and 500 KB documents. The scroll stays smooth.
@@ -71,5 +73,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Delayed showing the window until its first paint to avoid a white startup flash.
 
-[Unreleased]: https://github.com/isumer/md-editor/compare/v0.0.1...HEAD
-[0.0.1]: https://github.com/isumer/md-editor/releases/tag/v0.0.1
+[Unreleased]: https://github.com/isumer/solidmd/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/isumer/solidmd/releases/tag/v0.0.1

@@ -7,7 +7,7 @@ import {
 } from "../../src/main/update/releaseFeed";
 
 const RELEASE_URL =
-  "https://github.com/isumer/md-editor/releases/tag/v1.4.2";
+  "https://github.com/isumer/solidmd/releases/tag/v1.4.2";
 
 function response(status: number, body: string): FeedResponse {
   return {
@@ -29,7 +29,7 @@ describe("release feed check", () => {
     const fetchFeed = vi.fn(async () => response(200, feedText()));
 
     expect(RELEASE_FEED_URL).toBe(
-      "https://api.github.com/repos/isumer/md-editor/releases/latest",
+      "https://api.github.com/repos/isumer/solidmd/releases/latest",
     );
     await expect(
       checkReleaseFeed({ currentVersion: "1.4.1", fetchFeed }),
@@ -175,7 +175,7 @@ describe("release feed check", () => {
       "an insecure release URL",
       JSON.stringify({
         tag_name: "v1.4.2",
-        html_url: "http://github.com/isumer/md-editor/releases/tag/v1.4.2",
+        html_url: "http://github.com/isumer/solidmd/releases/tag/v1.4.2",
         body: "...",
       }),
     ],

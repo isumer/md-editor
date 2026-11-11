@@ -6,7 +6,7 @@ import {
 } from "../../shared/update/updatePolicy";
 
 export const RELEASE_FEED_URL =
-  "https://api.github.com/repos/isumer/md-editor/releases/latest";
+  "https://api.github.com/repos/isumer/solidmd/releases/latest";
 
 export interface FeedResponse {
   readonly status: number;

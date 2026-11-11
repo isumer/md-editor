@@ -4,6 +4,7 @@ export const MENU_CHANNELS = {
 } as const;
 
 // Menu item ids are stable across slices: e2e tests address the items by these ids.
+// Keep this list equal to the ids composed from src/shared/ipc/menu/*.ts.
 export const MENU_ITEM_IDS = [
   "file-open",
   "file-save",
@@ -11,6 +12,15 @@ export const MENU_ITEM_IDS = [
   "file-compare-open",
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+
+// Command ids of the same items, in the same order.
+export const MENU_COMMAND_IDS = [
+  "file.open",
+  "file.save",
+  "file.saveAs",
+  "file.compareOpen",
+] as const;
+export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -27,7 +37,6 @@ export interface MenuContribution {
 
 export type MenuContributionResponse = void;
 
-// What main sends back when a contributed item is clicked: the menu item id.
 export type MenuCommandMessage = MenuItemId;
 
 function exactData(

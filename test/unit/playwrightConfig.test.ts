@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const skipPerfVariable = ["MDEDITOR", "SKIP", "PERF"].join("_");
+const skipPerfVariable = ["SOLIDMD", "SKIP", "PERF"].join("_");
 const previousSkip = process.env[skipPerfVariable];
 
 afterEach(() => {

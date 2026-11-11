@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatMessage } from "../../src/shared/messages/en";
+import { formatMessage } from "../../src/renderer/core/messages";
 import {
   serviceError,
   toServiceError,
