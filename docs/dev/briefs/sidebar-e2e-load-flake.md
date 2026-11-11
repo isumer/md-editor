@@ -8,8 +8,8 @@ investigation first; a fix only with a proven cause.
 
 ## Problem
 `test/e2e/workspace-sidebar.spec.ts` has twice hit the 15 s test budget in
-full-suite CI, on two OSes, in two rows, on runs whose diff cannot run
-product code:
+full-suite CI, on two OSes, in two rows. Neither run's diff touches the
+sidebar code, and a completed run of each tree was green on that leg:
 
 - windows-latest, run 43027415248: row 71 "a second expand reuses loaded
   children and keeps editing responsive" @AC-R11-02 hit 15 s. The next run
