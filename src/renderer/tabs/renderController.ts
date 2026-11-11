@@ -1,4 +1,5 @@
 import type { DocumentRecord } from "../core/document";
+import type { ReplicatedVersion } from "../core/replication";
 import { WorkerHeartbeat } from "../core/heartbeat";
 import type { ChangeDocumentMessage } from "../../shared/ipc/io";
 import type {
@@ -82,9 +83,13 @@ export class RenderController {
   }
 
   attach(document: DocumentRecord, text = document.state.doc.toString()): void {
+    this.attachVersion(document.replication.current(), text);
+  }
+
+  attachVersion(version: ReplicatedVersion, text: string): void {
     this.worker.postMessage({
       op: "attach",
-      ...document.replication.current(),
+      ...version,
       text,
     } satisfies RenderAttachMessage);
   }
