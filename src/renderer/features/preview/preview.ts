@@ -42,8 +42,15 @@ interface RenderWorkerWiring {
 const BLOCK_CLASS = "preview-block";
 // TEMP(AC-PERF-10 diagnosis): per-apply phase timings published as a
 // "preview-apply" performance measure; removed once the CI numbers are in.
-const applyPhases = { sanitizeMs: 0, rewriteMs: 0, htmlMs: 0, blocks: 0, htmlBytes: 0 };
+const applyPhases = {
+  sanitizeMs: 0, rewriteMs: 0, htmlMs: 0, blocks: 0, htmlBytes: 0,
+  perBlockMs: [] as number[], parserFirstMs: -1,
+};
 let sanitizeCalls = 0;
+const heapMb = (): number => {
+  const memory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+  return memory === undefined ? -1 : Math.round(memory.usedJSHeapSize / 1048576);
+};
 // Blocks are packed into pages and pages into sections so content-visibility
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
@@ -111,6 +118,12 @@ function updateBlock(
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
+  if (sanitizeCalls === 0) {
+    // Splits the first-call cost: HTML parser first use against the sanitizer.
+    const parserStart = performance.now();
+    new DOMParser().parseFromString("<p>x</p>", "text/html");
+    applyPhases.parserFirstMs = Math.round((performance.now() - parserStart) * 10) / 10;
+  }
   const sanitizeStart = performance.now();
   const clean = sanitizeRenderedHtml(block.html);
   sanitizeCalls += 1;
@@ -120,6 +133,7 @@ function updateBlock(
   element.innerHTML = html;
   const htmlEnd = performance.now();
   applyPhases.sanitizeMs += rewriteStart - sanitizeStart;
+  applyPhases.perBlockMs.push(Math.round((rewriteStart - sanitizeStart) * 10) / 10);
   applyPhases.rewriteMs += htmlStart - rewriteStart;
   applyPhases.htmlMs += htmlEnd - htmlStart;
   applyPhases.blocks += 1;
@@ -361,7 +375,10 @@ export function wireRenderWorker(
     performance.clearMarks("preview-apply-end");
     const applyStart = performance.mark("preview-apply-start").startTime;
     const firstSanitize = sanitizeCalls === 0;
-    Object.assign(applyPhases, { sanitizeMs: 0, rewriteMs: 0, htmlMs: 0, blocks: 0, htmlBytes: 0 });
+    Object.assign(applyPhases, {
+      sanitizeMs: 0, rewriteMs: 0, htmlMs: 0, blocks: 0, htmlBytes: 0, perBlockMs: [], parserFirstMs: -1,
+    });
+    const heapBefore = heapMb();
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
     const documentWiring = { ...wiring, preview: documentPreview.container };
     const applied = applyRenderResult(
@@ -375,7 +392,10 @@ export function wireRenderWorker(
     performance.measure("preview-apply", {
       start: applyStart,
       end: performance.now(),
-      detail: { ...applyPhases, firstSanitize, mode: response.ok ? response.mode : "error" },
+      detail: {
+        ...applyPhases, firstSanitize, heapBefore, heapAfter: heapMb(),
+        mode: response.ok ? response.mode : "error",
+      },
     });
     if (applied && response.ok) {
       documentPreview.version = response.version;
