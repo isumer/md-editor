@@ -145,12 +145,14 @@ describe("document commands", () => {
     new DocumentCommands({
       compare: vi.fn(),
       editor,
+      featureCommand: vi.fn(),
       onError,
       onResult: vi.fn(),
       open: vi.fn(async () => undefined),
       save: vi.fn(async () => {
         throw new Error("save stopped");
       }),
+      toggleFullScreen: vi.fn(async () => undefined),
     });
     await Promise.resolve();
 
