@@ -114,6 +114,8 @@ jobs:
   perf-throttled:
     name: Performance with 4x CPU throttle
     runs-on: ubuntu-latest
+    # Same rule as the test job: a candidate's push run already covers its PR.
+    if: github.event_name != 'pull_request' || !(startsWith(github.head_ref, 'feature/') || startsWith(github.head_ref, 'bug/') || startsWith(github.head_ref, 'release/'))
     # lowres-1-ci-throttle.md: This job stays non-blocking until the low-resource product slices land.
     continue-on-error: true
     steps:
