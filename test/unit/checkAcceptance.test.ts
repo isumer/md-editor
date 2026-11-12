@@ -1,9 +1,14 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -96,5 +101,40 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("reads every split JUnit report before checking implemented criteria", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "acceptance-split-"));
+    await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+    await fs.mkdir(path.join(root, "reports"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "docs", "acceptance", "R01.md"),
+      criteriaFixture.replace("status: planned", "status: implemented"),
+    );
+    await fs.writeFile(
+      path.join(root, "reports", "remaining-e2e-junit.xml"),
+      '<testcase name="first behavior @AC-R1-01" />',
+    );
+    await fs.writeFile(
+      path.join(root, "reports", "perf-e2e-junit.xml"),
+      '<testcase name="future behavior @AC-R1-02" />',
+    );
+    const previousReports = process.env["ACCEPTANCE_JUNIT_REPORTS"];
+    process.env["ACCEPTANCE_JUNIT_REPORTS"] =
+      "remaining-e2e-junit.xml,perf-e2e-junit.xml";
+
+    try {
+      const report = await runAcceptanceCheck(root);
+
+      expect(report.ok).toBe(true);
+      expect(report.missing).toEqual([]);
+    } finally {
+      if (previousReports === undefined) {
+        delete process.env["ACCEPTANCE_JUNIT_REPORTS"];
+      } else {
+        process.env["ACCEPTANCE_JUNIT_REPORTS"] = previousReports;
+      }
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

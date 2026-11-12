@@ -91,6 +91,7 @@ let editorTwo: EditorView;
 let secondaryDocument: DocumentRecord | null = null;
 let mirroring = false;
 const documentViews = new DocumentViews();
+const stateViews = new Map<string, DocumentViewId>();
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let installedFeatures: InstalledFeatures;
@@ -159,30 +160,72 @@ const renderController = new RenderController({
   workerUrl: new URL(renderWorkerUrl, window.location.href),
 });
 
+interface PendingDocumentChange {
+  readonly changes: ChangeSet;
+  readonly document: DocumentRecord;
+}
+
+let pendingDocumentChanges: PendingDocumentChange[] = [];
+let documentChangeTimer: number | null = null;
+let pendingFeatureState: { documentId: string | null; state: EditorState } | null = null;
+let stateChangeFrame: number | null = null;
+
+function queueStateChanged(state?: EditorState): void {
+  if (state !== undefined) {
+    pendingFeatureState = { documentId: activeDocument?.id ?? null, state };
+  }
+  stateChangeFrame ??= requestAnimationFrame(() => {
+    stateChangeFrame = null;
+    documentCommands?.refresh();
+    const pending = pendingFeatureState;
+    pendingFeatureState = null;
+    if (pending !== null) {
+      installedFeatures.documentStateChanged(pending.documentId, pending.state);
+    }
+  });
+}
+
+function flushDocumentChanges(): void {
+  if (documentChangeTimer !== null) {
+    window.clearTimeout(documentChangeTimer);
+    documentChangeTimer = null;
+  }
+  const pending = pendingDocumentChanges;
+  pendingDocumentChanges = [];
+  for (const change of pending) {
+    const message = change.document.replication.changed(change.changes);
+    sendChanges(message);
+    renderController.change(message);
+    dirtyFrame.changed(change.document);
+  }
+  if (pending.some((change) => change.document === activeDocument)) {
+    renderController.schedule();
+  }
+}
+
+function queueDocumentChange(document: DocumentRecord, changes: ChangeSet): void {
+  pendingDocumentChanges.push({ changes, document });
+  documentChangeTimer ??= window.setTimeout(flushDocumentChanges, 0);
+}
+
 const callbacks: EditorCallbacks = {
   deferDirtyState: true,
-  onDocumentChanged: () => {
-    if (mirroring) return;
-    renderController.schedule();
-  },
+  onDocumentChanged: () => undefined,
   onChanges: (changes, state) => {
     if (mirroring) return;
     const document = activeDocument;
     if (!document) {
       return;
     }
+    stateViews.set(document.id, 1);
     document.state = state;
     syncPeerEditor(document, 1, changes);
-    const message = document.replication.changed(changes);
-    sendChanges(message);
-    renderController.change(message);
-    dirtyFrame.changed(document);
+    queueDocumentChange(document, changes);
   },
   updateTitle,
   onStateChanged: (state) => {
     if (mirroring) return;
-    documentCommands?.refresh();
-    installedFeatures.documentStateChanged(activeDocument?.id ?? null, state);
+    queueStateChanged(state);
   },
 };
 
@@ -194,16 +237,14 @@ const secondaryCallbacks: EditorCallbacks = {
     if (mirroring) return;
     const document = secondaryDocument;
     if (!document) return;
+    stateViews.set(document.id, 2);
     document.state = state;
     syncPeerEditor(document, 2, changes);
-    const message = document.replication.changed(changes);
-    sendChanges(message);
-    renderController.change(message);
-    dirtyFrame.changed(document);
+    queueDocumentChange(document, changes);
   },
   updateTitle,
   onStateChanged: () => {
-    if (!mirroring) documentCommands?.refresh();
+    if (!mirroring) queueStateChanged();
   },
 };
 editorTwo = createEditor(editorTwoHost, secondaryDocumentState, secondaryCallbacks);
@@ -219,7 +260,6 @@ function hydrateEditor(view: DocumentViewId): void {
 }
 
 function focusEditor(view: DocumentViewId): void {
-  hydrateEditor(view);
   const document = view === 1 ? activeDocument : secondaryDocument;
   if (document) {
     syncDocumentState(document, view === 1 ? documentState : secondaryDocumentState);
@@ -251,16 +291,20 @@ function editorStateForView(
   document: DocumentRecord,
   view: DocumentViewId,
 ): EditorState {
-  const selection = documentViews.state(document.id, view)?.selection ??
-    document.state.selection;
-  return document.state.update({
+  const stored = documentViews.state(document.id, view);
+  if (stateViews.get(document.id) === view && stored === undefined) {
+    return document.state;
+  }
+  const next = document.state.update({
     annotations: Transaction.addToHistory.of(false),
     effects: editorCallbacksEffect(
       view === 1 ? documentState : secondaryDocumentState,
       view === 1 ? callbacks : secondaryCallbacks,
     ),
-    selection,
+    selection: stored?.selection ?? document.state.selection,
   }).state;
+  stateViews.set(document.id, view);
+  return next;
 }
 
 function syncPeerEditor(
@@ -281,7 +325,6 @@ function syncPeerEditor(
     }
     return;
   }
-  const scrollTop = peer.scrollDOM.scrollTop;
   const peerDocumentState = peerView === 1 ? documentState : secondaryDocumentState;
   mirroring = true;
   peerDocumentState.applyingDocument = true;
@@ -289,8 +332,8 @@ function syncPeerEditor(
     peer.dispatch({
       annotations: Transaction.addToHistory.of(false),
       changes,
+      filter: false,
     });
-    peer.scrollDOM.scrollTop = scrollTop;
   } finally {
     peerDocumentState.applyingDocument = false;
     mirroring = false;
@@ -470,6 +513,7 @@ function newDocument(input: {
       : Text.of(input.savedText.split("\n")),
     state,
   });
+  stateViews.set(document.id, 1);
   registry.add(document);
   documentViews.add(document.id);
   const text = isLineFeedOnly ? input.text : state.doc.toString();
@@ -526,9 +570,11 @@ function removeDocument(document: DocumentRecord): void {
   if (!registry.get(document.id)) {
     return;
   }
+  flushDocumentChanges();
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
+  stateViews.delete(document.id);
   documentViews.remove(document.id);
   if (secondaryDocument === document) {
     secondaryDocument = null;
@@ -581,7 +627,10 @@ lifecycle = new DocumentLifecycle({
   active: () => activeDocument,
   activate: activateDocument,
   drafts,
-  flushDirty: () => dirtyFrame.flush(),
+  flushDirty: () => {
+    flushDocumentChanges();
+    dirtyFrame.flush();
+  },
   newDocument,
   prompt,
   registry,
@@ -602,7 +651,10 @@ documentCommands = new DocumentCommands({
   redo: () => runHistory("redo"),
   save: async (saveAs) => {
     const document = focusedDocument();
-    if (document) await lifecycle.save(document, saveAs);
+    if (document) {
+      flushDocumentChanges();
+      await lifecycle.save(document, saveAs);
+    }
   },
   undo: () => runHistory("undo"),
 });
