@@ -71,9 +71,34 @@ function harness(documents: readonly DocumentRecord[]): Harness {
   };
 }
 
-afterEach(() => document.body.replaceChildren());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.body.replaceChildren();
+});
 
 describe("merge wiring", () => {
+  it("uses the platform worker when no worker factory is supplied", () => {
+    const worker = workerFactory();
+    worker.postMessage = vi.fn();
+    const WorkerStub = vi.fn(function WorkerStub() {
+      return worker;
+    });
+    vi.stubGlobal("Worker", WorkerStub);
+    const feature = createMergeFeature();
+    const testHarness = harness([
+      record("left", "left\n"),
+      record("right", "right\n"),
+      record("base", "base\n"),
+    ]);
+    const hooks = feature.create(testHarness.context);
+
+    hooks.commands?.["file.mergeOpen"]?.();
+
+    expect(WorkerStub).toHaveBeenCalledOnce();
+    expect(worker.postMessage).toHaveBeenCalledOnce();
+    testHarness.editor.destroy();
+  });
+
   it("AC-R15-03: merge command requires two open files", () => {
     const testHarness = harness([record("base", "base\n")]);
     const hooks = mergeFeature.create(testHarness.context);

@@ -41,6 +41,16 @@ describe("merge worker contract", () => {
     expect(isMergeWorkerRequest(accessor)).toBe(false);
   });
 
+  it("rejects input when its keys cannot be inspected", () => {
+    const input = new Proxy({}, {
+      ownKeys() {
+        throw new Error("keys unavailable");
+      },
+    });
+
+    expect(isMergeWorkerRequest(input)).toBe(false);
+  });
+
   it("returns a typed merge result", () => {
     const post = vi.fn();
     const result = {
@@ -136,6 +146,21 @@ describe("merge worker client", () => {
     const client = new MergeWorkerClient(
       () => {
         throw "worker unavailable";
+      },
+      showError,
+      "worker failed",
+    );
+
+    client.request(request(), vi.fn());
+
+    expect(showError).toHaveBeenCalledWith("worker unavailable");
+  });
+
+  it("reports an Error message when worker creation fails", () => {
+    const showError = vi.fn();
+    const client = new MergeWorkerClient(
+      () => {
+        throw new Error("worker unavailable");
       },
       showError,
       "worker failed",

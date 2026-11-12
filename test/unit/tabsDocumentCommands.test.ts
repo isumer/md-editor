@@ -130,6 +130,7 @@ describe("document commands", () => {
     new DocumentCommands({
       compare: vi.fn(),
       editor,
+      merge: vi.fn(),
       onError,
       onResult: vi.fn(),
       open: vi.fn(async () => undefined),
