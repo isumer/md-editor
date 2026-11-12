@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- The bounded diff implementation keeps its shared state together. */
 export interface LineDiffOptions {
   readonly ignoreTrailingWhitespace?: boolean;
   readonly ignoreCase?: boolean;
@@ -46,7 +47,8 @@ type Anchor = readonly [left: number, right: number];
 interface DiffInput {
   readonly left: readonly string[];
   readonly right: readonly string[];
-  readonly options: LineDiffOptions;
+  readonly leftKeys: readonly string[];
+  readonly rightKeys: readonly string[];
 }
 type Gap = readonly [left: LineRange, right: LineRange];
 const MAX_EDIT_DISTANCE = 512;
@@ -77,11 +79,10 @@ function normalized(line: string, options: LineDiffOptions): string {
 function uniqueIndexes(
   lines: readonly string[],
   range: LineRange,
-  options: LineDiffOptions,
 ): Map<string, number> {
   const indexes = new Map<string, number>();
   for (let index = range[0]; index < range[1]; index += 1) {
-    const key = normalized(lines[index] as string, options);
+    const key = lines[index] as string;
     indexes.set(key, indexes.has(key) ? -1 : index);
   }
   return indexes;
@@ -92,8 +93,8 @@ function anchorCandidates(
   leftRange: LineRange,
   rightRange: LineRange,
 ): Anchor[] {
-  const leftIndexes = uniqueIndexes(input.left, leftRange, input.options);
-  const rightIndexes = uniqueIndexes(input.right, rightRange, input.options);
+  const leftIndexes = uniqueIndexes(input.leftKeys, leftRange);
+  const rightIndexes = uniqueIndexes(input.rightKeys, rightRange);
   const anchors: Anchor[] = [];
   for (const [line, left] of leftIndexes) {
     const right = rightIndexes.get(line);
@@ -318,9 +319,9 @@ function appendEdits(
 function appendGap(hunks: DiffHunk[], input: DiffInput, gap: Gap): boolean {
   const leftLength = gap[0][1] - gap[0][0];
   const rightLength = gap[1][1] - gap[1][0];
+  if (leftLength === 0 && rightLength === 0) return false;
   const equal = (left: number, right: number): boolean =>
-    normalized(input.left[gap[0][0] + left] as string, input.options) ===
-    normalized(input.right[gap[1][0] + right] as string, input.options);
+    input.leftKeys[gap[0][0] + left] === input.rightKeys[gap[1][0] + right];
   const exact = boundedMyers(leftLength, rightLength, equal);
   appendEdits(
     hunks,
@@ -370,10 +371,17 @@ export function diffLines(
   right: readonly string[],
   options: LineDiffOptions,
 ): LineDiffResult {
-  const input = { left, right, options };
+  const needsNormalization = options.ignoreTrailingWhitespace === true ||
+    options.ignoreCase === true || options.ignoreLineEndings === true;
+  const leftKeys = needsNormalization
+    ? left.map((line) => normalized(line, options))
+    : left;
+  const rightKeys = needsNormalization
+    ? right.map((line) => normalized(line, options))
+    : right;
+  const input = { left, right, leftKeys, rightKeys };
   const equal = (leftIndex: number, rightIndex: number): boolean =>
-    normalized(left[leftIndex] as string, options) ===
-    normalized(right[rightIndex] as string, options);
+    leftKeys[leftIndex] === rightKeys[rightIndex];
   let prefix = 0;
   while (prefix < left.length && prefix < right.length && equal(prefix, prefix)) {
     prefix += 1;

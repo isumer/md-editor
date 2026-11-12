@@ -77,6 +77,26 @@ describe("editor replication performance", () => {
     }
   });
 
+  it("document changes reach clones before state observers run", () => {
+    const state = EditorState.create({ doc: "before" });
+    const transaction = state.update({
+      changes: { from: state.doc.length, insert: " after" },
+    });
+    const calls: string[] = [];
+
+    handleDocumentUpdate({
+      docChanged: transaction.docChanged,
+      state: transaction.state,
+      changes: transaction.changes,
+    }, createDocumentState(), {
+      onDocumentChanged: vi.fn(),
+      onChanges: () => calls.push("clone"),
+      onStateChanged: () => calls.push("observer"),
+    });
+
+    expect(calls).toEqual(["clone", "observer"]);
+  });
+
   it("AC-PERF-05: a one-character edit of 20 MB never flattens the document", () => {
     const initial = Text.of(["x".repeat(20 * 1024 * 1024)]);
     const state = EditorState.create({ doc: initial });

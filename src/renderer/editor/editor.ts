@@ -17,9 +17,11 @@ import {
 import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
+  Compartment,
   EditorState,
   type ChangeSet,
   type Extension,
+  type StateEffect,
   type Text,
 } from "@codemirror/state";
 import {
@@ -39,6 +41,7 @@ import {
 import type { DocumentState } from "../core/document";
 
 export interface EditorCallbacks {
+  deferDirtyState?: boolean;
   onDocumentChanged(): void;
   onChanges(changes: ChangeSet, state: EditorState): void;
   onStateChanged?(state: EditorState): void;
@@ -75,6 +78,87 @@ const editorSetup = [
     ...lintKeymap,
   ]),
 ];
+const callbacksCompartment = new Compartment();
+
+const plainMarkdownTemplate = markdown().language.parser.parse("x");
+const plainMarkdownParagraph = plainMarkdownTemplate.topNode.firstChild?.type;
+const plainMarkdownPattern = /^[A-Za-z0-9]+$/;
+// Lezer otherwise scans an entire unbroken line before honoring its parse budget.
+type MarkdownTree = typeof plainMarkdownTemplate;
+const MarkdownTree = plainMarkdownTemplate.constructor as new (
+  type: MarkdownTree["type"],
+  children: readonly MarkdownTree[],
+  positions: readonly number[],
+  length: number,
+) => MarkdownTree;
+
+function plainMarkdownParse(length: number) {
+  let stoppedAt: number | null = null;
+  return {
+    advance: () => {
+      const parsedLength = stoppedAt ?? length;
+      const children =
+        plainMarkdownParagraph === undefined
+          ? []
+          : [new MarkdownTree(plainMarkdownParagraph, [], [], parsedLength)];
+      const positions = children.length === 0 ? [] : [0];
+      return new MarkdownTree(
+        plainMarkdownTemplate.type,
+        children,
+        positions,
+        parsedLength,
+      );
+    },
+    get parsedPos() {
+      return stoppedAt ?? length;
+    },
+    stopAt: (position: number) => {
+      stoppedAt = position;
+    },
+    get stoppedAt() {
+      return stoppedAt;
+    },
+  };
+}
+
+const markdownSupport = markdown({
+  extensions: {
+    // Plain word runs contain no Markdown delimiters, so parse them in one step.
+    parseInline: [{
+      name: "PlainTextRun",
+      before: "Escape",
+      parse: (context, _next, position) => {
+        const start = position - context.offset;
+        const end = plainTextRunEnd(context.text, start);
+        return end === start ? -1 : context.offset + end;
+      },
+    }],
+    wrap: (inner, input) => {
+      const text = input.chunk(0);
+      return text.length === input.length &&
+        text.length > 64 * 1024 &&
+        plainMarkdownPattern.test(text)
+        ? plainMarkdownParse(input.length)
+        : inner;
+    },
+  },
+});
+
+function callbacksExtension(
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): Extension {
+  return EditorView.updateListener.of((update) => {
+    handleDocumentUpdate(update, documentState, callbacks);
+  });
+}
+
+export function editorCallbacksEffect(
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): StateEffect<unknown> {
+  return callbacksCompartment.reconfigure(callbacksExtension(documentState, callbacks));
+}
 
 function plainTextRunEnd(text: string, start: number): number {
   let end = start;
@@ -87,21 +171,6 @@ function plainTextRunEnd(text: string, start: number): number {
   }
   return end;
 }
-
-// Plain word runs contain no Markdown delimiters, so parse them in one step.
-const markdownSupport = markdown({
-  extensions: {
-    parseInline: [{
-      name: "PlainTextRun",
-      before: "Escape",
-      parse: (context, _next, position) => {
-        const start = position - context.offset;
-        const end = plainTextRunEnd(context.text, start);
-        return end === start ? -1 : context.offset + end;
-      },
-    }],
-  },
-});
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
@@ -122,10 +191,10 @@ export function handleDocumentUpdate(
   callbacks: EditorCallbacks,
 ): void {
   performance.mark("editor-update-start");
-  performance.mark("editor-state-hooks-start");
-  callbacks.onStateChanged?.(update.state);
-  performance.mark("editor-state-hooks-end");
   if (!update.docChanged) {
+    performance.mark("editor-state-hooks-start");
+    callbacks.onStateChanged?.(update.state);
+    performance.mark("editor-state-hooks-end");
     performance.mark("editor-update-end");
     return;
   }
@@ -137,6 +206,10 @@ export function handleDocumentUpdate(
   performance.mark("editor-document-hooks-start");
   callbacks.onDocumentChanged();
   performance.mark("editor-document-hooks-end");
+  // Document clones must catch the change before state observers read the view.
+  performance.mark("editor-state-hooks-start");
+  callbacks.onStateChanged?.(update.state);
+  performance.mark("editor-state-hooks-end");
   performance.mark("editor-update-end");
 }
 
@@ -153,9 +226,7 @@ export function createEditorState(
       extension,
       ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        handleDocumentUpdate(update, documentState, callbacks);
-      }),
+      callbacksCompartment.of(callbacksExtension(documentState, callbacks)),
     ],
   });
 }

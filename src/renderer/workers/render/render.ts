@@ -1,12 +1,42 @@
 import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
 
+const HIGHLIGHT_CACHE_ENTRY_LIMIT = 64;
+const HIGHLIGHT_CACHE_VALUE_LIMIT = 64 * 1024;
+// Incremental renders revisit unchanged fences, so retain only small recent results.
+const highlightCache = new Map<string, string>();
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function highlightCode(source: string, language: string): string {
+  if (source.length > HIGHLIGHT_CACHE_VALUE_LIMIT) {
+    return hljs.highlight(source, { language, ignoreIllegals: true }).value;
+  }
+  const key = `${language}\0${source}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) {
+    highlightCache.delete(key);
+    highlightCache.set(key, cached);
+    return cached;
+  }
+  const html = hljs.highlight(source, { language, ignoreIllegals: true }).value;
+  if (html.length > HIGHLIGHT_CACHE_VALUE_LIMIT) {
+    return html;
+  }
+  if (highlightCache.size >= HIGHLIGHT_CACHE_ENTRY_LIMIT) {
+    for (const oldest of highlightCache.keys()) {
+      highlightCache.delete(oldest);
+      break;
+    }
+  }
+  highlightCache.set(key, html);
+  return html;
 }
 
 function createMarkdownRenderer() {
@@ -16,10 +46,7 @@ function createMarkdownRenderer() {
     typographer: false,
     highlight(source, language) {
       if (language && hljs.getLanguage(language)) {
-        const highlighted = hljs.highlight(source, {
-          language,
-          ignoreIllegals: true,
-        }).value;
+        const highlighted = highlightCode(source, language);
         return `<pre><code class="hljs language-${escapeHtml(language)}">${highlighted}</code></pre>`;
       }
       return `<pre><code class="hljs">${escapeHtml(source)}</code></pre>`;

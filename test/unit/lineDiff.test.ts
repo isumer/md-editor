@@ -246,6 +246,34 @@ describe("line diff", () => {
     ]);
   });
 
+  it("empty anchored gaps keep exact hunks and do not report a limit", () => {
+    expect(diffLines(["a", "x", "b"], ["a", "y", "b"], {})).toEqual({
+      hunks: [
+        { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 1 },
+        {
+          kind: "change",
+          lines: [
+            {
+              kind: "modified",
+              leftLineNumber: 2,
+              rightLineNumber: 2,
+              left: "x",
+              right: "y",
+            },
+          ],
+        },
+        { kind: "unchanged", leftStart: 3, rightStart: 3, lineCount: 1 },
+      ],
+      limited: false,
+    });
+    expect(diffLines(["a", "b", "c"], ["a", "b", "c"], {})).toEqual({
+      hunks: [
+        { kind: "unchanged", leftStart: 1, rightStart: 1, lineCount: 3 },
+      ],
+      limited: false,
+    });
+  });
+
   it("AC-R14-10: keeps every sparse large-file change exact", () => {
     const left = Array.from({ length: 200_000 }, (_, index) => `line-${index}`);
     const right = left.map((line, index) =>

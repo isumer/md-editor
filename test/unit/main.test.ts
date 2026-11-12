@@ -505,6 +505,12 @@ describe("main process", () => {
       value: { name: "before-ready.md", grant: expect.any(String) },
     });
     const firstGrant = (firstOpen as { value: { grant: string } }).value.grant;
+    fileSystem.realpath.mockResolvedValueOnce("/tmp/dropped.md");
+    await expect(invoke("file:open-path", { path: "/tmp/dropped.md" }))
+      .resolves.toMatchObject({
+        ok: true,
+        value: { name: "dropped.md", grant: expect.any(String) },
+      });
     electron.dialog.showSaveDialog.mockResolvedValueOnce({
       canceled: false,
       filePath: "/tmp/before-ready-save.md",
@@ -967,6 +973,8 @@ describe("main process", () => {
       id: 1,
     })).resolves.toEqual({ ok: true, value: undefined });
     await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+    window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+    expect(window.close).toHaveBeenCalledOnce();
 
     const worker = electron.UtilityProcessMock.instances.at(-1);
     const write = worker?.posts.find(({ message }) =>

@@ -254,6 +254,26 @@ describe("preload bridge", () => {
       "file:open-path",
       { path: "/tmp/dropped.md" },
     );
+
+    electron.filePath.mockReturnValueOnce("");
+    listener?.({
+      isTrusted: true,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    });
+    await Promise.resolve();
+    expect(electron.invoke).toHaveBeenCalledTimes(1);
+
+    electron.invoke.mockRejectedValueOnce(new Error("main process stopped"));
+    listener?.({
+      isTrusted: true,
+      dataTransfer: { files: [file] },
+      preventDefault: vi.fn(),
+    });
+    await vi.waitFor(() => {
+      expect(electron.invoke).toHaveBeenCalledTimes(2);
+    });
+    expect(opened).toEqual([{ ok: true, value: reference }]);
   });
 
   it("AC-R5-17: fails pending requests when a replacement port arrives", async () => {

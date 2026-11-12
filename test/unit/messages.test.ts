@@ -48,6 +48,8 @@ describe("English messages", () => {
       "merge.workerFailed": "The merge worker stopped unexpectedly.",
       "tab.close": "Close {file}",
       "tab.unsaved": "Unsaved changes",
+      "tab.moveToOtherView": "Move to Other View",
+      "tab.cloneToOtherView": "Clone to Other View",
       "close.cancel": "Cancel",
       "close.discard": "Discard",
       "close.save": "Save",

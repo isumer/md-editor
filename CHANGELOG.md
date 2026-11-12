@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
+- A second editor view sits beside the first. Move to Other View and Clone to Other View open it, and a clone shares its text, undo history, cursor and scroll with its partner.
 - The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
 - Help > Check for Updates tells you what it found: a new version with its release notes, that you are up to date, or why the check failed. A new version opens the download page only after you agree. The app also checks once a day at startup, and you can turn that off from the update dialog.
 
@@ -28,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Documents above 4 MiB now open without Markdown syntax highlighting, Markdown indentation on input and fold markers, so they open without a long freeze. Bracket matching still works.
 - Typing in a large document now updates only the preview blocks you changed. Other blocks stay as they are.
 - The preview keeps up with typing on 50 KB and 500 KB documents. The scroll stays smooth.
+- Typing now checks for unsaved changes at most once per frame instead of on every keystroke, and a document made of one very long plain line no longer needs a full Markdown scan to highlight.
 - Opening a 20 MB document shows the first screen quickly. The rest of the preview fills in without freezing the editor.
 - A large preview update now lands in small batches instead of one long step, so the window stays responsive while a big document paints.
 - Opening and scrolling a very large document no longer causes short freezes on slower computers. The preview fills in one step per screen frame.
@@ -44,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Save now acts on the view you last used, and the title bar and unsaved dot follow the active view instead of always showing the first one.
 - Opening a very large document no longer copies its whole text twice before the preview starts, so the first screen appears sooner.
 - A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".
