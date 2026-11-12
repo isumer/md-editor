@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
-  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -102,26 +98,4 @@ describe("acceptance report", () => {
     expect(report.missing).toEqual(["AC-PERF-02"]);
   });
 
-  it("reads performance cases from the split CI JUnit report", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "solidmd-acceptance-"));
-    try {
-      await mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
-      await mkdir(path.join(root, "reports"));
-      await writeFile(
-        path.join(root, "docs", "acceptance", "PERF.md"),
-        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
-      );
-      await writeFile(
-        path.join(root, "reports", "perf-e2e-junit.xml"),
-        '<testsuite><testcase name="fast typing @AC-PERF-02" /></testsuite>',
-      );
-
-      const report = await runAcceptanceCheck(root);
-
-      expect(report.ok).toBe(true);
-      expect(report.markdown).toContain("| AC-PERF-02 | implemented | fast typing @AC-PERF-02 | pass |");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
 });

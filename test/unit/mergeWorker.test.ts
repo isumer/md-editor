@@ -27,6 +27,8 @@ function port(): MergeWorkerPort {
 describe("merge worker contract", () => {
   it("accepts only exact bounded merge requests", () => {
     expect(isMergeWorkerRequest(request())).toBe(true);
+    expect(isMergeWorkerRequest(request(), 6)).toBe(true);
+    expect(isMergeWorkerRequest({ ...request(), base: "1234567" }, 6)).toBe(false);
     expect(isMergeWorkerRequest({ ...request(), extra: true })).toBe(false);
     expect(isMergeWorkerRequest({ ...request(), id: -1 })).toBe(false);
     expect(isMergeWorkerRequest({ ...request(), base: 4 })).toBe(false);

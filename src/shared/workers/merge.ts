@@ -46,13 +46,18 @@ function exactData(value: unknown): Record<string, unknown> | null {
   }
 }
 
-function validText(value: unknown): value is string {
-  return typeof value === "string" && value.length <= MAX_MERGE_TEXT_LENGTH;
+function validText(value: unknown, maximumLength: number): value is string {
+  return typeof value === "string" && value.length <= maximumLength;
 }
 
-export function isMergeWorkerRequest(value: unknown): value is MergeWorkerRequest {
+export function isMergeWorkerRequest(
+  value: unknown,
+  maximumTextLength = MAX_MERGE_TEXT_LENGTH,
+): value is MergeWorkerRequest {
   const data = exactData(value);
   return data !== null && typeof data["id"] === "number" &&
     Number.isSafeInteger(data["id"]) && data["id"] >= 0 &&
-    validText(data["base"]) && validText(data["left"]) && validText(data["right"]);
+    validText(data["base"], maximumTextLength) &&
+    validText(data["left"], maximumTextLength) &&
+    validText(data["right"], maximumTextLength);
 }
