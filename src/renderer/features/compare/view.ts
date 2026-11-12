@@ -184,11 +184,9 @@ export class CompareView {
     this.root.hidden = false;
     this.mode = "side-by-side";
     this.names = [leftName, rightName];
-    this.state = state;
     this.root.classList.remove("compare-unified");
     const highlight = this.root.querySelector<HTMLSelectElement>(".compare-highlight");
     if (highlight) highlight.value = state.highlight;
-    this.notice.hidden = !state.limited;
     this.render(state);
   }
 
@@ -199,6 +197,9 @@ export class CompareView {
   }
 
   render(state: CompareState): void {
+    this.state = state;
+    this.notice.hidden = !state.limited;
+    this.root.classList.toggle("compare-limited", state.limited);
     this.renderHeadings();
     this.rows.replaceChildren(visibleRows(state, this.mode));
     const markers = document.createDocumentFragment();

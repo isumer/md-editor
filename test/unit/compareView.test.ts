@@ -137,5 +137,18 @@ describe("compare view", () => {
 
     expect(view.root.querySelector("[role=status]")?.textContent)
       .toBe("The detailed diff took too long. SolidMD shows line changes instead.");
+    expect(view.root.classList.contains("compare-limited")).toBe(true);
+  });
+
+  it("keeps the latest rendered rows and fallback layout when the mode changes", () => {
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move: vi.fn() });
+    view.show("left.txt", "right.txt", createCompareState("left", "right", "words"));
+    const latest = createCompareState("same\nold", "same\nnew", "words");
+
+    view.render(latest);
+    view.root.querySelector<HTMLButtonElement>(".compare-mode")?.click();
+
+    expect(view.root.textContent).toContain("new");
+    expect(view.root.classList.contains("compare-limited")).toBe(latest.limited);
   });
 });
