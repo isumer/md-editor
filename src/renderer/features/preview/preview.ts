@@ -41,15 +41,12 @@ interface RenderWorkerWiring {
 }
 
 const BLOCK_CLASS = "preview-block";
-const EAGER_LAYOUT_CLASS = "preview-eager-layout";
 // Blocks are packed into pages and pages into sections so content-visibility
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 20;
 const SECTION_PAGE_LIMIT = 5;
-const EAGER_LAYOUT_BLOCK_MINIMUM = 1_000;
-const EAGER_LAYOUT_BLOCK_LIMIT = 3_000;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
 let appendMeasureCount = 0;
@@ -64,37 +61,6 @@ const DEFERRED_FILL_BLOCK_LIMIT = 512;
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
 
-export function usesEagerPreviewLayout(blockCount: number): boolean {
-  return blockCount >= EAGER_LAYOUT_BLOCK_MINIMUM &&
-    blockCount <= EAGER_LAYOUT_BLOCK_LIMIT;
-}
-
-function setEagerLayout(preview: HTMLElement, enabled: boolean): void {
-  for (const element of preview.querySelectorAll(".preview-page, .preview-section")) {
-    element.classList.toggle(EAGER_LAYOUT_CLASS, enabled);
-  }
-  if (enabled) {
-    preview.dataset["eagerLayout"] = "true";
-    void preview.offsetHeight;
-  } else {
-    preview.removeAttribute("data-eager-layout");
-  }
-}
-
-function updateCompletedLayout(
-  preview: HTMLElement,
-  blockCount: number,
-  complete: boolean,
-): void {
-  if (!complete) {
-    return;
-  }
-  const eager = usesEagerPreviewLayout(blockCount);
-  if (eager !== (preview.dataset["eagerLayout"] === "true")) {
-    setEagerLayout(preview, eager);
-  }
-}
-
 function placeBlock(
   element: HTMLDivElement,
   wiring: RenderWorkerWiring,
@@ -104,18 +70,12 @@ function placeBlock(
     if (layout.section === null || layout.pagesInSection >= SECTION_PAGE_LIMIT) {
       const section = document.createElement("div");
       section.className = "preview-section";
-      if (wiring.preview.dataset["eagerLayout"] === "true") {
-        section.classList.add(EAGER_LAYOUT_CLASS);
-      }
       wiring.preview.append(section);
       layout.section = section;
       layout.pagesInSection = 0;
     }
     const page = document.createElement("div");
     page.className = "preview-page";
-    if (wiring.preview.dataset["eagerLayout"] === "true") {
-      page.classList.add(EAGER_LAYOUT_CLASS);
-    }
     (layout.section as HTMLDivElement).append(page);
     layout.page = page;
     layout.pagesInSection += 1;
@@ -191,7 +151,6 @@ function replaceBlocks(
   budget: { milliseconds: number; now: () => number },
 ): number {
   elements.clear();
-  wiring.preview.removeAttribute("data-eager-layout");
   wiring.preview.replaceChildren();
   resetLayout(layout);
   return appendBlocks(blocks, version, shifts, wiring, elements, layout, budget);
@@ -334,7 +293,6 @@ function applyBlocks(
   const appliedCompleteResult = result.mode === "patch" ||
     appliedBlockCount === result.blocks.length;
   const renderComplete = result.complete && appliedCompleteResult;
-  updateCompletedLayout(wiring.preview, elements.size, renderComplete);
   wiring.preview.dataset["renderComplete"] = String(renderComplete);
   return appliedBlockCount;
 }
