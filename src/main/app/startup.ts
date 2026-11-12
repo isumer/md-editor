@@ -135,6 +135,10 @@ export class OpenRequests {
     });
   }
 
+  isRendererReady(): boolean {
+    return this.rendererReady;
+  }
+
   private enqueue(operation: () => Promise<void>): Promise<void> {
     const next = this.operation.then(operation, operation);
     this.operation = next.catch(() => undefined);
@@ -266,6 +270,7 @@ export async function initializeApplication(
   startIoWorker: () => void,
   openRequests: OpenRequests,
   applicationReady: () => void,
+  checkForUpdates: () => void,
 ): Promise<void> {
   const dataDirectory = await detectDataDirectory({
     executablePath: process.execPath,
@@ -293,6 +298,6 @@ export async function initializeApplication(
   // can arrive.
   startIoWorker();
   createApplicationWindow();
-  createMenu();
+  createMenu(checkForUpdates);
   await startupRequests;
 }
