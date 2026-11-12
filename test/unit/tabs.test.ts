@@ -36,13 +36,23 @@ describe("tab modules", () => {
   });
 
   it("AC-R5-20: command wiring selects the platform and fixed file menu", async () => {
-    const { menuContribution, platformName } = await import(
+    const { menuContribution, menuItems, platformName } = await import(
       "../../src/renderer/tabs/documentCommands"
+    );
+    const { createSecondaryDocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommandsSecondary"
     );
     expect(platformName("MacIntel")).toBe("darwin");
     expect(platformName("Win32")).toBe("win32");
     expect(platformName("Linux x86_64")).toBe("linux");
     expect(menuContribution().items.map((item) => item.id)).toEqual([
+      "file-open",
+      "file-save",
+      "file-save-as",
+    ]);
+    const secondary = createSecondaryDocumentCommands({ compare: () => undefined });
+    expect(menuContribution([...menuItems, ...secondary.menuItems])
+      .items.map((item) => item.id)).toEqual([
       "file-open",
       "file-save",
       "file-save-as",

@@ -7,6 +7,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDocumentRecord } from "../../src/renderer/core/document";
 import { DocumentReplication } from "../../src/renderer/core/replication";
+import { markerMergeExtension } from "../../src/renderer/editor/editor";
+import type { FeatureRegistration } from "../../src/renderer/editor/featureWiring";
 
 const markedText = [
   "<<<<<<< left",
@@ -84,7 +86,10 @@ async function createHarness(active = true, present = true, missingTree = false)
   }
   const editor = new EditorView({
     parent: elements.editorHost,
-    state: EditorState.create({ doc: markedText, extensions: featureEditorExtensions }),
+    state: EditorState.create({
+      doc: markedText,
+      extensions: [featureEditorExtensions, markerMergeExtension],
+    }),
   });
   views.push(editor);
   const showStatus = vi.fn();
@@ -106,20 +111,59 @@ async function createHarness(active = true, present = true, missingTree = false)
   return { document, documents, editor, installed, showStatus, ...elements };
 }
 
+async function installSecondary(
+  harness: Awaited<ReturnType<typeof createHarness>>,
+): Promise<void> {
+  const [{ compareFeature }, { mergeFeature }] = await Promise.all([
+    import("../../src/renderer/features/compare/wiring"),
+    import("../../src/renderer/features/merge/wiring"),
+  ]);
+  harness.installed.installDeferred([compareFeature, mergeFeature]);
+}
+
 describe("renderer feature registry", () => {
-  it("composes each feature extension and HTML rewrite", async () => {
+  it("AC-PERF-03: keeps secondary extensions off the initial path", async () => {
     const { featureEditorExtensions, rewriteFeatureHtml } = await import(
       "../../src/renderer/features/registry"
     );
-    expect(featureEditorExtensions.length).toBeGreaterThan(0);
+    expect(featureEditorExtensions).toHaveLength(0);
     expect(rewriteFeatureHtml('<img src="asset.png">', {
       grant: "Grant_1",
       windowId: 7,
     })).toBe('<img src="doc-asset://7/Grant_1/asset.png">');
   });
 
-  it("forwards lifecycle events to each registered feature", async () => {
+  it("AC-PERF-03: replays existing documents into a deferred registration", async () => {
     const harness = await createHarness();
+    const created = vi.fn();
+    const activated = vi.fn();
+    const registration = {
+      editorExtensions: [],
+      create: () => ({ documentActivated: activated, documentCreated: created }),
+    } satisfies FeatureRegistration;
+
+    harness.installed.installDeferred([registration]);
+
+    expect(created).toHaveBeenCalledWith(harness.document, markedText);
+    expect(activated).toHaveBeenCalledWith(harness.document);
+  });
+
+  it("AC-PERF-03: replays activation only for the active document", async () => {
+    const harness = await createHarness(false);
+    const activated = vi.fn();
+    const registration = {
+      editorExtensions: [],
+      create: () => ({ documentActivated: activated }),
+    } satisfies FeatureRegistration;
+
+    harness.installed.installDeferred([registration]);
+
+    expect(activated).not.toHaveBeenCalled();
+  });
+
+  it("forwards lifecycle events to a deferred merge feature", async () => {
+    const harness = await createHarness();
+    await installSecondary(harness);
     harness.installed.start();
     harness.installed.documentCreated(harness.document, markedText);
     harness.document.state = harness.editor.state;
@@ -139,6 +183,7 @@ describe("renderer feature registry", () => {
   it("dispatches a registered feature command", async () => {
     vi.stubGlobal("Worker", FeatureWorker);
     const harness = await createHarness();
+    await installSecondary(harness);
 
     harness.installed.runCommand("file.compareOpen");
 
@@ -151,6 +196,7 @@ describe("renderer feature registry", () => {
     vi.stubGlobal("Worker", FeatureWorker);
     FeatureWorker.instances.length = 0;
     const harness = await createHarness();
+    await installSecondary(harness);
     harness.documents.push(createDocumentRecord({
       replication: new DocumentReplication(),
       savedText: Text.of(["right"]),
@@ -178,6 +224,7 @@ describe("renderer feature registry", () => {
   it("updates an inactive document without changing the active editor", async () => {
     const harness = await createHarness(false);
     const activeState = harness.editor.state;
+    await installSecondary(harness);
 
     harness.installed.documentCreated(harness.document, markedText);
 
@@ -187,11 +234,12 @@ describe("renderer feature registry", () => {
 
   it("ignores merge detection after the document is removed", async () => {
     const harness = await createHarness(true, false);
-    const documentState = harness.document.state;
+    const documentText = harness.document.state.doc.toString();
+    await installSecondary(harness);
 
     harness.installed.documentCreated(harness.document, markedText);
 
-    expect(harness.document.state).toBe(documentState);
+    expect(harness.document.state.doc.toString()).toBe(documentText);
     expect(document.querySelector('[data-testid="merge-view"]')).toBeNull();
   });
 
@@ -200,6 +248,8 @@ describe("renderer feature registry", () => {
     harness.document.state = harness.document.state.update({
       changes: { from: 0, to: harness.document.state.doc.length, insert: "changed" },
     }).state;
+    harness.editor.setState(harness.document.state);
+    await installSecondary(harness);
 
     harness.installed.documentCreated(harness.document, markedText);
 
@@ -211,5 +261,34 @@ describe("renderer feature registry", () => {
     await expect(createHarness(true, true, true)).rejects.toThrow(
       "Missing required element: #workspace-tree",
     );
+  });
+
+  it("AC-PERF-03: installs each deferred registration once", async () => {
+    const harness = await createHarness();
+    const create = vi.fn(() => ({}));
+    const registration = {
+      editorExtensions: [],
+      create,
+    } satisfies FeatureRegistration;
+
+    harness.installed.installDeferred([registration]);
+    harness.installed.installDeferred([registration]);
+
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("AC-PERF-03: starts a deferred registration once", async () => {
+    const harness = await createHarness();
+    const start = vi.fn();
+    const registration = {
+      editorExtensions: [],
+      create: () => ({ start }),
+    } satisfies FeatureRegistration;
+
+    harness.installed.start();
+    harness.installed.installDeferred([registration]);
+    harness.installed.start();
+
+    expect(start).toHaveBeenCalledOnce();
   });
 });
