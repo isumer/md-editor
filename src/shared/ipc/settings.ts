@@ -12,6 +12,7 @@ export interface SettingsReadResponse {
   preview: { scrollSync: boolean; background: string | null };
   editor: { wrap: boolean; tabSize: number; background: string | null };
   encoding: { default: "utf-8"; lineEndings: "lf" | "crlf" | "cr" };
+  updates: { enabled: boolean; lastCheckedAt: number | null };
   ignore: string[];
   [key: string]: unknown;
 }

@@ -33,6 +33,7 @@ describe("AC-R08-01: settings load, migrate and save", () => {
     expect(settings.editor.tabSize).toBe(2);
     expect(settings.encoding.default).toBe("utf-8");
     expect(settings.encoding.lineEndings).toBe("lf");
+    expect(settings.updates).toEqual({ enabled: true, lastCheckedAt: null });
     expect(settings.ignore).toEqual(["node_modules", ".git"]);
   });
 
@@ -125,6 +126,7 @@ describe("AC-R08-01: settings load, migrate and save", () => {
       preview: { scrollSync: "yes" },
       editor: { wrap: "yes", tabSize: "2" },
       encoding: { default: "latin1", lineEndings: "mixed" },
+      updates: { enabled: "yes", lastCheckedAt: "yesterday" },
       ignore: ["node_modules", 7],
     });
 
@@ -176,6 +178,22 @@ describe("AC-R08-01: settings load, migrate and save", () => {
 
     expect(settings.preview.background).toBe("#123456");
     expect(settings.editor.background).toBe("#abcdef");
+  });
+
+  it("AC-R9-08: preserves valid update check settings", () => {
+    expect(normalizeSettings({
+      version: 1,
+      updates: { enabled: false, lastCheckedAt: 42 },
+    }).updates).toEqual({ enabled: false, lastCheckedAt: 42 });
+  });
+
+  it("AC-R9-08: rejects invalid update check timestamps", () => {
+    for (const lastCheckedAt of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(normalizeSettings({
+        version: 1,
+        updates: { enabled: true, lastCheckedAt },
+      }).updates).toEqual({ enabled: true, lastCheckedAt: null });
+    }
   });
 
   it("AC-R08-01: returns a fresh object and never mutates the input", () => {
