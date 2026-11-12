@@ -1,12 +1,38 @@
 import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
 
+const HIGHLIGHT_CACHE_LIMIT = 128;
+const HIGHLIGHT_CACHE_SOURCE_LIMIT = 64 * 1024;
+const highlightCache = new Map<string, string>();
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function highlightCode(source: string, language: string): string {
+  const key = `${language}\0${source}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) {
+    highlightCache.delete(key);
+    highlightCache.set(key, cached);
+    return cached;
+  }
+  const highlighted = hljs.highlight(source, {
+    language,
+    ignoreIllegals: true,
+  }).value;
+  if (source.length <= HIGHLIGHT_CACHE_SOURCE_LIMIT) {
+    highlightCache.set(key, highlighted);
+    if (highlightCache.size > HIGHLIGHT_CACHE_LIMIT) {
+      const oldest = highlightCache.keys().next().value;
+      if (oldest !== undefined) highlightCache.delete(oldest);
+    }
+  }
+  return highlighted;
 }
 
 function createMarkdownRenderer() {
@@ -16,10 +42,7 @@ function createMarkdownRenderer() {
     typographer: false,
     highlight(source, language) {
       if (language && hljs.getLanguage(language)) {
-        const highlighted = hljs.highlight(source, {
-          language,
-          ignoreIllegals: true,
-        }).value;
+        const highlighted = highlightCode(source, language);
         return `<pre><code class="hljs language-${escapeHtml(language)}">${highlighted}</code></pre>`;
       }
       return `<pre><code class="hljs">${escapeHtml(source)}</code></pre>`;

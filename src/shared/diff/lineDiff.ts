@@ -349,14 +349,24 @@ function appendMiddle(
   let leftStart = middle[0][0];
   let rightStart = middle[1][0];
   let limited = false;
-  for (const anchor of anchors) {
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index] as Anchor;
     limited = appendGap(hunks, input, [
       [leftStart, anchor[0]],
       [rightStart, anchor[1]],
     ]) || limited;
-    appendUnchanged(hunks, anchor[0] + 1, anchor[1] + 1, 1);
-    leftStart = anchor[0] + 1;
-    rightStart = anchor[1] + 1;
+    let run = 1;
+    while (index + run < anchors.length) {
+      const next = anchors[index + run] as Anchor;
+      if (next[0] !== anchor[0] + run || next[1] !== anchor[1] + run) {
+        break;
+      }
+      run += 1;
+    }
+    appendUnchanged(hunks, anchor[0] + 1, anchor[1] + 1, run);
+    leftStart = anchor[0] + run;
+    rightStart = anchor[1] + run;
+    index += run - 1;
   }
   return appendGap(hunks, input, [
     [leftStart, middle[0][1]],
