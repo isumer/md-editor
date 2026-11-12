@@ -12,6 +12,7 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-1": "view.split",
   "Mod-2": "view.editor",
   "Mod-3": "view.preview",
+  "Mod-Shift-f": "view.focusMode",
   F11: "view.toggleFullScreen",
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",

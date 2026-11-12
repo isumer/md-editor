@@ -50,6 +50,7 @@ describe("tab modules", () => {
       "view-split",
       "view-editor",
       "view-preview",
+      "view-focus-mode",
       "view-full-screen",
     ]);
   });

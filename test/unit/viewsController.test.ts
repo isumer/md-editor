@@ -18,8 +18,25 @@ function fixture(): { divider: HTMLElement; workspace: HTMLElement } {
   return { divider, workspace };
 }
 
+function rect(left: number, width: number): DOMRect {
+  return {
+    bottom: 600,
+    height: 600,
+    left,
+    right: left + width,
+    top: 0,
+    width,
+    x: left,
+    y: 0,
+    toJSON: () => ({}),
+  };
+}
+
 describe("view controller", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    document.body.className = "";
+  });
 
   it("AC-R2-01: switches modes without replacing pane elements", () => {
     const { divider, workspace } = fixture();
@@ -179,5 +196,194 @@ describe("view controller", () => {
     staleSecond?.(16);
 
     expect(editorScroll.scrollTop).toBe(0);
+  });
+
+  it("AC-R2-04: focus mode preserves the selected view mode", async () => {
+    const { divider, workspace } = fixture();
+    const enterFullScreen = vi.fn(async () => undefined);
+    const leaveFullScreen = vi.fn(async () => undefined);
+    const controller = new ViewController({
+      divider,
+      enterFullScreen,
+      leaveFullScreen,
+      workspace,
+    });
+    controller.setMode("preview");
+
+    await controller.enterFocusMode();
+    expect(document.body.classList.contains("focus-mode")).toBe(true);
+    expect(workspace.dataset["viewMode"]).toBe("preview");
+    await controller.leaveFocusMode();
+
+    expect(document.body.classList.contains("focus-mode")).toBe(false);
+    expect(workspace.dataset["viewMode"]).toBe("preview");
+    expect(enterFullScreen).toHaveBeenCalledOnce();
+    expect(leaveFullScreen).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R2-04: failed full-screen exit keeps focus mode active", async () => {
+    const { divider, workspace } = fixture();
+    const controller = new ViewController({
+      divider,
+      enterFullScreen: async () => undefined,
+      leaveFullScreen: async () => Promise.reject(new Error("exit failed")),
+      workspace,
+    });
+    await controller.enterFocusMode();
+
+    await expect(controller.leaveFocusMode()).rejects.toThrow("exit failed");
+
+    expect(document.body.classList.contains("focus-mode")).toBe(true);
+  });
+
+  it("AC-R2-04: full-screen exit waits for its completion signal", async () => {
+    const { divider, workspace } = fixture();
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    let fullScreenElement: Element | null = document.body;
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => fullScreenElement,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: () => new Promise<void>(() => undefined),
+    });
+    try {
+      const controller = new ViewController({ divider, workspace });
+      document.body.classList.add("focus-mode");
+      const leaving = controller.leaveFocusMode();
+      document.dispatchEvent(new Event("fullscreenchange"));
+      expect(controller.focusMode).toBe(true);
+      fullScreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+
+      await leaving;
+
+      expect(controller.focusMode).toBe(false);
+    } finally {
+      if (fullScreenDescriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
+      else Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      if (exitDescriptor === undefined) Reflect.deleteProperty(document, "exitFullscreen");
+      else Object.defineProperty(document, "exitFullscreen", exitDescriptor);
+    }
+  });
+
+  it("AC-R2-04: full-screen exit errors keep focus mode active", async () => {
+    const { divider, workspace } = fixture();
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: document.body,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: () => new Promise<void>(() => undefined),
+    });
+    try {
+      const controller = new ViewController({ divider, workspace });
+      document.body.classList.add("focus-mode");
+      const leaving = controller.leaveFocusMode();
+      document.dispatchEvent(new Event("fullscreenerror"));
+
+      await expect(leaving).rejects.toThrow("Full-screen exit failed");
+
+      expect(controller.focusMode).toBe(true);
+    } finally {
+      if (fullScreenDescriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
+      else Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      if (exitDescriptor === undefined) Reflect.deleteProperty(document, "exitFullscreen");
+      else Object.defineProperty(document, "exitFullscreen", exitDescriptor);
+    }
+  });
+
+  it("AC-R2-04: repeated focus transitions do not repeat full-screen requests", async () => {
+    const { divider, workspace } = fixture();
+    const enterFullScreen = vi.fn(async () => undefined);
+    const leaveFullScreen = vi.fn(async () => undefined);
+    const controller = new ViewController({
+      divider,
+      enterFullScreen,
+      leaveFullScreen,
+      workspace,
+    });
+
+    await controller.leaveFocusMode();
+    await controller.enterFocusMode();
+    await controller.enterFocusMode();
+    await controller.leaveFocusMode();
+    await controller.leaveFocusMode();
+
+    expect(enterFullScreen).toHaveBeenCalledOnce();
+    expect(leaveFullScreen).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R2-05: the trailing resize keeps the visible preview block fixed", () => {
+    vi.useFakeTimers();
+    const descriptor = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+    try {
+      const { divider, workspace } = fixture();
+      const editor = document.querySelector<HTMLElement>("#editor");
+      const preview = document.querySelector<HTMLElement>("#preview");
+      if (editor === null || preview === null) throw new Error("Missing pane fixture");
+      const page = document.createElement("div");
+      page.className = "preview-page";
+      const block = document.createElement("div");
+      block.className = "preview-block";
+      page.append(block);
+      preview.append(page);
+      let blockTop = 100;
+      let finishing = false;
+      vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue(rect(0, 1_000));
+      vi.spyOn(editor, "getBoundingClientRect").mockImplementation(() => {
+        if (finishing) blockTop = 130;
+        return rect(220, 390);
+      });
+      vi.spyOn(divider, "getBoundingClientRect").mockReturnValue(rect(607, 6));
+      vi.spyOn(preview, "getBoundingClientRect").mockReturnValue(rect(610, 390));
+      vi.spyOn(block, "getBoundingClientRect").mockImplementation(() => ({
+        ...rect(610, 390),
+        bottom: blockTop + 40,
+        height: 40,
+        top: blockTop,
+        y: blockTop,
+      }));
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: () => page,
+      });
+      new ViewController({ divider, preview, workspace });
+      vi.advanceTimersByTime(50);
+      Object.defineProperty(preview, "scrollTop", {
+        configurable: true,
+        value: 500,
+        writable: true,
+      });
+      finishing = true;
+
+      window.dispatchEvent(new Event("resize"));
+      window.dispatchEvent(new Event("resize"));
+      vi.advanceTimersByTime(500);
+
+      expect(preview.scrollTop).toBe(530);
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: () => block,
+      });
+      window.dispatchEvent(new Event("resize"));
+      vi.advanceTimersByTime(500);
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: () => null,
+      });
+      window.dispatchEvent(new Event("resize"));
+      vi.advanceTimersByTime(500);
+      expect(preview.scrollTop).toBe(530);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(document, "elementFromPoint");
+      else Object.defineProperty(document, "elementFromPoint", descriptor);
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,9 +1,14 @@
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -96,5 +101,34 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("includes passing tests from a separate performance report", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
+    const previousSummary = process.env.GITHUB_STEP_SUMMARY;
+
+    try {
+      await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await fs.mkdir(path.join(root, "reports"));
+      await fs.writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+      );
+      await fs.writeFile(path.join(root, "reports", "e2e-junit.xml"), "<testsuites />");
+      await fs.writeFile(
+        path.join(root, "reports", "perf-e2e-junit.xml"),
+        '<testsuite><testcase name="fast typing @AC-PERF-02" /></testsuite>',
+      );
+      delete process.env.GITHUB_STEP_SUMMARY;
+
+      const report = await runAcceptanceCheck(root);
+
+      expect(report.ok).toBe(true);
+      expect(report.markdown).toContain("| AC-PERF-02 | implemented | fast typing @AC-PERF-02 | pass |");
+    } finally {
+      if (previousSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = previousSummary;
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

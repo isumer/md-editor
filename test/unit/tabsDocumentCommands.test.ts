@@ -69,6 +69,11 @@ describe("document commands", () => {
         { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
         { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
         { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
+        {
+          id: "view-focus-mode",
+          title: "Focus Mode",
+          accelerator: "CmdOrCtrl+Shift+F",
+        },
         { id: "view-full-screen", title: "Full Screen", accelerator: "F11" },
       ],
     });
@@ -77,6 +82,7 @@ describe("document commands", () => {
     menuListener?.("file-save-as");
     menuListener?.("file-compare-open");
     menuListener?.("view-editor");
+    menuListener?.("view-focus-mode");
     menuListener?.("view-full-screen");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
@@ -85,6 +91,7 @@ describe("document commands", () => {
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
     expect(featureCommand).toHaveBeenCalledWith("view.editor");
+    expect(featureCommand).toHaveBeenCalledWith("view.focusMode");
     expect(toggleFullScreen).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
@@ -122,6 +129,7 @@ describe("document commands", () => {
       "view-split",
       "view-editor",
       "view-preview",
+      "view-focus-mode",
       "view-full-screen",
     ]);
   });

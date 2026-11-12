@@ -62,6 +62,7 @@ describe("keymap data", () => {
       "Mod-1": "view.split",
       "Mod-2": "view.editor",
       "Mod-3": "view.preview",
+      "Mod-Shift-f": "view.focusMode",
       F11: "view.toggleFullScreen",
     });
   });

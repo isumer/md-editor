@@ -21,6 +21,12 @@ export const viewMenu = {
       commandId: "view.preview",
     },
     {
+      id: "view-focus-mode",
+      titleKey: "menu.focusMode",
+      accelerator: "CmdOrCtrl+Shift+F",
+      commandId: "view.focusMode",
+    },
+    {
       id: "view-full-screen",
       titleKey: "menu.viewFullScreen",
       accelerator: "F11",

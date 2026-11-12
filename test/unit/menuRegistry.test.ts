@@ -49,6 +49,7 @@ const contribution: MenuContribution = {
     { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
     { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
     { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
+    { id: "view-focus-mode", title: "Focus Mode", accelerator: "CmdOrCtrl+Shift+F" },
     { id: "view-full-screen", title: "Full Screen", accelerator: "F11" },
   ],
 };
@@ -119,7 +120,8 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "2.0|view-split|Split View|-|-|CmdOrCtrl+1|false|true|false",
           "2.1|view-editor|Editor Only|-|-|CmdOrCtrl+2|false|true|false",
           "2.2|view-preview|Preview Only|-|-|CmdOrCtrl+3|false|true|false",
-          "2.3|view-full-screen|Full Screen|-|-|F11|false|true|false",
+          "2.3|view-focus-mode|Focus Mode|-|-|CmdOrCtrl+Shift+F|false|true|false",
+          "2.4|view-full-screen|Full Screen|-|-|F11|false|true|false",
           "3|-|-|windowMenu|-|-|-|-|-",
           "4|-|-|help|-|-|-|-|-",
         ],
@@ -151,7 +153,8 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "3.0|view-split|Split View|-|-|CmdOrCtrl+1|false|true|false",
           "3.1|view-editor|Editor Only|-|-|CmdOrCtrl+2|false|true|false",
           "3.2|view-preview|Preview Only|-|-|CmdOrCtrl+3|false|true|false",
-          "3.3|view-full-screen|Full Screen|-|-|Ctrl+Command+F|false|true|false",
+          "3.3|view-focus-mode|Focus Mode|-|-|CmdOrCtrl+Shift+F|false|true|false",
+          "3.4|view-full-screen|Full Screen|-|-|Ctrl+Command+F|false|true|false",
           "4|-|-|windowMenu|-|-|-|-|-",
           "5|-|-|help|-|-|-|-|-",
         ],
@@ -195,6 +198,7 @@ it("keeps the type union and runtime validator on the same registry", () => {
     | "view-split"
     | "view-editor"
     | "view-preview"
+    | "view-focus-mode"
     | "view-full-screen"
   >();
 });

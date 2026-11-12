@@ -12,11 +12,22 @@ export const viewsFeature: FeatureRegistration = {
       preview: context.preview,
       workspace: context.workspace,
     });
+    const focusMode = (): void => {
+      void controller.toggleFocusMode().catch((error: unknown) => {
+        context.showStatus(error instanceof Error ? error.message : String(error));
+      });
+    };
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !controller.focusMode) return;
+      event.preventDefault();
+      focusMode();
+    }, true);
     return {
       commands: {
         "view.split": () => controller.setMode("split"),
         "view.editor": () => controller.setMode("editor"),
         "view.preview": () => controller.setMode("preview"),
+        "view.focusMode": focusMode,
       },
     };
   },

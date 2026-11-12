@@ -117,6 +117,11 @@ body {
   grid-template-columns: 220px minmax(0, var(--editor-width)) minmax(0, 1fr);
 }
 
+#workspace[data-stable-pane-widths="true"] {
+  grid-template-columns:
+    220px minmax(0, var(--editor-resize-width)) minmax(0, var(--preview-resize-width));
+}
+
 #workspace-sidebar {
   min-width: 0;
   overflow: auto;
@@ -184,6 +189,34 @@ body {
   grid-template-columns: 220px minmax(0, 1fr);
 }
 
+body.focus-mode {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+body.focus-mode #tabs,
+body.focus-mode #status,
+body.focus-mode #workspace-sidebar {
+  display: none;
+}
+
+body.focus-mode #workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+body.focus-mode #workspace[data-divider-custom="true"] {
+  grid-template-columns: minmax(0, var(--editor-share)) minmax(0, 1fr);
+}
+
+body.focus-mode #workspace[data-stable-pane-widths="true"] {
+  grid-template-columns:
+    minmax(0, var(--editor-resize-width)) minmax(0, var(--preview-resize-width));
+}
+
+body.focus-mode #workspace[data-view-mode="editor"],
+body.focus-mode #workspace[data-view-mode="preview"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 #workspace[data-view-mode="editor"] #preview,
 #workspace[data-view-mode="preview"] #editor,
 #workspace[data-view-mode="editor"] #divider,
@@ -205,6 +238,14 @@ body {
 
 #workspace[data-divider-custom="true"] #divider {
   left: calc(220px + var(--editor-width) - 3px);
+}
+
+body.focus-mode #divider {
+  left: calc(50% - 3px);
+}
+
+body.focus-mode #workspace[data-divider-custom="true"] #divider {
+  left: calc(var(--editor-share) - 3px);
 }
 
 #divider:hover {

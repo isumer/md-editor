@@ -13,6 +13,7 @@ export const MENU_ITEM_IDS = [
   "view-split",
   "view-editor",
   "view-preview",
+  "view-focus-mode",
   "view-full-screen",
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
@@ -26,6 +27,7 @@ export const MENU_COMMAND_IDS = [
   "view.split",
   "view.editor",
   "view.preview",
+  "view.focusMode",
   "view.toggleFullScreen",
 ] as const;
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
