@@ -412,12 +412,22 @@ export function wireRenderWorker(
   const applyAccepted = (
     response: RenderResult,
     requestFill: boolean,
+    display: boolean = true,
   ): AppliedRenderResult => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
     performance.mark("preview-apply-start");
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
-    const documentWiring = { ...wiring, preview: documentPreview.container };
+    // A response for a document that is not shown must not touch the status
+    // line or the error banner the shown document owns.
+    const documentWiring = display
+      ? { ...wiring, preview: documentPreview.container }
+      : {
+        ...wiring,
+        preview: documentPreview.container,
+        showStatus: () => undefined,
+        showError: () => undefined,
+      };
     const applied = applyRenderResult(
       response,
       documentPreview.shifts,
@@ -429,12 +439,14 @@ export function wireRenderWorker(
     performance.mark("preview-apply-end");
     if (applied.accepted && response.ok) {
       documentPreview.version = response.version;
-      previews.display(documentPreview);
-      shown = {
-        docId: response.docId,
-        epoch: response.epoch,
-        version: response.version,
-      };
+      if (display) {
+        previews.display(documentPreview);
+        shown = {
+          docId: response.docId,
+          epoch: response.epoch,
+          version: response.version,
+        };
+      }
       if (requestFill && response.mode === "append" &&
         applied.appliedBlockCount === response.blocks.length) {
         requestNextFill(
@@ -458,10 +470,14 @@ export function wireRenderWorker(
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
       pending.response.epoch !== current.epoch) {
-      scheduleQueuedResponse();
-      return;
+      if (pending.requestFill) {
+        scheduleQueuedResponse();
+        return;
+      }
     }
-    const applied = applyAccepted(pending.response, pending.requestFill);
+    const display = pending.response.docId === current.docId &&
+      pending.response.epoch === current.epoch;
+    const applied = applyAccepted(pending.response, pending.requestFill, display);
     if (!applied.accepted) {
       scheduleQueuedResponse();
       return;
