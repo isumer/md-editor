@@ -203,8 +203,8 @@ export function handleDocumentUpdate(
   documentState: DocumentState,
   callbacks: EditorCallbacks,
 ): void {
-  callbacks.onStateChanged?.(update.state);
   if (!update.docChanged) {
+    callbacks.onStateChanged?.(update.state);
     return;
   }
   if (!documentState.applyingDocument && callbacks.deferDirtyState !== true) {
@@ -215,6 +215,7 @@ export function handleDocumentUpdate(
     callbacks.onChanges(update.changes, update.state);
   }
   callbacks.onDocumentChanged();
+  callbacks.onStateChanged?.(update.state);
 }
 
 export function createEditorState(

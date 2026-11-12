@@ -144,7 +144,7 @@ describe("document commands", () => {
     const onError = vi.fn();
     new DocumentCommands({
       compare: vi.fn(),
-      editor,
+      editor: () => editor,
       onError,
       onResult: vi.fn(),
       open: vi.fn(async () => undefined),
@@ -159,6 +159,35 @@ describe("document commands", () => {
     await vi.waitFor(() => {
       expect(onError).toHaveBeenCalledWith(new Error("save stopped"));
     });
+    editor.destroy();
+  });
+
+  it("uses the active document history handlers for undo and redo", async () => {
+    const { DocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    const undo = vi.fn();
+    const redo = vi.fn();
+    const commands = new DocumentCommands({
+      compare: vi.fn(),
+      editor: () => editor,
+      onError: vi.fn(),
+      onResult: vi.fn(),
+      open: vi.fn(async () => undefined),
+      redo,
+      save: vi.fn(async () => undefined),
+      undo,
+    });
+
+    commands.run("undo", "keyboard");
+    commands.run("redo", "keyboard");
+    await Promise.resolve();
+
+    expect(undo).toHaveBeenCalledOnce();
+    expect(redo).toHaveBeenCalledOnce();
     editor.destroy();
   });
 });
