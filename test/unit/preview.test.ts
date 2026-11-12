@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RenderResponse } from "../../src/shared/workers/render";
 import {
   blockLine,
+  usesEagerPreviewLayout,
   wireRenderWorker,
 } from "../../src/renderer/features/preview/preview";
 import { RenderScheduler } from "../../src/renderer/features/preview/renderScheduler";
@@ -684,6 +685,13 @@ describe("preview render flow", () => {
     expect([...sections[0]?.querySelectorAll(".preview-page") ?? []]
       .map((page) => page.querySelectorAll(".preview-block").length))
       .toEqual(Array.from({ length: 5 }, () => 20));
+  });
+
+  it("AC-PERF-09: eagerly lays out only medium previews", () => {
+    expect(usesEagerPreviewLayout(999)).toBe(false);
+    expect(usesEagerPreviewLayout(1_000)).toBe(true);
+    expect(usesEagerPreviewLayout(3_000)).toBe(true);
+    expect(usesEagerPreviewLayout(3_001)).toBe(false);
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

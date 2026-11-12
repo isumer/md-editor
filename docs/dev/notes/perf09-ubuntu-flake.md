@@ -186,3 +186,35 @@ AC-PERF-07 measured 46.2 ms p95 against 150 ms.
 AC-PERF-08 measured 1.8 ms p95 against 8 ms.
 
 `npm run check:acceptance` passed after those results replaced the partial report.
+
+## Revalidation
+
+I reproduced the Ubuntu failure on 2026-11-12 against current main.
+
+The full-order 500 KB case recorded one 33.4 ms frame and no long task.
+
+The fix eagerly lays out completed medium previews, while small and very large
+previews retain `content-visibility` containment.
+
+The eager layout is applied directly to page and section wrappers so the
+114,567-block fill does not pay for a descendant selector on every append.
+
+After the fix, the full-order 500 KB fling recorded 113 frames, a 16.8 ms
+maximum, no frame over 32 ms, and no long task.
+
+The isolated 500 KB fling also recorded a 16.8 ms maximum with no slow frame or
+long task.
+
+`npm run typecheck` passed.
+
+`npm run check:deps` passed with 153 modules and 333 dependencies.
+
+`npm run test:unit` passed 1,184 tests in 115 files.
+
+Statement coverage was 99.07 percent, branch coverage was 97.29 percent,
+function coverage was 99.23 percent, and line coverage was 99.22 percent.
+
+The local full e2e run passed 97 of 98 tests. Its 20 MB fill did not complete
+inside 360 seconds on this host, so the run stopped before that case's scroll
+measurement. The check's own note records about 4.4 minutes on its target
+machine; no wait, budget, retry, skip, or assertion was changed.

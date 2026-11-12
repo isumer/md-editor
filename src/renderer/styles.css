@@ -292,6 +292,10 @@ body {
   contain-intrinsic-size: auto 12000px;
 }
 
+.preview-eager-layout {
+  content-visibility: visible;
+}
+
 #preview pre {
   overflow: auto;
   padding: 12px;
