@@ -351,6 +351,23 @@ describe("progressive large-document rendering", () => {
     expect(RENDER_BATCH_BYTE_LIMIT).toBe(256 * 1024);
   });
 
+  it("AC-PERF-09: progressive fill groups sixteen Markdown chunks per block", () => {
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(largeDocument()),
+      (source) => source,
+    );
+
+    state.initial();
+    const fill = state.fill();
+    const first = fill.blocks[0];
+
+    expect(first).toBeDefined();
+    expect((first?.endLine ?? 0) - (first?.startLine ?? 0)).toBe(31);
+  });
+
   it("AC-PERF-11: many small chunks keep each render batch within its byte limit", () => {
     const text = Array.from(
       { length: 40 },
@@ -375,6 +392,25 @@ describe("progressive large-document rendering", () => {
     expect(renderedBytes(fill.blocks)).toBeLessThanOrEqual(
       RENDER_BATCH_BYTE_LIMIT,
     );
+  });
+
+  it("AC-PERF-10: a fill keeps each worker turn to eight small blocks", () => {
+    const source = Array.from(
+      { length: 60 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(source),
+      (text) => text,
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.blocks).toHaveLength(8);
   });
 
   it("AC-PERF-11: reuses an over-budget lookahead in the next batch", () => {
@@ -574,7 +610,7 @@ describe("progressive large-document rendering", () => {
     expect(appended.length).toBeGreaterThan(0);
     const appendedBlocks = appended.flatMap((result) =>
       result.ok && result.mode === "append" ? result.blocks : []);
-    expect(appendedBlocks).toHaveLength(108);
+    expect(appendedBlocks).toHaveLength(7);
     const last = appended.at(-1);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
@@ -623,7 +659,7 @@ describe("progressive large-document rendering", () => {
     const last = appends.at(-1);
 
     expect(appends.length).toBeGreaterThanOrEqual(2);
-    expect(appendedBlocks).toHaveLength(238);
+    expect(appendedBlocks).toHaveLength(15);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
 
@@ -675,6 +711,30 @@ describe("progressive large-document rendering", () => {
 });
 
 describe("render worker cache lifecycle", () => {
+  it("AC-PERF-02: an edit delays progressive refill until typing is idle", () => {
+    vi.useFakeTimers();
+    const scope = new FakeScope();
+    const source = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const before = textFrom(source);
+    const { changes } = changeJson(before, 0, "x");
+    const handler = new RenderWorkerHandler(scope.postMessage, (text) => text);
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: source });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+    handler.handle({ op: "change", docId: "doc", epoch: 1, fromVersion: 0,
+      toVersion: 1, changes });
+    handler.handle({ op: "render", id: 2, docId: "doc", epoch: 1, version: 1 });
+
+    vi.advanceTimersByTime(249);
+    expect(scope.results().filter((result) =>
+      result.ok && result.mode === "append")).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(scope.results().filter((result) =>
+      result.ok && result.mode === "append")).toHaveLength(1);
+  });
+
   it("AC-R1-07: a newer epoch discards the cached render state", () => {
     const scope = new FakeScope();
     const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);

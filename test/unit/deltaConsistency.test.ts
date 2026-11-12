@@ -302,7 +302,8 @@ function runSeed(seed: number): SeedStats {
   expect(finalDispatch && appliedRequests.has(finalDispatch.id),
     `seed ${String(seed)} did not render its final version`).toBe(true);
   expect(responses, `seed ${String(seed)} left responses queued`).toEqual([]);
-  expect(preview.dataset["renderComplete"], `seed ${String(seed)} not complete`)
+  expect(preview.dataset["renderComplete"],
+    `seed ${String(seed)} not complete with ${String(preview.querySelectorAll(".preview-block").length)} blocks and ${String(vi.getTimerCount())} timers`)
     .toBe("true");
 
   const fullContainer = document.createElement("div");

@@ -185,3 +185,15 @@ export function moveDifference(
   ) % state.changeCount;
   return { ...state, selectedChange };
 }
+
+export function applyChangeToRight(
+  state: CompareState,
+  changeIndex: number,
+): string {
+  const lines: string[] = [];
+  for (const row of state.rows) {
+    const side = row.changeIndex === changeIndex ? row.left : row.right;
+    if (side !== undefined) lines.push(side.text);
+  }
+  return lines.join("\n");
+}

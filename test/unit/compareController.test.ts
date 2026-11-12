@@ -87,7 +87,7 @@ describe("compare controller", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7", ctrlKey: true }));
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7", shiftKey: true }));
-    workspace.querySelector<HTMLButtonElement>(".compare-button")?.click();
+    workspace.querySelector<HTMLButtonElement>(".compare-previous")?.click();
     workspace.querySelector<HTMLButtonElement>(".compare-button:last-child")?.click();
     if (select) select.dispatchEvent(new Event("change"));
     controller.close();
@@ -319,5 +319,153 @@ describe("compare controller", () => {
 
     expect(workspace.querySelector(".compare-headings")?.textContent)
       .toBe("UntitledUntitled");
+  });
+
+  it("AC-R14-04: compares a dirty buffer with saved text and clipboard text", async () => {
+    const workspace = document.createElement("main");
+    const worker = new FakeWorker();
+    const dirty = record("dirty.txt", "current text");
+    dirty.saved = { ...dirty.saved, text: Text.of(["saved text"]) };
+    const controller = new CompareController({
+      documents: () => [record("other.txt", "other"), dirty],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      readClipboard: async () => "clipboard text",
+      showStatus: vi.fn(),
+      workerFactory: () => worker,
+      workspace,
+    });
+    controller.open();
+    worker.respond({
+      id: 1,
+      ok: true,
+      state: createCompareState("other", "current text", "words"),
+    });
+
+    workspace.querySelector<HTMLButtonElement>(".compare-saved")?.click();
+    expect(worker.requests[1]).toMatchObject({
+      left: "current text",
+      right: "saved text",
+    });
+    worker.respond({
+      id: 2,
+      ok: true,
+      state: createCompareState("current text", "saved text", "words"),
+    });
+    expect(workspace.querySelector(".compare-headings")?.textContent)
+      .toBe("dirty.txt (current)dirty.txt (saved)");
+
+    workspace.querySelector<HTMLButtonElement>(".compare-clipboard")?.click();
+    await Promise.resolve();
+    expect(worker.requests[2]).toMatchObject({
+      left: "current text",
+      right: "clipboard text",
+    });
+  });
+
+  it("AC-R14-05: a chunk arrow applies one change in one editor transaction", () => {
+    const workspace = document.createElement("main");
+    const worker = new FakeWorker();
+    const applyRight = vi.fn();
+    const controller = new CompareController({
+      applyRight,
+      documents: () => [
+        record("left.txt", "left first\nsame\nleft second"),
+        record("right.txt", "right first\nsame\nright second"),
+      ],
+      editor: document.createElement("section"),
+      isActive: (document) => document.name === "right.txt",
+      preview: document.createElement("section"),
+      showStatus: vi.fn(),
+      workerFactory: () => worker,
+      workspace,
+    });
+    controller.open();
+    worker.respond({
+      id: 1,
+      ok: true,
+      state: createCompareState(
+        "left first\nsame\nleft second",
+        "right first\nsame\nright second",
+        "words",
+      ),
+    });
+
+    workspace.querySelector<HTMLButtonElement>('[data-testid="compare-apply-1"]')?.click();
+
+    expect(applyRight).toHaveBeenCalledOnce();
+    expect(applyRight).toHaveBeenCalledWith("right first\nsame\nleft second");
+    expect(worker.requests[1]).toMatchObject({
+      left: "left first\nsame\nleft second",
+      right: "right first\nsame\nleft second",
+    });
+  });
+
+  it("reports a clipboard read failure and ignores source controls after close", async () => {
+    const workspace = document.createElement("main");
+    const showStatus = vi.fn();
+    const readText = vi.fn().mockRejectedValue(new Error("denied"));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText },
+    });
+    const controller = new CompareController({
+      documents: () => [record("left.txt", "left"), record("right.txt", "right")],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      showStatus,
+      workerFactory: () => new FakeWorker(),
+      workspace,
+    });
+    controller.open();
+
+    workspace.querySelector<HTMLButtonElement>(".compare-clipboard")?.click();
+    await vi.waitFor(() => expect(readText).toHaveBeenCalledOnce());
+    expect(showStatus).toHaveBeenCalledWith("SolidMD could not read the clipboard.");
+    controller.close();
+    workspace.querySelector<HTMLButtonElement>(".compare-saved")?.click();
+    workspace.querySelector<HTMLButtonElement>(".compare-clipboard")?.click();
+    await Promise.resolve();
+
+    expect(showStatus).toHaveBeenCalledOnce();
+  });
+
+  it("does not compare the same document object twice", () => {
+    const documentRecord = record("same.txt", "same");
+    const worker = new FakeWorker();
+    const controller = new CompareController({
+      documents: () => [documentRecord, documentRecord],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      showStatus: vi.fn(),
+      workerFactory: () => worker,
+      workspace: document.createElement("main"),
+    });
+
+    controller.open();
+
+    expect(worker.requests).toEqual([]);
+  });
+
+  it("uses word highlighting when a source changes before the first result", async () => {
+    const workspace = document.createElement("main");
+    const worker = new FakeWorker();
+    const controller = new CompareController({
+      documents: () => [record("left.txt", "left"), record("right.txt", "right")],
+      editor: document.createElement("section"),
+      preview: document.createElement("section"),
+      readClipboard: async () => "clipboard",
+      showStatus: vi.fn(),
+      workerFactory: () => worker,
+      workspace,
+    });
+    controller.open();
+
+    workspace.querySelector<HTMLButtonElement>(".compare-saved")?.click();
+    workspace.querySelector<HTMLButtonElement>(".compare-clipboard")?.click();
+    await Promise.resolve();
+
+    expect(worker.requests.map((request) => request.highlight))
+      .toEqual(["words", "words", "words"]);
   });
 });

@@ -43,10 +43,8 @@ describe("compare view", () => {
       "words",
     );
     view.show("left.txt", "right.txt", state);
-    const buttons = view.root.querySelectorAll<HTMLButtonElement>(".compare-button");
-
-    buttons[0]?.click();
-    buttons[1]?.click();
+    view.root.querySelector<HTMLButtonElement>(".compare-previous")?.click();
+    view.root.querySelector<HTMLButtonElement>(".compare-next")?.click();
 
     expect(view.root.querySelectorAll(".compare-empty").length).toBeGreaterThan(0);
     expect(move.mock.calls).toEqual([[-1], [1]]);

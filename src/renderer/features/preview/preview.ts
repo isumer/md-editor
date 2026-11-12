@@ -56,6 +56,13 @@ const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // Keep the first screens responsive, then avoid an extra task per fill once a
 // document has enough cached content for extended scrolling.
 const DEFERRED_FILL_BLOCK_LIMIT = 512;
+const EAGER_LAYOUT_BLOCK_LIMIT = 4_096;
+const EAGER_LAYOUT_IDLE_MS = 250;
+const eagerLayoutTimers = new WeakMap<HTMLElement, number>();
+const largeCompletionFrames = new WeakMap<HTMLElement, {
+  first: number;
+  second: number;
+}>();
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -241,6 +248,60 @@ function patchBlocks(
   performance.measure("preview-patch", { start, end: performance.now() });
 }
 
+function cancelEagerLayout(preview: HTMLElement): void {
+  const timer = eagerLayoutTimers.get(preview);
+  if (timer !== undefined) window.clearTimeout(timer);
+  eagerLayoutTimers.delete(preview);
+  preview.classList.remove("preview-eager-layout");
+}
+
+function updateLayoutMode(
+  preview: HTMLElement,
+  elements: BlockElements,
+  renderComplete: boolean,
+  afterPatch: boolean,
+): void {
+  cancelEagerLayout(preview);
+  if (!renderComplete || elements.size > EAGER_LAYOUT_BLOCK_LIMIT) return;
+  if (!afterPatch) {
+    preview.classList.add("preview-eager-layout");
+    return;
+  }
+  const timer = window.setTimeout(() => {
+    eagerLayoutTimers.delete(preview);
+    if (preview.dataset["renderComplete"] === "true" &&
+      elements.size <= EAGER_LAYOUT_BLOCK_LIMIT) {
+      preview.classList.add("preview-eager-layout");
+    }
+  }, EAGER_LAYOUT_IDLE_MS);
+  eagerLayoutTimers.set(preview, timer);
+}
+
+function cancelLargeCompletion(preview: HTMLElement): void {
+  const frames = largeCompletionFrames.get(preview);
+  if (frames !== undefined) {
+    cancelAnimationFrame(frames.first);
+    cancelAnimationFrame(frames.second);
+  }
+  largeCompletionFrames.delete(preview);
+}
+
+function publishLargeCompletion(preview: HTMLElement): void {
+  cancelLargeCompletion(preview);
+  preview.classList.add("preview-large-ready");
+  preview.dataset["renderComplete"] = "false";
+  const frames = { first: 0, second: 0 };
+  frames.first = requestAnimationFrame(() => {
+    frames.second = requestAnimationFrame(() => {
+      largeCompletionFrames.delete(preview);
+      preview.dataset["renderComplete"] = "true";
+      const host = preview.parentElement;
+      if (host?.firstChild === preview) host.dataset["renderComplete"] = "true";
+    });
+  });
+  largeCompletionFrames.set(preview, frames);
+}
+
 function applyBlocks(
   result: RenderResult & { ok: true },
   shifts: LineShiftRecord[],
@@ -277,6 +338,7 @@ function applyBlocks(
       appendBudget,
     );
   } else {
+    cancelEagerLayout(wiring.preview);
     for (const shift of result.lineShifts ?? []) {
       shifts.push({ ...shift, version: result.version });
     }
@@ -292,8 +354,19 @@ function applyBlocks(
   }
   const appliedCompleteResult = result.mode === "patch" ||
     appliedBlockCount === result.blocks.length;
-  wiring.preview.dataset["renderComplete"] = String(
-    result.complete && appliedCompleteResult,
+  const renderComplete = result.complete && appliedCompleteResult;
+  if (renderComplete && elements.size > EAGER_LAYOUT_BLOCK_LIMIT) {
+    publishLargeCompletion(wiring.preview);
+  } else {
+    cancelLargeCompletion(wiring.preview);
+    wiring.preview.classList.remove("preview-large-ready");
+    wiring.preview.dataset["renderComplete"] = String(renderComplete);
+  }
+  updateLayoutMode(
+    wiring.preview,
+    elements,
+    renderComplete,
+    result.mode === "patch",
   );
   return appliedBlockCount;
 }
@@ -350,13 +423,13 @@ function requestNextFill(
       token: response.fillToken,
     } satisfies RenderFillReadyMessage);
   };
-  requestAnimationFrame(() => {
-    if (deferToTask) {
+  if (deferToTask) {
+    requestAnimationFrame(() => {
       window.setTimeout(postFillReady, 0);
-    } else {
-      postFillReady();
-    }
-  });
+    });
+  } else {
+    window.setTimeout(postFillReady, 0);
+  }
 }
 
 export function wireRenderWorker(

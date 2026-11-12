@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyChangeToRight,
   createCompareState,
   moveDifference,
 } from "../../src/renderer/features/compare/state";
@@ -70,6 +71,41 @@ describe("compare view state", () => {
     expect(moveDifference(state, 1).selectedChange).toBe(1);
     expect(moveDifference(moveDifference(state, 1), 1).selectedChange).toBe(0);
     expect(moveDifference(state, -1).selectedChange).toBe(1);
+  });
+
+  it("AC-R14-05: applies only the selected change to the right side", () => {
+    const state = createCompareState(
+      "one\nleft first\nsame\nleft second\nleft extra\nend",
+      "one\nright first\nsame\nright second\nend",
+      "words",
+    );
+
+    const result = applyChangeToRight(state, 1);
+
+    expect(result).toBe("one\nright first\nsame\nleft second\nleft extra\nend");
+    expect(createCompareState(
+      "one\nleft first\nsame\nleft second\nleft extra\nend",
+      result,
+      "words",
+    ).changeCount).toBe(1);
+  });
+
+  it("AC-R14-05: applies a change below 50 ms at p95", () => {
+    const left = Array.from({ length: 2_000 }, (_, index) => `left ${String(index)}`);
+    const right = [...left];
+    right[1_000] = "right 1000";
+    const state = createCompareState(left.join("\n"), right.join("\n"), "words");
+    const samples: number[] = [];
+    applyChangeToRight(state, 0);
+
+    for (let sample = 0; sample < 30; sample += 1) {
+      const started = performance.now();
+      applyChangeToRight(state, 0);
+      samples.push(performance.now() - started);
+    }
+    samples.sort((first, second) => first - second);
+
+    expect(samples[28]).toBeLessThan(50);
   });
 
   it("keeps empty text and unchanged selection stable", () => {

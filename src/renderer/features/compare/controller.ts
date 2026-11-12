@@ -8,7 +8,7 @@ import type {
 } from "../../../shared/workers/compare";
 import type { DocumentRecord } from "../../core/document";
 import { formatMessage } from "../../core/messages";
-import { moveDifference } from "./state";
+import { applyChangeToRight, moveDifference } from "./state";
 import { CompareView } from "./view";
 
 interface WorkerPort {
@@ -19,9 +19,12 @@ interface WorkerPort {
 }
 
 export interface CompareControllerOptions {
+  applyRight?(text: string): void;
   documents(): readonly DocumentRecord[];
   editor: HTMLElement;
+  isActive?(document: DocumentRecord): boolean;
   preview: HTMLElement;
+  readClipboard?(): Promise<string>;
   showStatus(message?: string): void;
   workspace: HTMLElement;
   workerFactory?: () => WorkerPort;
@@ -40,12 +43,17 @@ export class CompareController {
   private requestId = 0;
   private state: CompareState | null = null;
   private pair: readonly [DocumentRecord, DocumentRecord] | null = null;
+  private source: "documents" | "saved" | "clipboard" = "documents";
+  private sourceText: string | null = null;
   private hiddenState: { editor: string | null; preview: string | null } | null = null;
 
   constructor(private readonly options: CompareControllerOptions) {
     this.worker = createWorker(options);
     this.view = new CompareView({
+      applyChange: (changeIndex) => this.applyChange(changeIndex),
       close: () => this.close(),
+      compareClipboard: () => { void this.compareClipboard(); },
+      compareSaved: () => this.compareSaved(),
       highlight: (mode) => this.setHighlight(mode),
       move: (direction) => this.move(direction),
     });
@@ -60,8 +68,13 @@ export class CompareController {
       this.options.showStatus(formatMessage("compare.needTwo", {}));
       return;
     }
-    this.pair = [documents[documents.length - 2] as DocumentRecord,
-      documents[documents.length - 1] as DocumentRecord];
+    const active = documents.find((document) => this.options.isActive?.(document)) ??
+      documents[documents.length - 1] as DocumentRecord;
+    const other = [...documents].reverse().find((document) => document !== active);
+    if (!other) return;
+    this.pair = [other, active];
+    this.source = "documents";
+    this.sourceText = null;
     this.hiddenState ??= {
       editor: this.options.editor.getAttribute("hidden"),
       preview: this.options.preview.getAttribute("hidden"),
@@ -83,12 +96,12 @@ export class CompareController {
 
   private request(highlight: HighlightMode): void {
     if (!this.pair) return;
-    const [left, right] = this.pair;
+    const request = this.requestContent();
     this.requestId += 1;
     this.worker.postMessage({
       id: this.requestId,
-      left: left.state.doc.toString(),
-      right: right.state.doc.toString(),
+      left: request.left,
+      right: request.right,
       highlight,
     });
   }
@@ -100,16 +113,72 @@ export class CompareController {
       return;
     }
     this.state = response.state;
+    const request = this.requestContent();
     this.view.show(
-      this.pair[0].name ?? "Untitled",
-      this.pair[1].name ?? "Untitled",
+      request.leftName,
+      request.rightName,
       response.state,
+      this.source === "documents",
     );
     this.view.reveal(response.state.selectedChange);
   }
 
   private setHighlight(highlight: HighlightMode): void {
     this.request(highlight);
+  }
+
+  private compareSaved(): void {
+    if (!this.pair) return;
+    this.source = "saved";
+    this.sourceText = this.pair[1].saved.text.toString();
+    this.request(this.state?.highlight ?? "words");
+  }
+
+  private async compareClipboard(): Promise<void> {
+    if (!this.pair) return;
+    try {
+      const read = this.options.readClipboard ?? (() => navigator.clipboard.readText());
+      this.sourceText = await read();
+      this.source = "clipboard";
+      this.request(this.state?.highlight ?? "words");
+    } catch {
+      this.options.showStatus(formatMessage("compare.clipboardFailed", {}));
+    }
+  }
+
+  private applyChange(changeIndex: number): void {
+    if (!this.state || this.source !== "documents" || !this.pair) return;
+    const right = applyChangeToRight(this.state, changeIndex);
+    this.options.applyRight?.(right);
+    this.sourceText = right;
+    this.request(this.state.highlight);
+    this.sourceText = null;
+  }
+
+  private requestContent(): {
+    left: string;
+    leftName: string;
+    right: string;
+    rightName: string;
+  } {
+    if (!this.pair) throw new Error("A compare pair is required.");
+    const [left, right] = this.pair;
+    const leftName = left.name ?? "Untitled";
+    const rightName = right.name ?? "Untitled";
+    if (this.source === "documents") {
+      return {
+        left: left.state.doc.toString(),
+        leftName,
+        right: this.sourceText ?? right.state.doc.toString(),
+        rightName,
+      };
+    }
+    return {
+      left: right.state.doc.toString(),
+      leftName: `${rightName} (current)`,
+      right: this.sourceText ?? "",
+      rightName: this.source === "saved" ? `${rightName} (saved)` : "Clipboard",
+    };
   }
 
   private move(direction: 1 | -1): void {

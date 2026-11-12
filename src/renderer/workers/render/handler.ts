@@ -25,6 +25,7 @@ interface CachedRender {
   request: RenderRequest | null;
   fillToken: number;
   fillTimer: ReturnType<typeof setTimeout> | undefined;
+  refillAfterEdit: boolean;
 }
 
 type PostResponse = (response: RenderResponse) => void;
@@ -34,6 +35,7 @@ type RenderText = (source: string, env?: RenderEnvironment) => string;
 // loop between batches instead of flooding the main thread with appends. The
 // preview acknowledges each applied batch, so at most one batch is in flight.
 const FILL_DELAY_MS = 1;
+const EDIT_REFILL_DELAY_MS = 250;
 
 function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
   return ChangeSet.fromJSON(changes).apply(document);
@@ -160,6 +162,7 @@ export class RenderWorkerHandler {
       message.toVersion,
       message.changes,
     );
+    cache.refillAfterEdit = true;
   }
 
   private render(request: RenderRequest): void {
@@ -175,9 +178,17 @@ export class RenderWorkerHandler {
     const cache = this.cachedRender(request, document);
     cache.request = request;
     try {
+      const refillAfterEdit = cache.refillAfterEdit;
       this.cancelFill(cache);
-      this.postResponse(this.resultFor(cache.state, request));
-      this.scheduleFill(cache);
+      const result = this.resultFor(cache.state, request);
+      cache.refillAfterEdit = false;
+      this.postResponse(result);
+      this.scheduleFill(
+        cache,
+        result.ok && result.mode === "patch" && refillAfterEdit
+          ? EDIT_REFILL_DELAY_MS
+          : FILL_DELAY_MS,
+      );
     } catch (error) {
       // A failed patch or fill may already have advanced the cache (rendered
       // chunks, moved cursor) without delivering their blocks. Rebuild the
@@ -215,6 +226,7 @@ export class RenderWorkerHandler {
       request: null,
       fillToken: 0,
       fillTimer: undefined,
+      refillAfterEdit: false,
     };
     this.renders.set(request.docId, cache);
     return cache;
@@ -252,7 +264,7 @@ export class RenderWorkerHandler {
     };
   }
 
-  private scheduleFill(cache: CachedRender): void {
+  private scheduleFill(cache: CachedRender, delay = FILL_DELAY_MS): void {
     if (cache.state.complete || cache.request === null) {
       return;
     }
@@ -260,7 +272,7 @@ export class RenderWorkerHandler {
       return;
     }
     const token = cache.fillToken;
-    cache.fillTimer = setTimeout(() => this.fillBatch(cache, token), FILL_DELAY_MS);
+    cache.fillTimer = setTimeout(() => this.fillBatch(cache, token), delay);
   }
 
   private fillBatch(cache: CachedRender, token: number): void {
