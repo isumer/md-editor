@@ -37,3 +37,15 @@ and critical-path work, so 3–7× of what remains still fits the budget.
 ## Done when
 Jarvis's five-runner macOS check (diag workflow) is green with the slice's
 criterion on every runner, and the normal CI is green on all three OS.
+
+## Allowed files
+Every slice (20 MB open, keystroke, cold start) may change:
+- product code under `src/` that runs on the slice's measured path (main process start,
+  preload, renderer start, editor, preview, render and io workers) and its build config;
+- `test/e2e/preview-perf.spec.ts` and `test/e2e/io-worker.spec.ts` for instrumentation and
+  log lines only, never a budget, sample count, warm-up or skip;
+- the unit tests under `test/unit/` for the changed modules;
+- `docs/dev/notes/` for the measured numbers, and `CHANGELOG.md`.
+
+The 20 MB slice also owns the AC-PERF-09 20 MB scroll tail and any regression it causes on
+the open or save path (for example AC-R5-17).
