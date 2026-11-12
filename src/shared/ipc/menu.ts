@@ -13,6 +13,13 @@ export const MENU_ITEM_IDS = [
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
 
+export const VIEW_MENU_ITEM_IDS = [
+  "view-split",
+  "view-editor",
+  "view-preview",
+] as const;
+export type ViewMenuItemId = (typeof VIEW_MENU_ITEM_IDS)[number];
+
 // Command ids of the same items, in the same order.
 export const MENU_COMMAND_IDS = [
   "file.open",
@@ -37,7 +44,7 @@ export interface MenuContribution {
 
 export type MenuContributionResponse = void;
 
-export type MenuCommandMessage = MenuItemId;
+export type MenuCommandMessage = MenuItemId | ViewMenuItemId;
 
 function exactData(
   value: unknown,
