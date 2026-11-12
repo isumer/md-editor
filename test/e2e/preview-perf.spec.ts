@@ -184,8 +184,10 @@ async function reportMacProcessLoad(): Promise<void> {
   );
 }
 
+// Runs on the live page through launchEditor's onPage hook, before the argv
+// document applies, so no reload is needed on the shipped open path.
 async function installKeystrokeProbe(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+  await page.evaluate(() => {
     const probe: KeystrokeProbe = { renders: [], responses: [], longtasks: [], frames: [] };
     (window as unknown as { __keystrokeProbe?: KeystrokeProbe }).__keystrokeProbe = probe;
     const NativeWorker = window.Worker;
@@ -511,12 +513,16 @@ test("AC-PERF-02: 50 KB document keystroke latency p95 stays under 50 ms", {
   annotation: { type: "AC-PERF-02" },
 }, async () => {
   await reportMacProcessLoad();
-  const { application, page } = await launchEditor();
+  let probeInstalled: Promise<void> = Promise.resolve();
+  const { application, page } = await launchEditor(large50, {
+    // The probe must exist before the argv open creates the render worker.
+    onPage: ({ page: startupPage }) => {
+      probeInstalled = installKeystrokeProbe(startupPage);
+    },
+  });
   try {
-    await installKeystrokeProbe(page);
-    await page.reload();
-    await expect(page.getByTestId("editor").locator(".cm-content")).toBeVisible();
-    await openLargeThroughMenu(application, page, large50);
+    // Diagnostics only; the measurement works without the probe.
+    await probeInstalled.catch(() => undefined);
     await openPreview(page, await fs.readFile(large50, "utf8").then((text) =>
       text.split("\n")[0] ?? ""));
     const samples = await measureKeystrokes(page, "preview-latency", true);
