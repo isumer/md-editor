@@ -330,6 +330,7 @@ body {
 
 .preview-eager-layout {
   content-visibility: visible;
+  contain: layout paint style;
 }
 
 #preview pre {
