@@ -21,13 +21,11 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
-// Run 43054587932 spent 15 s on macOS first-exec assessment and page-in inside
-// electron.launch; prewarm it before test budgets. The next launch took 3.7 s.
+// Run 43054587932 spent 15 s on first-exec assessment and page-in; prewarm before test budgets.
 function prewarmElectronBinary(): void {
   const started = Date.now();
   let binary: unknown;
   try {
-    // Same resolution as Playwright's electron.launch: require("electron/index.js").
     binary = createRequire(__filename)("electron/index.js");
   } catch {
     return;
@@ -36,7 +34,7 @@ function prewarmElectronBinary(): void {
     return;
   }
   try {
-    // Same environment as launchEditor: ELECTRON_RUN_AS_NODE would skip the Electron boot.
+    // ELECTRON_RUN_AS_NODE would skip the Electron boot.
     const result = spawnSync(binary, ["--version"], {
       timeout: 60_000,
       env: launchEnvironment(),
@@ -45,7 +43,7 @@ function prewarmElectronBinary(): void {
       console.log(`electron prewarm: ${String(Date.now() - started)} ms`);
     }
   } catch {
-    // The first real launch surfaces any spawn failure.
+    // The real launch reports any persistent failure.
   }
 }
 prewarmElectronBinary();
