@@ -25,6 +25,7 @@ export interface BackgroundSettingsDependencies {
 
 export interface BackgroundSettingsController {
   dispose(): void;
+  flush(): Promise<void>;
   start(): Promise<void>;
 }
 
@@ -51,7 +52,7 @@ class Controller implements BackgroundSettingsController {
   private dialog: BackgroundSettingsDialog | null = null;
   private stopThemeWatch: (() => void) | null = null;
   private pendingSave: SettingsReadResponse | null = null;
-  private saving = false;
+  private saveTask: Promise<void> | null = null;
 
   constructor(private readonly dependencies: BackgroundSettingsDependencies) {}
 
@@ -78,6 +79,10 @@ class Controller implements BackgroundSettingsController {
     this.stopThemeWatch = null;
     this.dialog?.dispose();
     this.dialog = null;
+  }
+
+  async flush(): Promise<void> {
+    await this.saveTask;
   }
 
   private resolvedTheme(): ResolvedTheme {
@@ -122,18 +127,17 @@ class Controller implements BackgroundSettingsController {
   private changed(): void {
     this.apply();
     this.pendingSave = copySettings(this.settings);
-    if (!this.saving) void this.flushSaves();
+    if (this.saveTask === null) this.saveTask = this.flushSaves();
   }
 
   private async flushSaves(): Promise<void> {
-    this.saving = true;
     while (this.pendingSave !== null) {
       const settings = this.pendingSave;
       this.pendingSave = null;
       const result = await this.dependencies.save(settings);
       if (!result.ok) this.dependencies.reportError(settingsError(result.error));
     }
-    this.saving = false;
+    this.saveTask = null;
   }
 }
 

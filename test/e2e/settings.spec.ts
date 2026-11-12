@@ -41,8 +41,13 @@ async function setColour(page: Page, selector: string, value: string): Promise<v
 }
 
 async function storedSettings(profileDirectory: string): Promise<unknown> {
-  const raw = await fs.readFile(path.join(profileDirectory, "settings.json"), "utf8");
-  return JSON.parse(raw) as unknown;
+  try {
+    const raw = await fs.readFile(path.join(profileDirectory, "settings.json"), "utf8");
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 async function paneColors(page: Page): Promise<PaneColors> {
@@ -87,12 +92,12 @@ test("AC-R7-01: separate editor and preview backgrounds survive a restart", {
       editorBackground: "rgb(18, 52, 86)",
       previewBackground: "rgb(171, 205, 239)",
     });
+    await editor.application.close();
     await expect.poll(() => storedSettings(profile)).toMatchObject({
       editor: { background: "#123456" },
       preview: { background: "#abcdef" },
     });
 
-    await editor.application.close();
     editor = await launchEditor(fixturePath, profile);
     await expect.poll(() => paneColors(editor.page)).toMatchObject({
       editorBackground: "rgb(18, 52, 86)",

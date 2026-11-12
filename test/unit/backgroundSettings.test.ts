@@ -109,6 +109,49 @@ describe("background settings", () => {
     ));
   });
 
+  it("AC-R7-01: waits for the latest settings save before shutdown", async () => {
+    let finishFirstSave: (() => void) | undefined;
+    let finishLatestSave: (() => void) | undefined;
+    const firstSave = new Promise<void>((resolve) => {
+      finishFirstSave = resolve;
+    });
+    const latestSave = new Promise<void>((resolve) => {
+      finishLatestSave = resolve;
+    });
+    let saveCount = 0;
+    const save = vi.fn(async (_settings: SettingsReadResponse) => {
+      saveCount += 1;
+      await (saveCount === 1 ? firstSave : latestSave);
+      return { ok: true as const, value: undefined };
+    });
+    controller = createBackgroundSettingsController({
+      load: async () => ({ ok: true, value: settings("light", null, null) }),
+      save,
+      reportError: vi.fn(),
+    });
+
+    await controller.start();
+    required<HTMLButtonElement>("#background-settings-open").click();
+    changeValue(required<HTMLInputElement>("#editor-background-input"), "#123456");
+    changeValue(required<HTMLInputElement>("#preview-background-input"), "#abcdef");
+    const flushed = controller.flush();
+
+    await expect(Promise.race([flushed.then(() => "saved"), Promise.resolve("pending")]))
+      .resolves.toBe("pending");
+    if (finishFirstSave === undefined) throw new Error("first settings save did not start");
+    finishFirstSave();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    await expect(Promise.race([flushed.then(() => "saved"), Promise.resolve("pending")]))
+      .resolves.toBe("pending");
+    if (finishLatestSave === undefined) throw new Error("latest settings save did not start");
+    finishLatestSave();
+    await flushed;
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({
+      editor: expect.objectContaining({ background: "#123456" }),
+      preview: expect.objectContaining({ background: "#abcdef" }),
+    }));
+  });
+
   it("AC-R7-02: keeps a custom colour across theme changes and resets it", async () => {
     const save = vi.fn(async () => ({ ok: true as const, value: undefined }));
     const media = mockSystemTheme(false);
@@ -155,6 +198,22 @@ describe("background settings", () => {
     await started;
     expect(required<HTMLInputElement>("#editor-background-input").value)
       .toBe("#123456");
+  });
+
+  it("keeps settings accessible when the sidebar header is unavailable", async () => {
+    document.querySelector(".workspace-sidebar-header")?.remove();
+    controller = createBackgroundSettingsController({
+      load: async () => ({ ok: true, value: settings("light", null, null) }),
+      save: vi.fn(async () => ({ ok: true as const, value: undefined })),
+      reportError: vi.fn(),
+    });
+
+    await controller.start();
+
+    const open = required<HTMLButtonElement>("#background-settings-open");
+    expect(open.parentElement).toBe(document.body);
+    open.click();
+    expect(required<HTMLDialogElement>("#background-settings-dialog").open).toBe(true);
   });
 
   it("reports load and save failures while system theme changes stay usable", async () => {

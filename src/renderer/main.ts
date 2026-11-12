@@ -3,6 +3,7 @@ import { Text, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
+import type { SessionCloseRequest } from "../shared/ipc/session";
 import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
@@ -77,6 +78,7 @@ let editor: EditorView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let installedFeatures: InstalledFeatures;
+let flushBackgroundSettings: () => Promise<void> = () => Promise.resolve();
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -387,8 +389,13 @@ documentCommands = new DocumentCommands({
 });
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));
+async function handleSessionClose(request: SessionCloseRequest): Promise<void> {
+  await flushBackgroundSettings();
+  await lifecycle.handleSessionClose(request);
+}
+
 onSessionCloseRequest((request) => {
-  void lifecycle.handleSessionClose(request).catch(showUnexpectedError);
+  void handleSessionClose(request).catch(showUnexpectedError);
 });
 
 window.addEventListener("dragover", (event) => {
@@ -404,6 +411,7 @@ async function loadBackgroundSettings(): Promise<void> {
     save: saveSettings,
     reportError: showUnexpectedError,
   });
+  flushBackgroundSettings = () => controller.flush();
   await controller.start();
 }
 
