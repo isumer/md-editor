@@ -55,3 +55,28 @@ test("two open files show aligned line and word differences with navigation", {
     await closeEditor(application, page);
   }
 });
+
+test("compare keeps the workspace sidebar in the left column", async () => {
+  const { application, page } = await launchEditor(leftPath);
+  try {
+    await expect(page.getByRole("tab", { name: /left\.txt/ })).toBeVisible();
+    await stubOpenDialog(application, rightPath);
+    await clickMenuItem(application, "file-open");
+    await expect(page.getByRole("tab", { name: /right\.txt/ })).toBeVisible();
+
+    await clickMenuItem(application, "file-compare-open");
+
+    const sidebar = page.getByRole("complementary", { name: "Workspace" });
+    const compare = page.getByTestId("compare-view");
+    await expect(compare).toBeVisible();
+    const sidebarBox = await sidebar.boundingBox();
+    const compareBox = await compare.boundingBox();
+    expect(sidebarBox).not.toBeNull();
+    expect(compareBox).not.toBeNull();
+    if (!sidebarBox || !compareBox) throw new Error("The layout boxes are missing.");
+    expect(compareBox.x).toBe(sidebarBox.x + sidebarBox.width);
+    expect(compareBox.y).toBe(sidebarBox.y);
+  } finally {
+    await closeEditor(application, page);
+  }
+});

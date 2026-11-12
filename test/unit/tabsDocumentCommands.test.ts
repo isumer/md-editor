@@ -133,4 +133,32 @@ describe("document commands", () => {
       "view-full-screen",
     ]);
   });
+
+  it("reports a rejected menu command", async () => {
+    const { DocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    const onError = vi.fn();
+    new DocumentCommands({
+      compare: vi.fn(),
+      editor,
+      onError,
+      onResult: vi.fn(),
+      open: vi.fn(async () => undefined),
+      save: vi.fn(async () => {
+        throw new Error("save stopped");
+      }),
+    });
+    await Promise.resolve();
+
+    menuListener?.("file-save");
+
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(new Error("save stopped"));
+    });
+    editor.destroy();
+  });
 });
