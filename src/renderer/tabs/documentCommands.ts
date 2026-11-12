@@ -1,6 +1,5 @@
 import type { EditorView } from "@codemirror/view";
 
-import { compareMenu } from "../../shared/ipc/menu/compare";
 import { composeMenuItems } from "../../shared/ipc/menu/compose";
 import { fileMenu } from "../../shared/ipc/menu/file";
 import {
@@ -14,6 +13,7 @@ import { createContextKeys } from "../core/contextKeys";
 import { installKeymap } from "../core/keymap";
 import { dispatchRedo, dispatchUndo } from "../editor/editor";
 import { contributeMenu, onMenuCommand } from "../platform/api";
+import type { SecondaryDocumentCommands } from "./documentCommandsSecondary";
 
 export function platformName(platform: string): "darwin" | "linux" | "win32" {
   if (platform.startsWith("Mac")) {
@@ -22,14 +22,20 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
   return platform.startsWith("Win") ? "win32" : "linux";
 }
 
-// The renderer composes its own item list; main composes the same list
-// from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
-export const menuItems = composeMenuItems([fileMenu, compareMenu]);
+// Primary items are available before the first screen. Secondary items join
+// them when their deferred module resolves.
+export const menuItems = composeMenuItems([fileMenu]);
 
-export function menuContribution(): MenuContribution {
+type MenuItem =
+  | (typeof menuItems)[number]
+  | SecondaryDocumentCommands["menuItems"][number];
+
+export function menuContribution(
+  items: readonly MenuItem[] = menuItems,
+): MenuContribution {
   return {
     fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
-    items: menuItems.map((item) => ({
+    items: items.map((item) => ({
       id: item.id,
       title: formatMessage(item.titleKey, {}),
       accelerator: item.accelerator,
@@ -41,15 +47,17 @@ export interface DocumentCommandsOptions {
   editor: EditorView;
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
-  compare(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
+  loadSecondary(): Promise<SecondaryDocumentCommands>;
 }
 
 export class DocumentCommands {
   private readonly contextKeys = createContextKeys();
   private readonly commandContext = { contextKeys: this.contextKeys };
   private readonly commands = createCommandRegistry();
+  private secondaryMenuItems: readonly MenuItem[] = [];
+  private secondaryStarted = false;
   constructor(private readonly options: DocumentCommandsOptions) {
     this.register();
     onMenuCommand((item) => this.runMenu(item));
@@ -88,11 +96,6 @@ export class DocumentCommands {
       run: () => this.options.save(true),
     });
     this.commands.register({
-      id: "file.compareOpen",
-      titleKey: "menu.compareOpen",
-      run: this.options.compare,
-    });
-    this.commands.register({
       id: "undo",
       titleKey: "menu.undo",
       run: () => dispatchUndo(this.options.editor),
@@ -104,13 +107,26 @@ export class DocumentCommands {
     });
   }
 
+  startSecondaryFeatures(): void {
+    if (this.secondaryStarted) return;
+    this.secondaryStarted = true;
+    void this.options.loadSecondary().then((secondary) => {
+      secondary.install(this.commands);
+      this.secondaryMenuItems = secondary.menuItems;
+      return this.publish();
+    }).catch(this.options.onError);
+  }
+
   private runMenu(menuItemId: MenuCommandMessage): void {
-    const item = menuItems.find((candidate) => candidate.id === menuItemId);
+    const item = [...menuItems, ...this.secondaryMenuItems]
+      .find((candidate) => candidate.id === menuItemId);
     if (item === undefined) return;
     void this.commands.run(item.commandId, this.commandContext, undefined, "menu");
   }
 
   private async publish(): Promise<void> {
-    this.options.onResult(await contributeMenu(menuContribution()));
+    this.options.onResult(await contributeMenu(
+      menuContribution([...menuItems, ...this.secondaryMenuItems]),
+    ));
   }
 }

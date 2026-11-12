@@ -15,6 +15,40 @@ import {
   stubSaveDialog,
 } from "./helpers";
 
+const STARTUP_MARKS = [
+  "app-ready",
+  "window-created",
+  "renderer-script-start",
+  "editor-mounted",
+  "file-text-shown",
+  "editor-editable",
+] as const;
+
+interface StartupMark {
+  name: string;
+  startTime: number;
+}
+
+async function startupMarks(
+  application: ElectronApplication,
+  page: Page,
+): Promise<readonly StartupMark[]> {
+  const mainMarks = await application.evaluate(() =>
+    performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+  );
+  const rendererMarks = await page.evaluate(() =>
+    performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+  );
+  return [...mainMarks, ...rendererMarks].filter(({ name }) =>
+    STARTUP_MARKS.some((startupMark) => startupMark === name));
+}
+
 async function ioWorkerPid(application: ElectronApplication): Promise<number | null> {
   return application.evaluate(({ app }) => {
     const worker = app.getAppMetrics().find((metric) =>
@@ -119,8 +153,37 @@ test("an argv file is editable within the cold-start budget", {
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
 
+    const marks = await startupMarks(application, page);
+    console.log(`AC-PERF-03 marks: ${JSON.stringify(marks)}`);
+    expect(marks.map(({ name }) => name).sort()).toEqual([...STARTUP_MARKS].sort());
+
     expect(performance.now() - startedAt).toBeLessThan(2_000);
   } finally {
     await closeEditor(application, page);
+  }
+});
+
+test("startup marks fire once after activating multiple granted files", {
+  tag: "@AC-PERF-03",
+  annotation: { type: "AC-PERF-03" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-marks-"));
+  const secondPath = path.join(temporaryDirectory, "second.md");
+  await fs.writeFile(secondPath, "# Second document\n", "utf8");
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await stubOpenDialog(application, secondPath);
+    await clickMenuItem(application, "file-open");
+    await expect(page.getByTestId("editor")).toContainText("Second document");
+    await page.getByTestId("tab").filter({ hasText: "sample.md" }).click();
+    await expect(page.getByTestId("editor")).toContainText("Sample document");
+
+    const marks = await startupMarks(application, page);
+    for (const name of STARTUP_MARKS) {
+      expect(marks.filter((mark) => mark.name === name), name).toHaveLength(1);
+    }
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
