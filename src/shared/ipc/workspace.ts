@@ -9,6 +9,7 @@ export const WORKSPACE_CHANNELS = {
 } as const;
 
 export interface WorkspaceRoot {
+  readonly grant: string;
   readonly name: string;
 }
 

@@ -43,7 +43,6 @@ import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 import { WorkspaceService } from "./services/workspace";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
-import { WORKSPACE_CHANNELS } from "../shared/ipc/workspace";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
@@ -68,9 +67,7 @@ const ioWorker = createIoWorkerSupervisor(
 );
 const fileDialogs = new FileDialogs();
 const fileService = new DocumentGrantService(grants, fileDialogs, ioWorker);
-const workspaceService = new WorkspaceService(fileDialogs, fileService, (windowId, change) => {
-  requireWindow(windowId)?.webContents.send(WORKSPACE_CHANNELS.change, change);
-});
+const workspaceService = new WorkspaceService(fileDialogs, fileService, grants, ioWorker);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
 let sessionStore: SessionStore | null = null;

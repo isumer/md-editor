@@ -163,12 +163,12 @@ describe("preload bridge", () => {
       fileMenuTitle: "File",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
     });
+    electron.invoke.mockResolvedValueOnce({
+      ok: true,
+      value: { grant: "workspace-root", name: "notes" },
+    });
     await api.chooseWorkspaceRoot();
-    await api.listWorkspaceChildren({ path: "notes" });
     await api.openWorkspaceFile({ path: "notes/daily.md" });
-    await api.createWorkspaceFile({ path: "draft.md" });
-    await api.renameWorkspaceFile({ path: "draft.md", newPath: "done.md" });
-    await api.deleteWorkspaceFile({ path: "done.md" });
     expect(electron.invoke.mock.calls).toEqual([
       ["file:open", {}],
       ["file:choose-save-target", { grant: "grant-a" }],
@@ -184,11 +184,7 @@ describe("preload bridge", () => {
         items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
       }],
       ["workspace:choose-root", {}],
-      ["workspace:list-children", { path: "notes" }],
       ["workspace:open-file", { path: "notes/daily.md" }],
-      ["workspace:create-file", { path: "draft.md" }],
-      ["workspace:rename-file", { path: "draft.md", newPath: "done.md" }],
-      ["workspace:delete-file", { path: "done.md" }],
     ]);
 
     const port = new FakePort();
@@ -253,6 +249,48 @@ describe("preload bridge", () => {
       ok: true,
       value: { name: "note.md", version: 1 },
     });
+  });
+
+  it("AC-R11-01 AC-R11-07: sends workspace operations through the worker port", async () => {
+    const { api, portListener } = await loadPreload();
+    electron.invoke.mockResolvedValueOnce({
+      ok: true,
+      value: { grant: "workspace-root", name: "notes" },
+    });
+    await api.chooseWorkspaceRoot();
+    const port = new FakePort();
+    portListener({ ports: [port] });
+
+    const list = api.listWorkspaceChildren({ path: "notes" });
+    const create = api.createWorkspaceFile({ path: "draft.md" });
+    const rename = api.renameWorkspaceFile({ path: "draft.md", newPath: "done.md" });
+    const remove = api.deleteWorkspaceFile({ path: "done.md" });
+
+    expect(port.messages).toEqual([
+      { id: "io-1", op: "workspaceList", grant: "workspace-root", path: "notes" },
+      { id: "io-2", op: "workspaceCreate", grant: "workspace-root", path: "draft.md" },
+      {
+        id: "io-3",
+        op: "workspaceRename",
+        grant: "workspace-root",
+        path: "draft.md",
+        newPath: "done.md",
+      },
+      { id: "io-4", op: "workspaceDelete", grant: "workspace-root", path: "done.md" },
+    ]);
+    port.reply({
+      id: "io-1",
+      result: { ok: true, value: [{ name: "daily.md", kind: "file" }] },
+    });
+    for (const id of ["io-2", "io-3", "io-4"]) {
+      port.reply({ id, result: { ok: true, value: {} } });
+    }
+    await expect(list).resolves.toMatchObject({ ok: true, value: [{ name: "daily.md" }] });
+    await expect(Promise.all([create, rename, remove])).resolves.toEqual([
+      { ok: true, value: {} },
+      { ok: true, value: {} },
+      { ok: true, value: {} },
+    ]);
   });
 
   it("AC-SEC-09: opens only files from a trusted drop, through the preload", async () => {
@@ -722,7 +760,7 @@ describe("preload bridge", () => {
   });
 
   it("AC-SEC-11: forwards only fixed menu and open-request subscriptions", async () => {
-    const { api } = await loadPreload();
+    const { api, portListener } = await loadPreload();
     const listener = vi.fn();
     const unsubscribe = api.onMenuCommand(listener);
     const menuCall = electron.on.mock.calls.find(([channel]) => channel === "menu:command");
@@ -760,30 +798,32 @@ describe("preload bridge", () => {
 
     const workspaceListener = vi.fn();
     const unsubscribeWorkspace = api.onWorkspaceChange(workspaceListener);
-    const workspaceCall = electron.on.mock.calls.find(
-      ([channel]) => channel === "workspace:change",
-    );
+    const port = new FakePort();
+    portListener({ ports: [port] });
     const created = {
       canonicalPath: "/notes/new.md",
       entryKind: "file",
       kind: "created",
       path: "new.md",
     };
-    workspaceCall?.[1]({}, created);
-    workspaceCall?.[1]({}, { canonicalPath: "/notes/a.md", kind: "changed", path: "a.md" });
-    workspaceCall?.[1]({}, { canonicalPath: "/notes/a.md", kind: "deleted", path: "a.md" });
-    workspaceCall?.[1]({}, null);
-    workspaceCall?.[1]({}, { kind: "created", path: "bad.md" });
-    workspaceCall?.[1]({}, { canonicalPath: "/notes/a.md", kind: "invalid", path: "a.md" });
+    port.reply({ op: "workspaceChange", change: created });
+    port.reply({
+      op: "workspaceChange",
+      change: { canonicalPath: "/notes/a.md", kind: "changed", path: "a.md" },
+    });
+    port.reply({
+      op: "workspaceChange",
+      change: { canonicalPath: "/notes/a.md", kind: "deleted", path: "a.md" },
+    });
+    port.reply({ op: "workspaceChange", change: null });
+    port.reply({ op: "workspaceChange", change: { kind: "created", path: "bad.md" } });
     expect(workspaceListener.mock.calls).toEqual([
       [created],
       [{ canonicalPath: "/notes/a.md", kind: "changed", path: "a.md" }],
       [{ canonicalPath: "/notes/a.md", kind: "deleted", path: "a.md" }],
     ]);
     unsubscribeWorkspace();
-    expect(electron.removeListener).toHaveBeenCalledWith(
-      "workspace:change",
-      workspaceCall?.[1],
-    );
+    port.reply({ op: "workspaceChange", change: created });
+    expect(workspaceListener).toHaveBeenCalledTimes(3);
   });
 });

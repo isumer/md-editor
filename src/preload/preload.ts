@@ -101,7 +101,11 @@ type PortOperation =
   | ({ op: "attach" } & AttachDocumentInput)
   | ({ op: "save" } & SaveDocumentInput)
   | ({ op: "draft" } & DraftDocumentInput)
-  | { op: "drafts" };
+  | { op: "drafts" }
+  | { op: "workspaceList"; grant: string; path: string }
+  | { op: "workspaceCreate"; grant: string; path: string }
+  | { op: "workspaceDelete"; grant: string; path: string }
+  | { op: "workspaceRename"; grant: string; path: string; newPath: string };
 type PortOneWay = ChangeDocumentMessage | DetachDocumentMessage | ClearDraftMessage;
 
 interface PendingRequest {
@@ -188,7 +192,9 @@ function validDrafts(value: unknown): boolean {
 }
 
 function validSuccessValue(value: unknown, operation: PortOperation["op"]): boolean {
-  if (operation === "attach" || operation === "draft") {
+  if (operation === "attach" || operation === "draft" ||
+    operation === "workspaceCreate" || operation === "workspaceDelete" ||
+    operation === "workspaceRename") {
     return exactData(value, []) !== null;
   }
   if (operation === "drafts") {
@@ -199,6 +205,13 @@ function validSuccessValue(value: unknown, operation: PortOperation["op"]): bool
     return read !== null && typeof read["canonicalPath"] === "string" &&
       read["canonicalPath"].length > 0 && typeof read["name"] === "string" &&
       typeof read["text"] === "string";
+  }
+  if (operation === "workspaceList") {
+    return Array.isArray(value) && value.every((candidate) => {
+      const entry = exactData(candidate, ["name", "kind"]);
+      return entry !== null && typeof entry["name"] === "string" &&
+        (entry["kind"] === "folder" || entry["kind"] === "file");
+    });
   }
   const save = exactData(value, ["name", "version"]);
   return save !== null && typeof save["name"] === "string" &&
@@ -278,6 +291,14 @@ export class IoPortClient {
   }
 
   private receive(value: unknown): void {
+    const event = exactData(value, ["op", "change"]);
+    const change = event?.["op"] === "workspaceChange"
+      ? workspaceChange(event["change"])
+      : null;
+    if (change) {
+      for (const listener of workspaceChangeListeners) listener(change);
+      return;
+    }
     const reply = replyData(value);
     if (!reply) {
       return;
@@ -360,6 +381,20 @@ function workspaceChange(value: unknown): WorkspaceChangeMessage | null {
 }
 
 const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
+const workspaceChangeListeners = new Set<(change: WorkspaceChangeMessage) => void>();
+let workspaceGrant: string | null = null;
+
+function missingWorkspaceGrant<T>(): Promise<Result<T>> {
+  return Promise.resolve({
+    ok: false,
+    error: {
+      code: "BAD_REQUEST",
+      messageKey: "request.invalid",
+      params: {},
+      retryable: false,
+    },
+  });
+}
 
 type DropFile = Parameters<typeof webUtils.getPathForFile>[0];
 
@@ -522,37 +557,38 @@ const api: Api = {
     ipcRenderer.on(SESSION_CHANNELS.requestClose, handler);
     return () => ipcRenderer.removeListener(SESSION_CHANNELS.requestClose, handler);
   },
-  chooseWorkspaceRoot: () => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.chooseRoot,
-    {},
-  ) as Promise<Result<ChooseWorkspaceRootResponse>>,
-  listWorkspaceChildren: (request) => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.listChildren,
-    request,
-  ) as Promise<Result<ListWorkspaceChildrenResponse>>,
+  chooseWorkspaceRoot: async () => {
+    const result = await ipcRenderer.invoke(
+      WORKSPACE_CHANNELS.chooseRoot,
+      {},
+    ) as Result<ChooseWorkspaceRootResponse>;
+    if (result.ok) workspaceGrant = result.value?.grant ?? null;
+    return result;
+  },
+  listWorkspaceChildren: (request) => workspaceGrant
+    ? ioClient.request({ op: "workspaceList", grant: workspaceGrant, path: request.path })
+    : missingWorkspaceGrant(),
   openWorkspaceFile: (request) => ipcRenderer.invoke(
     WORKSPACE_CHANNELS.openFile,
     request,
   ) as Promise<Result<OpenWorkspaceFileResponse>>,
-  createWorkspaceFile: (request) => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.createFile,
-    request,
-  ) as Promise<Result<WorkspaceFileActionResponse>>,
-  deleteWorkspaceFile: (request) => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.deleteFile,
-    request,
-  ) as Promise<Result<WorkspaceFileActionResponse>>,
-  renameWorkspaceFile: (request) => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.renameFile,
-    request,
-  ) as Promise<Result<WorkspaceFileActionResponse>>,
+  createWorkspaceFile: (request) => workspaceGrant
+    ? ioClient.request({ op: "workspaceCreate", grant: workspaceGrant, path: request.path })
+    : missingWorkspaceGrant(),
+  deleteWorkspaceFile: (request) => workspaceGrant
+    ? ioClient.request({ op: "workspaceDelete", grant: workspaceGrant, path: request.path })
+    : missingWorkspaceGrant(),
+  renameWorkspaceFile: (request) => workspaceGrant
+    ? ioClient.request({
+        op: "workspaceRename",
+        grant: workspaceGrant,
+        path: request.path,
+        newPath: request.newPath,
+      })
+    : missingWorkspaceGrant(),
   onWorkspaceChange: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
-      const change = workspaceChange(value);
-      if (change) listener(change);
-    };
-    ipcRenderer.on(WORKSPACE_CHANNELS.change, handler);
-    return () => ipcRenderer.removeListener(WORKSPACE_CHANNELS.change, handler);
+    workspaceChangeListeners.add(listener);
+    return () => workspaceChangeListeners.delete(listener);
   },
 };
 

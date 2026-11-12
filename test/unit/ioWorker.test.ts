@@ -10,6 +10,7 @@ import {
   type IoWorkerPort,
 } from "../../src/io-worker/port";
 import { IoFileService } from "../../src/io-worker/services/file";
+import { IoWorkspaceService } from "../../src/io-worker/services/workspace";
 
 class FakePort implements IoWorkerPort {
   readonly replies: unknown[] = [];
@@ -353,8 +354,10 @@ describe("io-worker save by version", () => {
   });
 
   it("AC-SEC-13: replacing or revoking a window port drops its mirrors", async () => {
-    const service = serviceWithGrant();
-    const registry = new IoPortRegistry(service);
+    const grants = new IoGrantTable();
+    grants.register(1, "valid", targetPath);
+    const service = new IoFileService(grants);
+    const registry = new IoPortRegistry(service, new IoWorkspaceService(grants));
     const first = new FakePort();
     const replacement = new FakePort();
     registry.attach(1, first);

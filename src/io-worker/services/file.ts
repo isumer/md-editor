@@ -69,9 +69,15 @@ export class IoFileService {
     handle: string,
     filePath: string,
     mustExist: boolean,
+    kind: "document" | "root" = "document",
   ): Promise<{ canonicalPath: string; name: string }> {
     const canonical = await canonicalPath(filePath, mustExist);
-    this.grants.register(windowId, handle, canonical);
+    if (kind === "root" && !(await fs.stat(canonical)).isDirectory()) {
+      throw serviceError("IS_DIRECTORY", "file.isDirectory", {
+        file: path.basename(canonical),
+      });
+    }
+    this.grants.register(windowId, handle, canonical, kind);
     return { canonicalPath: canonical, name: path.basename(canonical) };
   }
 
@@ -80,7 +86,7 @@ export class IoFileService {
     grant: string,
     relativePath: string,
   ): Promise<ResolvedAsset> {
-    const documentPath = this.grants.resolve(windowId, grant);
+    const documentPath = this.grants.resolve(windowId, grant, "document");
     const resolved = await resolvePathUnderRoot(
       path.dirname(documentPath),
       relativePath,
@@ -100,7 +106,7 @@ export class IoFileService {
     windowId: number,
     grant: string,
   ): Promise<{ canonicalPath: string; name: string; text: string }> {
-    const filePath = this.grants.resolve(windowId, grant);
+    const filePath = this.grants.resolve(windowId, grant, "document");
     const name = path.basename(filePath);
     try {
       const bytes = await fs.readFile(filePath);
@@ -148,7 +154,7 @@ export class IoFileService {
       throw serviceError("OUT_OF_SYNC", "file.outOfSync", {}, true);
     }
     if (input.grant !== null) {
-      this.grants.resolve(windowId, input.grant);
+      this.grants.resolve(windowId, input.grant, "document");
     }
     const drafts = this.drafts.get(windowId) ?? new Map<string, DraftDocument>();
     drafts.set(input.docId, {
@@ -171,7 +177,7 @@ export class IoFileService {
     windowId: number,
     input: SaveDocumentInput,
   ): Promise<{ name: string; version: number }> {
-    const filePath = this.grants.resolve(windowId, input.grant);
+    const filePath = this.grants.resolve(windowId, input.grant, "document");
     const document = this.mirrors.docAt(
       windowId,
       input.docId,

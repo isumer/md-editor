@@ -9,12 +9,14 @@ import { ioRequestId } from "../../shared/ipc/io";
 import {
   isRegisterGrantReply,
   isResolveAssetReply,
+  isResolveWorkspaceFileReply,
   isSessionReadReply,
   isSessionWriteReply,
   isSettingsReadReply,
   isSettingsWriteReply,
   type RegisteredGrant,
   type ResolvedAsset,
+  type ResolvedWorkspaceFile,
   type SettingsReadReply,
   type SettingsWriteReply,
   type StoredSession,
@@ -42,6 +44,7 @@ interface PendingControl {
 type ControlKind =
   | "registerGrant"
   | "resolveAsset"
+  | "resolveWorkspaceFile"
   | "readSession"
   | "writeSession"
   | "readSettings"
@@ -53,6 +56,9 @@ function isReplyFor(kind: ControlKind, message: unknown): boolean {
   }
   if (kind === "resolveAsset") {
     return isResolveAssetReply(message);
+  }
+  if (kind === "resolveWorkspaceFile") {
+    return isResolveWorkspaceFileReply(message);
   }
   if (kind === "readSession") {
     return isSessionReadReply(message);
@@ -128,6 +134,7 @@ export class IoWorkerSupervisor {
     handle: string,
     filePath: string,
     mustExist: boolean,
+    kind: "document" | "root" = "document",
   ): Promise<Result<RegisteredGrant>> {
     await this.generationReady;
     return this.child && !this.stopped
@@ -137,6 +144,7 @@ export class IoWorkerSupervisor {
           handle,
           path: filePath,
           mustExist,
+          kind,
         })
       : failedControl();
   }
@@ -150,6 +158,22 @@ export class IoWorkerSupervisor {
     return this.child && !this.stopped
       ? this.sendControl<ResolvedAsset>({
           type: "resolveAsset",
+          windowId,
+          grant,
+          relativePath,
+        })
+      : failedControl();
+  }
+
+  async resolveWorkspaceFile(
+    windowId: number,
+    grant: string,
+    relativePath: string,
+  ): Promise<Result<ResolvedWorkspaceFile>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<ResolvedWorkspaceFile>({
+          type: "resolveWorkspaceFile",
           windowId,
           grant,
           relativePath,
@@ -324,6 +348,7 @@ export class IoWorkerSupervisor {
           handle: grant.handle,
           path: grant.canonicalPath,
           mustExist: false,
+          kind: grant.kind,
         });
         if (this.child !== child) {
           return;

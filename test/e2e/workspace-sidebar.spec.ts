@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
+import { execFile as execFileCallback } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { expect, test } from "@playwright/test";
 
@@ -13,6 +15,20 @@ import {
 } from "./helpers";
 
 const workspaceFixture = path.join(repositoryRoot, "test/fixtures/workspace");
+const execFile = promisify(execFileCallback);
+
+async function denyDirectoryWrites(directory: string): Promise<() => Promise<void>> {
+  if (process.platform === "win32") {
+    const user = process.env["USERNAME"];
+    if (!user) throw new Error("USERNAME is required for the permission test");
+    await execFile("icacls", [directory, "/deny", `${user}:(OI)(CI)(W,D)`]);
+    return async () => {
+      await execFile("icacls", [directory, "/remove:d", user]);
+    };
+  }
+  await fs.chmod(directory, 0o555);
+  return async () => fs.chmod(directory, 0o700);
+}
 
 async function writeNumberedFiles(
   directory: string,
@@ -312,8 +328,12 @@ test("workspace file actions stay inside the root and keep state after failure",
     const rename = page.getByRole("dialog", { name: "Rename file" });
     await rename.getByRole("textbox").fill("existing.md");
     await rename.getByRole("button", { name: "Rename" }).click();
-    await expect(page.getByTestId("status")).toContainText("created.md");
+    await expect(page.getByTestId("status")).toHaveText(
+      "Could not save “created.md”: it changed on disk.",
+    );
     await expect(tree.getByRole("button", { name: "created.md" })).toBeVisible();
+    await expect(tree.getByRole("button", { name: "existing.md" })).toBeVisible();
+    await expect(fs.readFile(path.join(root, "created.md"), "utf8")).resolves.toBe("");
     await expect(fs.readFile(path.join(root, "existing.md"), "utf8")).resolves.toBe("existing");
 
     await tree.getByRole("button", { name: "created.md" }).click({ button: "right" });
@@ -322,6 +342,74 @@ test("workspace file actions stay inside the root and keep state after failure",
       .getByRole("button", { name: "Delete" }).click();
     await expect(tree.getByRole("button", { name: "created.md" })).toHaveCount(0);
   } finally {
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a missing file failure names the entry and keeps disk and tree state", {
+  tag: "@AC-R11-08",
+  annotation: { type: "AC-R11-08" },
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-missing-"));
+  const missing = path.join(root, "missing.md");
+  await fs.writeFile(missing, "missing");
+  await fs.writeFile(path.join(root, "kept.md"), "kept");
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, root);
+    const tree = page.getByTestId("workspace-tree");
+    await tree.getByRole("button", { name: "missing.md" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Delete" }).click();
+    const dialog = page.getByRole("dialog", { name: "Delete missing.md?" });
+    await fs.unlink(missing);
+    await expect(tree.getByRole("button", { name: "missing.md" })).toHaveCount(0);
+    const treeBefore = await tree.getByTestId("workspace-row").allTextContents();
+
+    await dialog.getByRole("button", { name: "Delete" }).click();
+
+    await expect(page.getByTestId("status")).toHaveText(
+      "Could not access “missing.md”: it was not found.",
+    );
+    await expect(tree.getByTestId("workspace-row")).toHaveText(treeBefore);
+    await expect(fs.stat(missing)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(path.join(root, "kept.md"), "utf8")).resolves.toBe("kept");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a permission failure names the entry and keeps disk and tree state", {
+  tag: "@AC-R11-08",
+  annotation: { type: "AC-R11-08" },
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-denied-"));
+  const source = path.join(root, "protected.md");
+  const target = path.join(root, "renamed.md");
+  await fs.writeFile(source, "protected");
+  const { application, page } = await launchEditor();
+  let restore = async (): Promise<void> => undefined;
+  try {
+    await openWorkspace(application, page, root);
+    const tree = page.getByTestId("workspace-tree");
+    await tree.getByRole("button", { name: "protected.md" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Rename" }).click();
+    const dialog = page.getByRole("dialog", { name: "Rename file" });
+    await dialog.getByRole("textbox").fill("renamed.md");
+    restore = await denyDirectoryWrites(root);
+
+    await dialog.getByRole("button", { name: "Rename" }).click();
+
+    await expect(page.getByTestId("status")).toHaveText(
+      "Could not access “protected.md”: permission was denied.",
+    );
+    await expect(tree.getByRole("button", { name: "protected.md" })).toBeVisible();
+    await expect(tree.getByRole("button", { name: "renamed.md" })).toHaveCount(0);
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("protected");
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await restore();
     await closeEditor(application, page);
     await fs.rm(root, { recursive: true, force: true });
   }

@@ -13,7 +13,7 @@ const failure = {
 
 const api = {
   chooseWorkspaceRoot: vi.fn<Window["api"]["chooseWorkspaceRoot"]>(
-    async () => ok({ name: "notes" }),
+    async () => ok({ grant: "root", name: "notes" }),
   ),
   listWorkspaceChildren: vi.fn<Window["api"]["listWorkspaceChildren"]>(
     async () => ok([]),
@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   delete document.documentElement.dataset["sidebarShortcutReady"];
   delete document.documentElement.dataset["sidebarTogglePending"];
-  api.chooseWorkspaceRoot.mockResolvedValue(ok({ name: "notes" }));
+  api.chooseWorkspaceRoot.mockResolvedValue(ok({ grant: "root", name: "notes" }));
   api.listWorkspaceChildren.mockResolvedValue(ok([]));
   api.openWorkspaceFile.mockResolvedValue(ok({
     canonicalPath: "/notes/daily.md",

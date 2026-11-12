@@ -5,6 +5,7 @@ import {
   type ReadSettingsRequest,
   type RegisterGrantReply,
   type ResolveAssetReply,
+  type ResolveWorkspaceFileReply,
   type SettingsReadReply,
   type SettingsWriteReply,
   type SessionReadReply,
@@ -16,6 +17,7 @@ import { serviceError, toServiceError } from "../shared/ipc/result";
 import type { IoGrantTable } from "./grants";
 import { IoPortRegistry, type IoWorkerPort } from "./port";
 import type { IoFileService } from "./services/file";
+import { IoWorkspaceService } from "./services/workspace";
 import { SessionStore } from "./services/session";
 import { SettingsStore } from "./services/settings";
 
@@ -36,8 +38,9 @@ export class IoControlHandler {
     private readonly files: IoFileService,
     private readonly sessions: SessionStore = new SessionStore(),
     private readonly settings: SettingsStore = new SettingsStore(),
+    private readonly workspaces: IoWorkspaceService = new IoWorkspaceService(grants),
   ) {
-    this.ports = new IoPortRegistry(files);
+    this.ports = new IoPortRegistry(files, workspaces);
   }
 
   start(): void {
@@ -64,6 +67,8 @@ export class IoControlHandler {
       void this.register(data);
     } else if (data.type === "resolveAsset") {
       void this.resolveAsset(data);
+    } else if (data.type === "resolveWorkspaceFile") {
+      void this.resolveWorkspaceFile(data);
     } else if (data.type === "readSession") {
       void this.readSession(data);
     } else if (data.type === "writeSession") {
@@ -76,6 +81,7 @@ export class IoControlHandler {
       this.grants.revoke(data.windowId, data.handle);
     } else if (data.type === "revokeWindow") {
       this.grants.revokeWindow(data.windowId);
+      this.workspaces.revokeWindow(data.windowId);
       this.ports.revokeWindow(data.windowId);
     } else if (ports.length === 1 && ports[0]) {
       this.ports.attach(data.windowId, ports[0]);
@@ -88,6 +94,7 @@ export class IoControlHandler {
     handle: string;
     path: string;
     mustExist: boolean;
+    kind: "document" | "root";
   }): Promise<void> {
     try {
       const value = await this.files.registerGrant(
@@ -95,7 +102,9 @@ export class IoControlHandler {
         request.handle,
         request.path,
         request.mustExist,
+        request.kind,
       );
+      if (request.kind === "root") this.workspaces.watchRoot(request.windowId, request.handle);
       this.parent.postMessage({
         id: request.id,
         result: { ok: true, value },
@@ -129,6 +138,30 @@ export class IoControlHandler {
         id: request.id,
         result: { ok: false, error: toServiceError(error) },
       } satisfies ResolveAssetReply);
+    }
+  }
+
+  private async resolveWorkspaceFile(request: {
+    id: string;
+    windowId: number;
+    grant: string;
+    relativePath: string;
+  }): Promise<void> {
+    try {
+      const path = await this.workspaces.resolveFile(
+        request.windowId,
+        request.grant,
+        request.relativePath,
+      );
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value: { path } },
+      } satisfies ResolveWorkspaceFileReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies ResolveWorkspaceFileReply);
     }
   }
 
