@@ -43,7 +43,7 @@ When the user picks Help > Check for Updates
 Then the app names the new version with its release notes, or says it is up to date, or says the check failed and why; nothing is downloaded without the user's yes
 
 ### AC-R9-08 — The startup check is daily at most and can be turned off
-status: planned
+status: implemented
 Given update checks are on (default) and the last check was under 24 h ago, and separately update checks are off in settings
 When the app starts
 Then no request is made in either case; after 24 h with checks on, one request is made off the UI thread and startup is not delayed
@@ -55,7 +55,7 @@ When the download completes
 Then the file is verified against the release's checksum, the update installs on "Restart now" or at the next quit, unsaved documents go through the quit prompt first (AC-R4-06), and the app starts in the new version with the session restored
 
 ### AC-R9-10 — Other builds notify and open the download page
-status: planned
+status: implemented
 Given an unsigned macOS build, a portable build, or a deb install, and a newer release
 When an update is found
 Then the app offers to open the release page and never replaces its own files; when the macOS build is signed, it follows AC-R9-09 instead

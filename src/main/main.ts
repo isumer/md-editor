@@ -45,8 +45,12 @@ import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 import { WorkspaceService } from "./services/workspace";
-import { createUpdateCheck } from "./update/updateCheck";
+import {
+  createStartupUpdateCheck,
+  createUpdateCheck,
+} from "./update/updateCheck";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
+import type { Settings } from "../shared/settings/settings";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
@@ -74,6 +78,21 @@ const fileService = new DocumentGrantService(grants, fileDialogs, ioWorker);
 const workspaceService = new WorkspaceService(fileDialogs, fileService);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
+let sessionStore: SessionStore | null = null;
+let settingsStore: SettingsStore | null = null;
+
+function readUpdateSettings(): Promise<Settings> {
+  return settingsStore === null
+    ? Promise.reject(new Error("Settings are not ready."))
+    : settingsStore.read();
+}
+
+function writeUpdateSettings(settings: Settings): Promise<void> {
+  return settingsStore === null
+    ? Promise.reject(new Error("Settings are not ready."))
+    : settingsStore.write(settings);
+}
+
 const checkForUpdates = createUpdateCheck({
   currentVersion: () => app.getVersion(),
   fetchFeed: (url) => net.fetch(url),
@@ -83,9 +102,15 @@ const checkForUpdates = createUpdateCheck({
     noLink: true,
   }),
   openExternal: (url) => shell.openExternal(url),
+  readSettings: readUpdateSettings,
+  writeSettings: writeUpdateSettings,
 });
-let sessionStore: SessionStore | null = null;
-let settingsStore: SettingsStore | null = null;
+const checkForStartupUpdates = createStartupUpdateCheck({
+  check: checkForUpdates,
+  now: Date.now,
+  read: readUpdateSettings,
+  write: writeUpdateSettings,
+});
 
 const closeRequests = new CloseRequestBroker(
   (windowId, requestId) => {
@@ -199,7 +224,7 @@ void initializeApplication(
     registerDocAssetProtocol(ioWorker);
   },
   () => {
-    void checkForUpdates();
+    void checkForStartupUpdates();
   },
 ).catch((error: unknown) => {
   logProcessEvent("startup", error);

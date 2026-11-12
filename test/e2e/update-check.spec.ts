@@ -120,3 +120,29 @@ test("Check for Updates reports an unreachable release feed", {
   }
 });
 
+test("automatic update checks can be turned off in update settings", {
+  tag: "@AC-R9-08",
+  annotation: { type: "AC-R9-08" },
+}, async () => {
+  const { application, page, userDataDir } = await launchEditor();
+  try {
+    await stubUpdateCheck(application, "current", 0);
+
+    await clickMenuItem(application, "help-check-updates");
+
+    await expect.poll(async () => {
+      const raw = await fs.readFile(
+        path.join(userDataDir, "settings.json"),
+        "utf8",
+      ).catch(() => "{}");
+      const value = JSON.parse(raw) as { updates?: { enabled?: boolean } };
+      return value.updates?.enabled;
+    }).toBe(false);
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
