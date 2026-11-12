@@ -59,6 +59,10 @@ describe("keymap data", () => {
       "Mod-Shift-z": "redo",
       "Mod-y": "redo",
       "Mod-Shift-c": "file.compareOpen",
+      "Mod-1": "view.split",
+      "Mod-2": "view.editor",
+      "Mod-3": "view.preview",
+      F11: "view.toggleFullScreen",
     });
   });
 });
@@ -70,6 +74,11 @@ describe("chordForEvent", () => {
     expect(chordForEvent(event("o", { metaKey: true }), "darwin")).toBe("Mod-o");
     expect(chordForEvent(event("o", { metaKey: true }), "linux")).toBe("Meta-o");
     expect(chordForEvent(event("o", { ctrlKey: true }), "darwin")).toBe("Ctrl-o");
+  });
+
+  it("AC-R2-03: maps F11 without a modifier", () => {
+    expect(chordForEvent(event("F11"), "linux")).toBe("F11");
+    expect(chordForEvent(event("F11"), "win32")).toBe("F11");
   });
 
   it("normalises modifier order and letter case", () => {
@@ -112,6 +121,8 @@ describe("chordForEvent", () => {
       .toBe("Mod-Shift-z");
     expect(chordForEvent(event("щ", { code: "KeyO", ctrlKey: true }), "win32"))
       .toBe("Mod-o");
+    expect(chordForEvent(event("٢", { code: "Digit2", ctrlKey: true }), "linux"))
+      .toBe("Mod-2");
     expect(chordForEvent(event("z", { code: "KeyY", ctrlKey: true }), "linux"))
       .toBe("Mod-z");
     expect(chordForEvent(event("ę", { code: "KeyE", ctrlKey: true, altKey: true }), "win32"))
@@ -127,6 +138,14 @@ describe("chordForEvent", () => {
 });
 
 describe("bindingForEvent", () => {
+  it("AC-R2-01 AC-R2-03: binds View commands for each platform", () => {
+    expect(bindingForEvent(event("2", { ctrlKey: true }), "linux"))
+      .toBe("view.editor");
+    expect(bindingForEvent(event("F11"), "linux")).toBe("view.toggleFullScreen");
+    expect(bindingForEvent(event("f", { ctrlKey: true, metaKey: true }), "darwin"))
+      .toBe("view.toggleFullScreen");
+    expect(bindingForEvent(event("F11"), "darwin")).toBeUndefined();
+  });
   it("AC-R1-08: leaves Cmd+Y unbound on macOS and keeps Ctrl+Y redo elsewhere", () => {
     expect(bindingForEvent(event("y", { metaKey: true }), "darwin")).toBeUndefined();
     expect(bindingForEvent(event("y", { ctrlKey: true }), "linux")).toBe("redo");

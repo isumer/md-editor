@@ -9,6 +9,10 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-s": "file.save",
   "Mod-Shift-s": "file.saveAs",
   "Mod-Shift-c": "file.compareOpen",
+  "Mod-1": "view.split",
+  "Mod-2": "view.editor",
+  "Mod-3": "view.preview",
+  F11: "view.toggleFullScreen",
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",
   "Mod-y": "redo",
@@ -17,6 +21,8 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
 const DARWIN_DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   ...DEFAULT_BINDINGS,
   "Mod-y": undefined,
+  F11: undefined,
+  "Mod-Ctrl-f": "view.toggleFullScreen",
 });
 
 function defaultBindings(platform: string): KeyBindings {
@@ -77,8 +83,11 @@ function normalizedKey(key: string, code: string | undefined): string | null {
   }
   // A non-Latin layout (e.g. Cyrillic) types another letter: chords follow the physical key.
   const physical = key.length === 1 && key > "\u007f" ? PHYSICAL_KEY.exec(code ?? "") : null;
-  if (physical) {
-    return (physical[1] ?? physical[2] ?? "").toLowerCase();
+  if (physical?.[1] !== undefined) {
+    return physical[1].toLowerCase();
+  }
+  if (physical?.[2] !== undefined) {
+    return physical[2];
   }
   return key.length === 1 ? key.toLowerCase() : key;
 }
@@ -114,7 +123,7 @@ export function chordForEvent(
     parts.push("Shift");
   }
   if (parts.length === 0) {
-    return null;
+    return /^F(?:[1-9]|1[0-2])$/.test(key) ? key : null;
   }
   return `${parts.join("-")}-${key}`;
 }

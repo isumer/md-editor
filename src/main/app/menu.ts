@@ -6,10 +6,9 @@ import {
   type MenuContribution,
   type MenuContributionItem,
   type MenuItemId,
-  type ViewMenuItemId,
 } from "../../shared/ipc/menu";
 import { getMainWindow } from "./window";
-import { shellMenu } from "./menu/registry";
+import { menuItems, shellMenu } from "./menu/registry";
 
 export interface MenuEntry {
   id: string;
@@ -44,52 +43,6 @@ function sendMenuCommand(command: MenuCommandMessage): void {
   }
 }
 
-function viewCommandItem(
-  id: ViewMenuItemId,
-  label: string,
-  accelerator: string,
-): MenuItemConstructorOptions {
-  return {
-    id,
-    label,
-    accelerator,
-    registerAccelerator: false,
-    click: () => sendMenuCommand(id),
-  };
-}
-
-function toggleFullScreen(): void {
-  const mainWindow = getMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setFullScreen(!mainWindow.isFullScreen());
-  }
-}
-
-function viewMenu(platform: string): MenuItemConstructorOptions {
-  return {
-    label: "View",
-    submenu: [
-      viewCommandItem("view-split", "Split View", "CmdOrCtrl+1"),
-      viewCommandItem("view-editor", "Editor Only", "CmdOrCtrl+2"),
-      viewCommandItem("view-preview", "Preview Only", "CmdOrCtrl+3"),
-      { type: "separator" },
-      {
-        id: "view-full-screen",
-        label: "Full Screen",
-        accelerator: platform === "darwin" ? "Ctrl+Command+F" : "F11",
-        click: toggleFullScreen,
-      },
-    ],
-  };
-}
-
-export function installViewMenu(platform: string): void {
-  const menu = Menu.getApplicationMenu() as ApplicationMenuLike | null;
-  if (menu === null || menu.getMenuItemById("view-split") !== null || !menu.insert) return;
-  const item = Menu.buildFromTemplate([viewMenu(platform)]).items[0];
-  if (item !== undefined) menu.insert(Math.max(0, menu.items.length - 2), item);
-}
-
 export function buildSkeletonTemplate(
   platform: string,
   appName: string,
@@ -116,6 +69,22 @@ function fileMenuIndex(platform: string): number {
   return platform === "darwin" ? 1 : 0;
 }
 
+function viewMenuIndex(platform: string): number {
+  return platform === "darwin" ? 3 : 2;
+}
+
+function contributionItems(
+  contribution: MenuContribution,
+  send: (id: MenuItemId) => void,
+  menu: "file" | "view",
+): MenuItemConstructorOptions[] {
+  return menuItems.flatMap((declaration) => {
+    const inMenu = declaration.id.startsWith(`${menu}-`);
+    const item = contribution.items.find((candidate) => candidate.id === declaration.id);
+    return inMenu && item ? [contributedMenuItem(item, send)] : [];
+  });
+}
+
 export function buildContributionTemplate(
   platform: string,
   appName: string,
@@ -123,21 +92,26 @@ export function buildContributionTemplate(
   send: (id: MenuItemId) => void,
 ): MenuItemConstructorOptions[] {
   const template = buildSkeletonTemplate(platform, appName);
-  const items = contribution.items.map((item) => contributedMenuItem(item, send));
+  const fileItems = contributionItems(contribution, send, "file");
+  const viewItems = contributionItems(contribution, send, "view");
   if (platform === "darwin") {
     template.splice(fileMenuIndex(platform), 0, {
       label: contribution.fileMenuTitle,
-      submenu: items,
+      submenu: fileItems,
     });
-    return template;
-  }
-  const fileMenu = template[fileMenuIndex(platform)];
-  if (fileMenu) {
-    fileMenu.label = contribution.fileMenuTitle;
-    fileMenu.submenu = items.length > 0
-      ? [...items, { type: "separator" }, { role: "quit" }]
+  } else {
+    const fileMenu = template[fileMenuIndex(platform)];
+    if (fileMenu) {
+      fileMenu.label = contribution.fileMenuTitle;
+      fileMenu.submenu = fileItems.length > 0
+        ? [...fileItems, { type: "separator" }, { role: "quit" }]
       : [{ role: "quit" }];
+    }
   }
+  template.splice(viewMenuIndex(platform), 0, {
+    label: contribution.viewMenuTitle,
+    submenu: viewItems,
+  });
   return template;
 }
 
@@ -152,6 +126,10 @@ export function patchContribution(
   const fileMenu = menu.items[fileMenuIndex(platform)];
   if (fileMenu) {
     fileMenu.label = contribution.fileMenuTitle;
+  }
+  const viewMenu = menu.items[viewMenuIndex(platform)];
+  if (viewMenu) {
+    viewMenu.label = contribution.viewMenuTitle;
   }
   for (const item of contribution.items) {
     const entry = menu.getMenuItemById(item.id);
@@ -227,5 +205,4 @@ export function createMenu(): void {
 export function applyMenuContribution(contribution: MenuContribution): void {
   if (menuController === null) return;
   menuController.applyContribution(contribution);
-  installViewMenu(process.platform);
 }

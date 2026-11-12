@@ -137,4 +137,47 @@ describe("view controller", () => {
     expect(editorScroll.scrollTop).toBe(120);
     expect(preview.scrollTop).toBe(80);
   });
+
+  it("AC-R2-01: restores pane scroll after a second-frame editor measurement", () => {
+    const { divider, workspace } = fixture();
+    const editorScroll = document.createElement("div");
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    editorScroll.scrollTop = 120;
+    const controller = new ViewController({ divider, editorScroll, workspace });
+    const before = frames.length;
+
+    controller.setMode("editor");
+    frames[before]?.(0);
+    editorScroll.scrollTop = 0;
+
+    expect(frames).toHaveLength(before + 2);
+    frames[before + 1]?.(16);
+    expect(editorScroll.scrollTop).toBe(120);
+  });
+
+  it("AC-R2-01: discards a stale second-frame scroll restoration", () => {
+    const { divider, workspace } = fixture();
+    const editorScroll = document.createElement("div");
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    editorScroll.scrollTop = 120;
+    const controller = new ViewController({ divider, editorScroll, workspace });
+    const first = frames.length;
+
+    controller.setMode("editor");
+    frames[first]?.(0);
+    const staleSecond = frames[first + 1];
+    controller.setMode("preview");
+    editorScroll.scrollTop = 0;
+    staleSecond?.(16);
+
+    expect(editorScroll.scrollTop).toBe(0);
+  });
 });

@@ -39,19 +39,24 @@ describe("document commands", () => {
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
+    const featureCommand = vi.fn();
+    const toggleFullScreen = vi.fn(async () => undefined);
     const onResult = vi.fn();
     const commands = new DocumentCommands({
       compare,
       editor,
+      featureCommand,
       onError: vi.fn(),
       onResult,
       open,
       save,
+      toggleFullScreen,
     });
     await Promise.resolve();
 
     expect(contributeMenu.mock.calls[0]?.[0]).toEqual({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [
         { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
@@ -61,18 +66,26 @@ describe("document commands", () => {
           title: "Compare Open Files",
           accelerator: "CmdOrCtrl+Shift+C",
         },
+        { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
+        { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
+        { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
+        { id: "view-full-screen", title: "Full Screen", accelerator: "F11" },
       ],
     });
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
     menuListener?.("file-compare-open");
+    menuListener?.("view-editor");
+    menuListener?.("view-full-screen");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
+    expect(featureCommand).toHaveBeenCalledWith("view.editor");
+    expect(toggleFullScreen).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
@@ -106,6 +119,10 @@ describe("document commands", () => {
       "file-save",
       "file-save-as",
       "file-compare-open",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-full-screen",
     ]);
   });
 });

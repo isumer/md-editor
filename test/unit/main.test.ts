@@ -525,6 +525,7 @@ describe("main process", () => {
       "workspace:choose-root",
       "workspace:list-children",
       "workspace:open-file",
+      "window:toggle-full-screen",
       "session:load",
       "session:close-result",
       "settings:read",

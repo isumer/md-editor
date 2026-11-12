@@ -50,7 +50,11 @@ export class ViewController {
     this.restoreScroll();
     const generation = ++this.restoreGeneration;
     requestAnimationFrame(() => {
-      if (generation === this.restoreGeneration) this.restoreScroll();
+      if (generation !== this.restoreGeneration) return;
+      this.restoreScroll();
+      requestAnimationFrame(() => {
+        if (generation === this.restoreGeneration) this.restoreScroll();
+      });
     });
   }
 
