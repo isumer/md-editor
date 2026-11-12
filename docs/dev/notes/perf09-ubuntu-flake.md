@@ -186,3 +186,30 @@ AC-PERF-07 measured 46.2 ms p95 against 150 ms.
 AC-PERF-08 measured 1.8 ms p95 against 8 ms.
 
 `npm run check:acceptance` passed after those results replaced the partial report.
+
+## Revalidation attempt (withdrawn)
+
+On 2026-11-12 I reproduced the failure once against current main.
+
+The full-order 500 KB case recorded one 33.4 ms frame and no long task.
+
+I then tried an eager-layout candidate. It set `content-visibility: visible`
+for completed previews of 1,000 to 3,000 blocks.
+
+Two local 500 KB flings then recorded a 16.8 ms maximum, no frame over 32 ms,
+and no long task.
+
+I withdrew the candidate from this branch. Its block limit excludes the
+114,567-block 20 MB document, so it cannot explain the cited 20 MB failure.
+No failing full-order trace was captured, and two local passes do not prove
+the cause (see Ranked candidates above).
+
+The candidate tree passed `npm run typecheck`, `npm run check:deps` (153
+modules, 333 dependencies) and `npm run test:unit` (1,184 tests in 115 files).
+Coverage was: statements 99.07 percent, branches 97.29 percent, functions
+99.23 percent, lines 99.22 percent.
+
+The local full e2e run passed 97 of 98 tests. Its 20 MB fill did not complete
+inside 360 seconds on this host, so the run stopped before that case's scroll
+measurement. The check's own note records about 4.4 minutes on its target
+machine; no wait, budget, retry, skip, or assertion was changed.
