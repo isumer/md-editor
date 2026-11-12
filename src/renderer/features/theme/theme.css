@@ -1,0 +1,76 @@
+:root {
+  color: #1f2328;
+  background: #ffffff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --editor-background: #ffffff;
+  --preview-background: #ffffff;
+  --editor-text-color: #1f2328;
+  --preview-text-color: #1f2328;
+  --editor-font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    color: #e6edf3;
+    background: #0d1117;
+    --editor-background: #0d1117;
+    --preview-background: #0d1117;
+    --editor-text-color: #e6edf3;
+    --preview-text-color: #e6edf3;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  color: #1f2328;
+  background: #ffffff;
+  --editor-background: #ffffff;
+  --preview-background: #ffffff;
+  --editor-text-color: #1f2328;
+  --preview-text-color: #1f2328;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  color: #e6edf3;
+  background: #0d1117;
+  --editor-background: #0d1117;
+  --preview-background: #0d1117;
+  --editor-text-color: #e6edf3;
+  --preview-text-color: #e6edf3;
+}
+
+:root[data-theme="dark"] #tabs {
+  border-bottom-color: #30363d;
+  background: #161b22;
+}
+
+:root[data-theme="dark"] .tab {
+  border-right-color: #30363d;
+  color: #8b949e;
+}
+
+:root[data-theme="dark"] .tab[aria-selected="true"] {
+  color: #e6edf3;
+  background: #0d1117;
+}
+
+:root[data-theme="dark"] .tab-close:hover {
+  background: #30363d;
+}
+
+:root[data-theme="dark"] #workspace-sidebar {
+  border-right-color: #30363d;
+  background: #161b22;
+}
+
+:root[data-theme="dark"] .workspace-row:hover {
+  background: #30363d;
+}
+
+:root[data-theme="dark"] #status {
+  border-top-color: #30363d;
+  background: #161b22;
+}
+

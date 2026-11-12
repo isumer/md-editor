@@ -127,7 +127,8 @@ interface PreviewStyles {
   tableBorder: string;
   headerBackground: string;
   codeBackground: string;
-  keywordColor: string;
+  scriptKeywordColor: string;
+  pythonKeywordColor: string;
 }
 
 async function waitForPreviewBlocks(page: Page): Promise<void> {
@@ -139,7 +140,8 @@ async function waitForPreviewBlocks(page: Page): Promise<void> {
       "#preview blockquote",
       "#preview th",
       "#preview pre",
-      "#preview .hljs-keyword",
+      "#preview code.language-js .hljs-keyword",
+      "#preview code.language-python .hljs-keyword",
     ];
     return selectors.every((selector) => document.querySelector(selector) !== null);
   });
@@ -152,8 +154,13 @@ async function previewStyles(page: Page): Promise<PreviewStyles> {
     const quote = document.querySelector<HTMLElement>("#preview blockquote");
     const header = document.querySelector<HTMLElement>("#preview th");
     const code = document.querySelector<HTMLElement>("#preview pre");
-    const keyword = document.querySelector<HTMLElement>("#preview .hljs-keyword");
-    if (!heading || !quote || !header || !code || !keyword) {
+    const script = document.querySelector<HTMLElement>(
+      "#preview code.language-js .hljs-keyword",
+    );
+    const python = document.querySelector<HTMLElement>(
+      "#preview code.language-python .hljs-keyword",
+    );
+    if (!heading || !quote || !header || !code || !script || !python) {
       throw new Error("preview elements are missing");
     }
     return {
@@ -163,7 +170,8 @@ async function previewStyles(page: Page): Promise<PreviewStyles> {
       tableBorder: getComputedStyle(header).borderTopStyle,
       headerBackground: getComputedStyle(header).backgroundColor,
       codeBackground: getComputedStyle(code).backgroundColor,
-      keywordColor: getComputedStyle(keyword).color,
+      scriptKeywordColor: getComputedStyle(script).color,
+      pythonKeywordColor: getComputedStyle(python).color,
     };
   });
 }
@@ -309,7 +317,9 @@ test("AC-R08-06: the preview uses GitHub-style rules and readable code colours",
     expect(styles.tableBorder).toBe("solid");
     expect(styles.headerBackground).toBe("rgb(246, 248, 250)");
     expect(styles.codeBackground).toBe("rgb(246, 248, 250)");
-    expect(contrastRatio(rgb(styles.keywordColor), rgb(styles.codeBackground)))
+    expect(contrastRatio(rgb(styles.scriptKeywordColor), rgb(styles.codeBackground)))
+      .toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb(styles.pythonKeywordColor), rgb(styles.codeBackground)))
       .toBeGreaterThanOrEqual(4.5);
   } finally {
     await closeEditor(light.application, light.page);
@@ -326,7 +336,9 @@ test("AC-R08-06: the preview uses GitHub-style rules and readable code colours",
     const styles = await previewStyles(dark.page);
     expect(styles.codeBackground).toBe("rgb(22, 27, 34)");
     expect(styles.headerBackground).toBe("rgb(21, 27, 35)");
-    expect(contrastRatio(rgb(styles.keywordColor), rgb(styles.codeBackground)))
+    expect(contrastRatio(rgb(styles.scriptKeywordColor), rgb(styles.codeBackground)))
+      .toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb(styles.pythonKeywordColor), rgb(styles.codeBackground)))
       .toBeGreaterThanOrEqual(4.5);
   } finally {
     await closeEditor(dark.application, dark.page);
