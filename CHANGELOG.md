@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Quitting no longer hangs when the app misses the window's answer to "are you ready to close". It now waits 4 seconds for the first answer instead of 15, so the app still quits on a busy machine.
 - Opening a very large document no longer copies its whole text twice before the preview starts, so the first screen appears sooner.
 - A message saying a save failed no longer disappears as soon as the preview updates after your next edit.
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".

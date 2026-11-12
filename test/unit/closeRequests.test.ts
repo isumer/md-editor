@@ -15,10 +15,13 @@ function broker() {
   const send = vi.fn();
   const persist = vi.fn(async () => undefined);
   const timers = new Map<TimerHandle, () => void>();
+  const timerDurations: number[] = [];
   let nextHandle = 1;
   const instance = new CloseRequestBroker(send, persist, {
-    timeoutMilliseconds: 15_000,
-    setTimer: (callback) => {
+    ackTimeoutMilliseconds: 4_000,
+    keepaliveTimeoutMilliseconds: 15_000,
+    setTimer: (callback, milliseconds) => {
+      timerDurations.push(milliseconds);
       const handle = nextHandle;
       nextHandle += 1;
       timers.set(handle, callback);
@@ -35,7 +38,7 @@ function broker() {
       callback();
     }
   };
-  return { instance, send, persist, timers, fireTimeout };
+  return { instance, send, persist, timers, fireTimeout, timerDurations };
 }
 
 describe("close request broker", () => {
@@ -94,7 +97,7 @@ describe("close request broker", () => {
   });
 
   it("AC-R4-06: an acknowledged open prompt stays pending after 15 seconds", async () => {
-    const { instance, persist, timers, fireTimeout } = broker();
+    const { instance, persist, timers, fireTimeout, timerDurations } = broker();
     const pending = instance.request(7);
     const initialTimeout = [...timers.values()][0];
     let settled = false;
@@ -121,8 +124,47 @@ describe("close request broker", () => {
     expect(settled).toBe(false);
     expect(persist).not.toHaveBeenCalled();
     expect(timers.size).toBe(1);
+    // The keepalive moves the deadline above the renderer's 5 s interval, so an
+    // open prompt cannot time out between two keepalives.
+    expect(timerDurations).toEqual([4_000, 15_000]);
 
     fireTimeout();
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it("AC-R4-06: the default keepalive deadline outlives the renderer's 5 s beat", async () => {
+    const durations: number[] = [];
+    const timers = new Map<TimerHandle, () => void>();
+    let nextHandle = 1;
+    const instance = new CloseRequestBroker(vi.fn(), vi.fn(async () => undefined), {
+      setTimer: (callback, milliseconds) => {
+        durations.push(milliseconds);
+        const handle = nextHandle;
+        nextHandle += 1;
+        timers.set(handle, callback);
+        return handle;
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle);
+      },
+    });
+
+    const pending = instance.request(7);
+    await instance.settle({
+      allow: false,
+      documents: [{
+        grant: "session-close:keepalive",
+        name: "",
+        savedText: "",
+        text: "",
+      }],
+      id: 1,
+    }, 7);
+
+    // No options are passed, so these are the shipped deadlines. A keepalive
+    // that arrives every 5 s must not outrun the default keepalive deadline.
+    expect(durations).toEqual([4_000, 15_000]);
+    timers.get([...timers.keys()][0] ?? 0)?.();
     await expect(pending).resolves.toBe(true);
   });
 
@@ -171,11 +213,46 @@ describe("close request broker", () => {
     await Promise.resolve();
 
     expect(timers.size).toBe(1);
-    expect(timerDurations).toEqual([15_000, 5_000]);
+    expect(timerDurations).toEqual([4_000, 5_000]);
     timers.get(1)?.();
     await expect(settling).resolves.toBeUndefined();
     await expect(pending).resolves.toBe(true);
     finishPersist?.();
+  });
+
+  it("AC-R4-06: a late ack and a stalled session write fit inside the e2e test budget", async () => {
+    let finishPersist: (() => void) | undefined;
+    const durations: number[] = [];
+    const timers = new Map<TimerHandle, () => void>();
+    let nextHandle = 1;
+    const persist = vi.fn(() => new Promise<void>((resolve) => {
+      finishPersist = resolve;
+    }));
+    const instance = new CloseRequestBroker(vi.fn(), persist, {
+      setTimer: (callback, milliseconds) => {
+        durations.push(milliseconds);
+        const handle = nextHandle;
+        nextHandle += 1;
+        timers.set(handle, callback);
+        return handle;
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle);
+      },
+    });
+    const pending = instance.request(7);
+    const settling = instance.settle(result, 7);
+    await Promise.resolve();
+
+    // The ack can arrive at the last millisecond of its window, then the write
+    // gets its own full deadline. Their sum is the worst case before the window
+    // close and the process exit, so it must leave room inside the 15 s budget.
+    expect(durations.reduce((sum, milliseconds) => sum + milliseconds, 0))
+      .toBeLessThan(10_000);
+
+    finishPersist?.();
+    await expect(settling).resolves.toBeUndefined();
+    await expect(pending).resolves.toBe(true);
   });
 
   it("AC-R4-06: uses the system timers when none are injected", async () => {
