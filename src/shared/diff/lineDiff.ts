@@ -60,6 +60,7 @@ interface DiffInput {
 type Gap = readonly [left: LineRange, right: LineRange];
 const MAX_EDIT_DISTANCE = 512;
 const MAX_WORK = 1_000_000;
+const SPARSE_MISMATCH_DIVISOR = 16;
 
 // Scans back from the end: a regex here is quadratic on a long inner blank run.
 function withoutTrailingBlanks(line: string): string {
@@ -340,11 +341,95 @@ function appendGap(hunks: DiffHunk[], input: DiffInput, gap: Gap): boolean {
   return exact === undefined;
 }
 
+function sparseAlignedGaps(
+  input: DiffInput,
+  middle: Gap,
+): Gap[] | undefined {
+  const leftLength = middle[0][1] - middle[0][0];
+  const rightLength = middle[1][1] - middle[1][0];
+  if (leftLength !== rightLength || leftLength < MAX_EDIT_DISTANCE) {
+    return undefined;
+  }
+  const gaps: Gap[] = [];
+  const mismatchLimit = Math.floor(leftLength / SPARSE_MISMATCH_DIVISOR);
+  let mismatchStart = -1;
+  let mismatches = 0;
+  for (let index = 0; index < leftLength; index += 1) {
+    const left = middle[0][0] + index;
+    const right = middle[1][0] + index;
+    if (normalized(input.left[left] as string, input.options) !==
+      normalized(input.right[right] as string, input.options)) {
+      mismatchStart = mismatchStart < 0 ? index : mismatchStart;
+      mismatches += 1;
+      if (mismatches > mismatchLimit) return undefined;
+    } else if (mismatchStart >= 0) {
+      gaps.push([
+        [middle[0][0] + mismatchStart, left],
+        [middle[1][0] + mismatchStart, right],
+      ]);
+      mismatchStart = -1;
+    }
+  }
+  if (mismatchStart >= 0) {
+    gaps.push([
+      [middle[0][0] + mismatchStart, middle[0][1]],
+      [middle[1][0] + mismatchStart, middle[1][1]],
+    ]);
+  }
+  return gaps;
+}
+
+function appendSparseAligned(
+  hunks: DiffHunk[],
+  input: DiffInput,
+  middle: Gap,
+): boolean | undefined {
+  const gaps = sparseAlignedGaps(input, middle);
+  if (!gaps) return undefined;
+  let start = 0;
+  let limited = false;
+  for (const gap of gaps) {
+    const unchanged = gap[0][0] - middle[0][0] - start;
+    appendUnchanged(
+      hunks,
+      middle[0][0] + start + 1,
+      middle[1][0] + start + 1,
+      unchanged,
+    );
+    limited = appendGap(hunks, input, gap) || limited;
+    start = gap[0][1] - middle[0][0];
+  }
+  appendUnchanged(
+    hunks,
+    middle[0][0] + start + 1,
+    middle[1][0] + start + 1,
+    middle[0][1] - middle[0][0] - start,
+  );
+  return limited;
+}
+
 function appendMiddle(
   hunks: DiffHunk[],
   input: DiffInput,
   middle: Gap,
 ): boolean {
+  const leftLength = middle[0][1] - middle[0][0];
+  const rightLength = middle[1][1] - middle[1][0];
+  // Mostly aligned documents can bypass both full-file maps and repeated
+  // one-line anchors while preserving exact changed regions.
+  const sparse = appendSparseAligned(hunks, input, middle);
+  if (sparse !== undefined) {
+    return sparse || leftLength + rightLength >= MAX_WORK;
+  }
+  if (leftLength + rightLength >= MAX_WORK) {
+    appendEdits(
+      hunks,
+      coarseEdits(leftLength, rightLength),
+      input,
+      middle,
+    );
+    return true;
+  }
   const anchors = increasingAnchors(anchorCandidates(input, middle[0], middle[1]));
   let leftStart = middle[0][0];
   let rightStart = middle[1][0];
