@@ -60,8 +60,8 @@ describe("document commands", () => {
         { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
         { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
-        { id: "file-export-html", title: "Export HTML…", accelerator: "CmdOrCtrl+Alt+H" },
-        { id: "file-export-pdf", title: "Export PDF…", accelerator: "CmdOrCtrl+Alt+P" },
+        { id: "file-export-html", title: "Export HTML…", accelerator: "CmdOrCtrl+Shift+H" },
+        { id: "file-export-pdf", title: "Export PDF…", accelerator: "CmdOrCtrl+Shift+P" },
         {
           id: "file-compare-open",
           title: "Compare Open Files",

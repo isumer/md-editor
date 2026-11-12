@@ -23,13 +23,13 @@ export const fileMenu = {
     {
       id: "file-export-html",
       titleKey: "menu.exportHtml",
-      accelerator: "CmdOrCtrl+Alt+H",
+      accelerator: "CmdOrCtrl+Shift+H",
       commandId: "file.exportHtml",
     },
     {
       id: "file-export-pdf",
       titleKey: "menu.exportPdf",
-      accelerator: "CmdOrCtrl+Alt+P",
+      accelerator: "CmdOrCtrl+Shift+P",
       commandId: "file.exportPdf",
     },
   ],

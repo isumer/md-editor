@@ -59,19 +59,18 @@ describe("keymap data", () => {
       "Mod-Shift-z": "redo",
       "Mod-y": "redo",
       "Mod-Shift-c": "file.compareOpen",
-      "Mod-Alt-h": "file.exportHtml",
-      "Mod-Alt-p": "file.exportPdf",
+      "Mod-Shift-h": "file.exportHtml",
+      "Mod-Shift-p": "file.exportPdf",
     });
   });
 
-  it("AC-R6-01 AC-R6-03: fires the export chords and keeps win32 AltGr as text", () => {
-    expect(bindingForEvent(event("h", { ctrlKey: true, altKey: true }), "linux"))
+  it("AC-R6-01 AC-R6-03: fires the export chords on every platform", () => {
+    expect(bindingForEvent(event("h", { ctrlKey: true, shiftKey: true }), "linux"))
       .toBe("file.exportHtml");
-    expect(bindingForEvent(event("p", { metaKey: true, altKey: true }), "darwin"))
+    expect(bindingForEvent(event("p", { metaKey: true, shiftKey: true }), "darwin"))
       .toBe("file.exportPdf");
-    // AltGr+p (Polish "ą") is Ctrl+Alt+p; it must stay text, not export.
-    expect(bindingForEvent(event("p", { ctrlKey: true, altKey: true }), "win32"))
-      .toBeUndefined();
+    expect(bindingForEvent(event("p", { ctrlKey: true, shiftKey: true }), "win32"))
+      .toBe("file.exportPdf");
   });
 });
 

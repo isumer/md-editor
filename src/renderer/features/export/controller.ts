@@ -2,24 +2,14 @@ import { formatMessage } from "../../core/messages";
 import type { FeatureContext } from "../../editor/featureWiring";
 import { exportDocument } from "../../platform/api";
 import exportWorkerUrl from "./export.worker.ts?worker&url";
+import { PreviewExportCache } from "./cache";
 import { HtmlExportClient } from "./client";
-import type { ExportBlock, ResolvedExportTheme } from "./html";
+import type { ResolvedExportTheme } from "./html";
 
 type ExportFormat = "html" | "pdf";
 
 function activeDocument(context: FeatureContext) {
   return context.documents().find((document) => context.isActive(document)) ?? null;
-}
-
-function relativeAssets(html: string): string {
-  return html.replaceAll(/doc-asset:\/\/[^/]+\/[^/]+\//g, "");
-}
-
-function renderedBlocks(preview: HTMLElement): ExportBlock[] {
-  return [...preview.querySelectorAll<HTMLElement>("[data-block-id]")].map((element) => ({
-    id: element.dataset["blockId"] as string,
-    html: relativeAssets(element.innerHTML),
-  }));
 }
 
 function field(label: string, control: HTMLElement): HTMLLabelElement {
@@ -36,11 +26,11 @@ export class ExportController {
   private readonly margin = document.createElement("input");
   private readonly background = document.createElement("input");
   private format: ExportFormat = "html";
-  private readonly client = new HtmlExportClient(
-    new Worker(new URL(exportWorkerUrl, window.location.href), { type: "module" }),
-  );
+  private readonly cache: PreviewExportCache;
+  private client: HtmlExportClient | null = null;
 
   constructor(private readonly context: FeatureContext) {
+    this.cache = new PreviewExportCache(context.preview);
     this.configureDialog();
   }
 
@@ -50,6 +40,13 @@ export class ExportController {
     this.dialog.querySelector<HTMLElement>("[data-html-options]")?.toggleAttribute("hidden", format !== "html");
     this.dialog.querySelector<HTMLElement>("[data-pdf-options]")?.toggleAttribute("hidden", format !== "pdf");
     this.dialog.showModal();
+  }
+
+  private exportClient(): HtmlExportClient {
+    this.client ??= new HtmlExportClient(
+      new Worker(new URL(exportWorkerUrl, window.location.href), { type: "module" }),
+    );
+    return this.client;
   }
 
   private configureDialog(): void {
@@ -105,28 +102,35 @@ export class ExportController {
     }
     const resolvedTheme: ResolvedExportTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
       ? "dark" : "light";
-    const html = await this.client.build({
+    const operation = {
+      format: this.format,
+      alwaysLight: this.alwaysLight.checked,
+      pageSize: this.pageSize.value === "Letter" ? "Letter" as const : "A4" as const,
+      margin: this.margin.valueAsNumber,
+      printBackground: this.background.checked,
+    };
+    const html = await this.exportClient().build({
       title: active.name ?? "Untitled",
-      blocks: renderedBlocks(this.context.preview),
+      blocks: this.cache.snapshot(),
       theme: resolvedTheme,
-      alwaysLight: this.format === "html" && this.alwaysLight.checked,
+      alwaysLight: operation.format === "html" && operation.alwaysLight,
     });
     const baseName = (active.name ?? "Untitled").replace(/\.[^.]+$/, "");
-    const request = this.format === "html"
+    const request = operation.format === "html"
       ? { format: "html" as const, html, suggestedName: `${baseName}.html` }
       : {
           format: "pdf" as const,
           html,
           suggestedName: `${baseName}.pdf`,
           options: {
-            pageSize: this.pageSize.value === "Letter" ? "Letter" as const : "A4" as const,
+            pageSize: operation.pageSize,
             margins: {
-              top: this.margin.valueAsNumber,
-              bottom: this.margin.valueAsNumber,
-              left: this.margin.valueAsNumber,
-              right: this.margin.valueAsNumber,
+              top: operation.margin,
+              bottom: operation.margin,
+              left: operation.margin,
+              right: operation.margin,
             },
-            printBackground: this.background.checked,
+            printBackground: operation.printBackground,
           },
         };
     const result = await exportDocument(request);

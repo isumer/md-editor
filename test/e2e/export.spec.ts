@@ -12,12 +12,27 @@ import {
   stubSaveDialog,
 } from "./helpers";
 
+const KEYSTROKE_SAMPLES = 30;
+
+function percentile95(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.ceil(sorted.length * 0.95) - 1] ?? 0;
+}
+
+function reportLatency(values: readonly number[]): void {
+  console.log(
+    `AC-R6-05 keystroke latency: n=${String(values.length)} ` +
+    `p95=${percentile95(values).toFixed(1)} ms ` +
+    `distribution=[${values.map((value) => value.toFixed(1)).join(", ")}]`,
+  );
+}
+
 test("HTML export writes the rendered preview with inline light CSS", {
   tag: ["@AC-R6-01", "@AC-R6-02"],
   annotation: [{ type: "AC-R6-01" }, { type: "AC-R6-02" }],
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-export-html-"));
-  const sourcePath = path.join(repositoryRoot, "test/fixtures/export/code-blocks.md");
+  const sourcePath = path.join(repositoryRoot, "test/fixtures/export/complete.md");
   const exportPath = path.join(temporaryDirectory, "export.html");
   const { application, page } = await launchEditor(sourcePath);
   try {
@@ -34,6 +49,9 @@ test("HTML export writes the rendered preview with inline light CSS", {
       .toContain("<!doctype html>");
     const html = await fs.readFile(exportPath, "utf8");
     expect(html).toContain("hljs-");
+    expect(html).toContain("<h1");
+    expect(html).toContain('src="assets/diagram.png"');
+    expect(html).not.toContain("doc-asset:");
     expect(html).toContain("<style>");
     expect(html).toContain("color-scheme: light");
     expect(html).not.toMatch(/<link\b[^>]*stylesheet/i);
@@ -82,8 +100,8 @@ test("PDF export applies options and writes the file", {
   }
 });
 
-test("a 500 KB PDF export leaves the editor responsive", {
-  tag: "@AC-R6-05",
+test("a 500 KB PDF export keeps keystroke latency below one frame", {
+  tag: ["@AC-R6-05", "@AC-PERF"],
   annotation: { type: "AC-R6-05" },
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-export-responsive-"));
@@ -99,11 +117,43 @@ test("a 500 KB PDF export leaves the editor responsive", {
     await clickMenuItem(application, "file-export-pdf");
     await page.getByTestId("export-dialog").getByRole("button", { name: "Export" }).click();
     const editor = page.getByTestId("editor").locator(".cm-content");
-
     await editor.click();
-    await page.keyboard.type("responsive export");
-
-    await expect(editor).toContainText("responsive export");
+    await page.evaluate(() => {
+      const content = document.querySelector<HTMLElement>(".cm-content");
+      if (!content) throw new Error("The editor content is missing");
+      const probe = { startedAt: 0, samples: [] as number[] };
+      (window as unknown as { __exportLatency?: typeof probe }).__exportLatency = probe;
+      document.addEventListener("keydown", () => { probe.startedAt = performance.now(); }, true);
+      new MutationObserver(() => {
+        if (probe.startedAt > 0) {
+          probe.samples.push(performance.now() - probe.startedAt);
+          probe.startedAt = 0;
+        }
+      }).observe(content, { characterData: true, childList: true, subtree: true });
+    });
+    for (let index = 0; index < 5; index += 1) {
+      await page.keyboard.type(String(index));
+      await expect.poll(() => page.evaluate(() =>
+        (window as unknown as { __exportLatency?: { samples: number[] } })
+          .__exportLatency?.samples.length ?? 0)).toBe(index + 1);
+    }
+    await page.evaluate(() => {
+      const probe = (window as unknown as { __exportLatency?: { samples: number[] } })
+        .__exportLatency;
+      if (probe) probe.samples.length = 0;
+    });
+    for (let index = 0; index < KEYSTROKE_SAMPLES; index += 1) {
+      await page.keyboard.type(String(index % 10));
+      await expect.poll(() => page.evaluate(() =>
+        (window as unknown as { __exportLatency?: { samples: number[] } })
+          .__exportLatency?.samples.length ?? 0)).toBe(index + 1);
+    }
+    const samples = await page.evaluate(() =>
+      (window as unknown as { __exportLatency?: { samples: number[] } })
+        .__exportLatency?.samples ?? []);
+    reportLatency(samples);
+    expect(samples).toHaveLength(KEYSTROKE_SAMPLES);
+    expect(percentile95(samples)).toBeLessThan(16);
     // The export must finish before close: quitting during printToPDF holds
     // shutdown and the process outlives the close wait.
     await expect.poll(
