@@ -41,25 +41,60 @@ interface RenderWorkerWiring {
 }
 
 const BLOCK_CLASS = "preview-block";
+const EAGER_LAYOUT_CLASS = "preview-eager-layout";
 // Blocks are packed into pages and pages into sections so content-visibility
 // skips whole regions without one containment decision per block: the cost of
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 20;
-const SECTION_PAGE_LIMIT = 5;
+const SECTION_PAGE_LIMIT = 20;
+const EAGER_LAYOUT_BLOCK_MINIMUM = 1_000;
+const EAGER_LAYOUT_BLOCK_LIMIT = 3_000;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
 let appendMeasureCount = 0;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
-// Keep the first screens responsive, then avoid an extra task per fill once a
-// document has enough cached content for extended scrolling.
+// Pace the first screens per fill, then yield once per group after enough
+// content is cached for extended scrolling.
 const DEFERRED_FILL_BLOCK_LIMIT = 512;
-// A section also bounds the layout work when it becomes visible: 100 blocks
-// keep each layout task short, at the cost of more containment elements.
+const BACKGROUND_FILLS_PER_FRAME = 8;
+// Sections reduce intersection targets; their pages stay independently
+// contained, so a visible section does not lay out all 400 blocks at once.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
+
+export function usesEagerPreviewLayout(blockCount: number): boolean {
+  return blockCount >= EAGER_LAYOUT_BLOCK_MINIMUM &&
+    blockCount <= EAGER_LAYOUT_BLOCK_LIMIT;
+}
+
+function setEagerLayout(preview: HTMLElement, enabled: boolean): void {
+  for (const element of preview.querySelectorAll(".preview-page, .preview-section")) {
+    element.classList.toggle(EAGER_LAYOUT_CLASS, enabled);
+  }
+  if (enabled) {
+    preview.dataset["eagerLayout"] = "true";
+    void preview.offsetHeight;
+  } else {
+    preview.removeAttribute("data-eager-layout");
+  }
+}
+
+function updateCompletedLayout(
+  preview: HTMLElement,
+  blockCount: number,
+  complete: boolean,
+): void {
+  if (!complete) {
+    return;
+  }
+  const eager = usesEagerPreviewLayout(blockCount);
+  if (eager !== (preview.dataset["eagerLayout"] === "true")) {
+    setEagerLayout(preview, eager);
+  }
+}
 
 function placeBlock(
   element: HTMLDivElement,
@@ -70,12 +105,18 @@ function placeBlock(
     if (layout.section === null || layout.pagesInSection >= SECTION_PAGE_LIMIT) {
       const section = document.createElement("div");
       section.className = "preview-section";
+      if (wiring.preview.dataset["eagerLayout"] === "true") {
+        section.classList.add(EAGER_LAYOUT_CLASS);
+      }
       wiring.preview.append(section);
       layout.section = section;
       layout.pagesInSection = 0;
     }
     const page = document.createElement("div");
     page.className = "preview-page";
+    if (wiring.preview.dataset["eagerLayout"] === "true") {
+      page.classList.add(EAGER_LAYOUT_CLASS);
+    }
     (layout.section as HTMLDivElement).append(page);
     layout.page = page;
     layout.pagesInSection += 1;
@@ -151,6 +192,7 @@ function replaceBlocks(
   budget: { milliseconds: number; now: () => number },
 ): number {
   elements.clear();
+  wiring.preview.removeAttribute("data-eager-layout");
   wiring.preview.replaceChildren();
   resetLayout(layout);
   return appendBlocks(blocks, version, shifts, wiring, elements, layout, budget);
@@ -292,9 +334,9 @@ function applyBlocks(
   }
   const appliedCompleteResult = result.mode === "patch" ||
     appliedBlockCount === result.blocks.length;
-  wiring.preview.dataset["renderComplete"] = String(
-    result.complete && appliedCompleteResult,
-  );
+  const renderComplete = result.complete && appliedCompleteResult;
+  updateCompletedLayout(wiring.preview, elements.size, renderComplete);
+  wiring.preview.dataset["renderComplete"] = String(renderComplete);
   return appliedBlockCount;
 }
 
@@ -350,13 +392,11 @@ function requestNextFill(
       token: response.fillToken,
     } satisfies RenderFillReadyMessage);
   };
-  requestAnimationFrame(() => {
-    if (deferToTask) {
-      window.setTimeout(postFillReady, 0);
-    } else {
-      postFillReady();
-    }
-  });
+  if (!deferToTask) {
+    postFillReady();
+    return;
+  }
+  requestAnimationFrame(() => window.setTimeout(postFillReady, 0));
 }
 
 export function wireRenderWorker(
@@ -378,6 +418,7 @@ export function wireRenderWorker(
     timer: number;
   } | null = null;
   const queuedResponses: RenderResponse[] = [];
+  const unframedFillBatches = new WeakMap<object, number>();
   let queuedResponseTimer = 0;
 
   function scheduleQueuedResponse(): void {
@@ -417,6 +458,9 @@ export function wireRenderWorker(
     performance.clearMarks("preview-apply-end");
     performance.mark("preview-apply-start");
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
+    if (response.ok && response.mode === "replace") {
+      unframedFillBatches.delete(documentPreview);
+    }
     const documentWiring = { ...wiring, preview: documentPreview.container };
     const applied = applyRenderResult(
       response,
@@ -437,10 +481,16 @@ export function wireRenderWorker(
       };
       if (requestFill && response.mode === "append" &&
         applied.appliedBlockCount === response.blocks.length) {
+        const previousBatches = documentPreview.elements.size > DEFERRED_FILL_BLOCK_LIMIT
+          ? unframedFillBatches.get(documentPreview) ?? 0
+          : BACKGROUND_FILLS_PER_FRAME - 1;
+        const nextBatches = previousBatches + 1;
+        const deferToFrame = nextBatches >= BACKGROUND_FILLS_PER_FRAME;
+        unframedFillBatches.set(documentPreview, deferToFrame ? 0 : nextBatches);
         requestNextFill(
           renderWorker,
           response,
-          documentPreview.elements.size <= DEFERRED_FILL_BLOCK_LIMIT,
+          deferToFrame,
         );
       }
     }

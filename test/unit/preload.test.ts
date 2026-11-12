@@ -293,6 +293,28 @@ describe("preload bridge", () => {
     ]);
   });
 
+  it("AC-R11-07: workspace file actions reject requests before a root is chosen", async () => {
+    const { api } = await loadPreload();
+
+    const results = await Promise.all([
+      api.listWorkspaceChildren({ path: "" }),
+      api.createWorkspaceFile({ path: "draft.md" }),
+      api.renameWorkspaceFile({ path: "draft.md", newPath: "done.md" }),
+      api.deleteWorkspaceFile({ path: "done.md" }),
+    ]);
+
+    expect(results).toEqual(Array.from({ length: 4 }, () => ({
+      ok: false,
+      error: {
+        code: "BAD_REQUEST",
+        messageKey: "request.invalid",
+        params: {},
+        retryable: false,
+      },
+    })));
+    expect(electron.invoke).not.toHaveBeenCalled();
+  });
+
   it("AC-SEC-09: opens only files from a trusted drop, through the preload", async () => {
     const { api } = await loadPreload();
     const opened: unknown[] = [];
