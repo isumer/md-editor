@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
-const junitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE ?? "reports/e2e-junit.xml";
+const junitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE
+  ?? "reports/e2e-junit.xml";
 
 export default defineConfig({
   testDir: "test/e2e",

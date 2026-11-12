@@ -1,5 +1,9 @@
 import type { MenuItemConstructorOptions } from "electron";
 
+export interface ShellMenuActions {
+  checkForUpdates(): void;
+}
+
 function macApplicationMenu(appName: string): MenuItemConstructorOptions {
   return {
     label: appName,
@@ -22,7 +26,11 @@ function macApplicationMenu(appName: string): MenuItemConstructorOptions {
 
 export const shellMenu = {
   order: 0,
-  build(platform: string, appName: string): readonly MenuItemConstructorOptions[] {
+  build(
+    platform: string,
+    appName: string,
+    actions: ShellMenuActions,
+  ): readonly MenuItemConstructorOptions[] {
     const template: MenuItemConstructorOptions[] = [];
     if (platform === "darwin") {
       template.push(macApplicationMenu(appName));
@@ -39,7 +47,14 @@ export const shellMenu = {
         { role: "selectAll" },
       ],
     });
-    template.push({ role: "windowMenu" }, { role: "help" });
+    template.push({ role: "windowMenu" }, {
+      role: "help",
+      submenu: [{
+        id: "help-check-updates",
+        label: "Check for Updates",
+        click: actions.checkForUpdates,
+      }],
+    });
     return template;
   },
 } as const;

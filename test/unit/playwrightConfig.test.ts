@@ -13,6 +13,18 @@ afterEach(() => {
 });
 
 describe("Playwright configuration", () => {
+  it("writes JUnit to the path selected by the CI test slice", async () => {
+    process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE = "reports/perf-e2e-junit.xml";
+    vi.resetModules();
+
+    const { default: config } = await import("../../playwright.config");
+
+    expect(config.reporter).toContainEqual([
+      "junit",
+      { outputFile: "reports/perf-e2e-junit.xml" },
+    ]);
+  });
+
   it("includes perf criteria when the temporary perf skip is on", async () => {
     process.env[skipPerfVariable] = "1";
     vi.resetModules();
