@@ -10,6 +10,7 @@ interface BlockHtmlDetail {
 }
 
 function relativeAssets(html: string): string {
+  if (!html.includes("doc-asset://")) return html;
   return html.replaceAll(/<img\b[^>]*>/giu, (image) =>
     image.replaceAll(/doc-asset:\/\/[^/]+\/[^/]+\//g, ""));
 }
@@ -87,18 +88,18 @@ export class PreviewExportCache {
     const start = performance.now();
     const html = relativeAssets(renderedHtml);
     this.htmlByElement.set(element, html);
+    performance.clearMeasures("preview-export-cache");
+    performance.measure("preview-export-cache", { start, end: performance.now() });
     if (!this.preview.contains(element)) return;
     const id = element.dataset["blockId"] as string;
     this.htmlById.set(id, html);
-    performance.clearMeasures("preview-export-cache");
-    performance.measure("preview-export-cache", { start, end: performance.now() });
     this.notifyUpdated(id);
   }
 
   private remove(id: string): void {
-    this.htmlById.delete(id);
+    if (!this.htmlById.delete(id)) return;
     const index = this.order.indexOf(id);
-    if (index >= 0) this.order.splice(index, 1);
+    this.order.splice(index, 1);
   }
 
   private upsert(block: HTMLElement): void {
@@ -107,8 +108,13 @@ export class PreviewExportCache {
     if (html === undefined) return;
     this.remove(id);
     const previousId = previousBlock(block, this.preview)?.dataset["blockId"];
-    const previousIndex = previousId === undefined ? -1 : this.order.indexOf(previousId);
-    this.order.splice(previousIndex + 1, 0, id);
+    if (previousId === undefined) {
+      this.order.unshift(id);
+    } else if (this.order[this.order.length - 1] === previousId) {
+      this.order.push(id);
+    } else {
+      this.order.splice(this.order.indexOf(previousId) + 1, 0, id);
+    }
     this.htmlById.set(id, html);
     this.notifyUpdated(id);
   }

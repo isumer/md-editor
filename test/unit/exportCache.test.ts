@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PreviewExportCache } from "../../src/renderer/features/export/cache";
 
@@ -92,5 +92,35 @@ describe("preview export cache", () => {
     await Promise.resolve();
 
     expect(cache.snapshot()).toEqual([]);
+  });
+
+  it("AC-R6-05: records cache work before a new preview block is attached", () => {
+    const preview = document.createElement("div");
+    new PreviewExportCache(preview);
+    const measure = vi.spyOn(performance, "measure");
+
+    publish(block("detached", "<p>Detached</p>"), "<p>Detached</p>");
+
+    expect(measure).toHaveBeenCalledWith("preview-export-cache", expect.any(Object));
+    measure.mockRestore();
+  });
+
+  it("AC-R6-01: inserts a new cached block in preview order", async () => {
+    const preview = document.createElement("div");
+    const first = block("first", "<p>First</p>");
+    const third = block("third", "<p>Third</p>");
+    preview.append(first, third);
+    const cache = new PreviewExportCache(preview);
+    const second = block("second", "<p>Second</p>");
+
+    publish(second, "<p>Second</p>");
+    preview.insertBefore(second, third);
+    await Promise.resolve();
+
+    expect(cache.snapshot()).toEqual([
+      { id: "first", html: "<p>First</p>" },
+      { id: "second", html: "<p>Second</p>" },
+      { id: "third", html: "<p>Third</p>" },
+    ]);
   });
 });
