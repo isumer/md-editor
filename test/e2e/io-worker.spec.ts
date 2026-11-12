@@ -162,3 +162,28 @@ test("an argv file is editable within the cold-start budget", {
     await closeEditor(application, page);
   }
 });
+
+test("startup marks fire once after activating multiple granted files", {
+  tag: "@AC-PERF-03",
+  annotation: { type: "AC-PERF-03" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-marks-"));
+  const secondPath = path.join(temporaryDirectory, "second.md");
+  await fs.writeFile(secondPath, "# Second document\n", "utf8");
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await stubOpenDialog(application, secondPath);
+    await clickMenuItem(application, "file-open");
+    await expect(page.getByTestId("editor")).toContainText("Second document");
+    await page.getByTestId("tab").filter({ hasText: "sample.md" }).click();
+    await expect(page.getByTestId("editor")).toContainText("Sample document");
+
+    const marks = await startupMarks(application, page);
+    for (const name of STARTUP_MARKS) {
+      expect(marks.filter((mark) => mark.name === name), name).toHaveLength(1);
+    }
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
