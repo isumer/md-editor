@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { compareMenu } from "../../shared/ipc/menu/compare";
 import { composeMenuItems } from "../../shared/ipc/menu/compose";
 import { fileMenu } from "../../shared/ipc/menu/file";
+import { mergeMenu } from "../../shared/ipc/menu/merge";
 import {
   type MenuCommandMessage,
   type MenuContribution,
@@ -24,7 +25,7 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
 
 // The renderer composes its own item list; main composes the same list
 // from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
-export const menuItems = composeMenuItems([fileMenu, compareMenu]);
+export const menuItems = composeMenuItems([fileMenu, compareMenu, mergeMenu]);
 
 export function menuContribution(): MenuContribution {
   return {
@@ -42,6 +43,7 @@ export interface DocumentCommandsOptions {
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   compare(): void;
+  merge(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
 }
@@ -91,6 +93,11 @@ export class DocumentCommands {
       id: "file.compareOpen",
       titleKey: "menu.compareOpen",
       run: this.options.compare,
+    });
+    this.commands.register({
+      id: "file.mergeOpen",
+      titleKey: "menu.mergeOpen",
+      run: this.options.merge,
     });
     this.commands.register({
       id: "undo",

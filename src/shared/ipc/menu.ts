@@ -10,6 +10,7 @@ export const MENU_ITEM_IDS = [
   "file-save",
   "file-save-as",
   "file-compare-open",
+  "file-merge-open",
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
 
@@ -19,6 +20,7 @@ export const MENU_COMMAND_IDS = [
   "file.save",
   "file.saveAs",
   "file.compareOpen",
+  "file.mergeOpen",
 ] as const;
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
 
