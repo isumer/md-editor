@@ -59,7 +59,18 @@ describe("keymap data", () => {
       "Mod-Shift-z": "redo",
       "Mod-y": "redo",
       "Mod-Shift-c": "file.compareOpen",
+      "Mod-Shift-h": "file.exportHtml",
+      "Mod-Shift-p": "file.exportPdf",
     });
+  });
+
+  it("AC-R6-01 AC-R6-03: fires the export chords on every platform", () => {
+    expect(bindingForEvent(event("h", { ctrlKey: true, shiftKey: true }), "linux"))
+      .toBe("file.exportHtml");
+    expect(bindingForEvent(event("p", { metaKey: true, shiftKey: true }), "darwin"))
+      .toBe("file.exportPdf");
+    expect(bindingForEvent(event("p", { ctrlKey: true, shiftKey: true }), "win32"))
+      .toBe("file.exportPdf");
   });
 });
 

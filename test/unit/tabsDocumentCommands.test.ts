@@ -39,9 +39,13 @@ describe("document commands", () => {
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
+    const exportHtml = vi.fn();
+    const exportPdf = vi.fn();
     const onResult = vi.fn();
     const commands = new DocumentCommands({
       compare,
+      exportHtml,
+      exportPdf,
       editor,
       onError: vi.fn(),
       onResult,
@@ -56,6 +60,8 @@ describe("document commands", () => {
         { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
         { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
+        { id: "file-export-html", title: "Export HTML…", accelerator: "CmdOrCtrl+Shift+H" },
+        { id: "file-export-pdf", title: "Export PDF…", accelerator: "CmdOrCtrl+Shift+P" },
         {
           id: "file-compare-open",
           title: "Compare Open Files",
@@ -66,6 +72,8 @@ describe("document commands", () => {
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
+    menuListener?.("file-export-html");
+    menuListener?.("file-export-pdf");
     menuListener?.("file-compare-open");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
@@ -73,6 +81,8 @@ describe("document commands", () => {
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
+    expect(exportHtml).toHaveBeenCalledOnce();
+    expect(exportPdf).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
@@ -105,6 +115,8 @@ describe("document commands", () => {
       "file-open",
       "file-save",
       "file-save-as",
+      "file-export-html",
+      "file-export-pdf",
       "file-compare-open",
     ]);
   });

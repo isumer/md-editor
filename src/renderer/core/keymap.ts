@@ -9,6 +9,8 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-s": "file.save",
   "Mod-Shift-s": "file.saveAs",
   "Mod-Shift-c": "file.compareOpen",
+  "Mod-Shift-h": "file.exportHtml",
+  "Mod-Shift-p": "file.exportPdf",
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",
   "Mod-y": "redo",

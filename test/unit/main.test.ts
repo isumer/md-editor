@@ -521,6 +521,7 @@ describe("main process", () => {
       "file:open-path",
       "file:choose-save-target",
       "file:release-document",
+      "export:document",
       "link:open-external",
       "file:open-requests-ready",
       "menu:contribute",
@@ -532,6 +533,12 @@ describe("main process", () => {
       "settings:read",
       "settings:write",
     ]);
+    electron.dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+    await expect(invoke("export:document", {
+      format: "html",
+      html: "<!doctype html><p>Export</p>",
+      suggestedName: "export.html",
+    })).resolves.toEqual({ ok: true, value: undefined });
     await expect(invoke("settings:read", {})).resolves.toMatchObject({
       ok: true,
       value: { editor: { background: "#123456" } },

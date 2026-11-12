@@ -20,5 +20,17 @@ export const fileMenu = {
       accelerator: "CmdOrCtrl+Shift+S",
       commandId: "file.saveAs",
     },
+    {
+      id: "file-export-html",
+      titleKey: "menu.exportHtml",
+      accelerator: "CmdOrCtrl+Shift+H",
+      commandId: "file.exportHtml",
+    },
+    {
+      id: "file-export-pdf",
+      titleKey: "menu.exportPdf",
+      accelerator: "CmdOrCtrl+Shift+P",
+      commandId: "file.exportPdf",
+    },
   ],
 } as const;

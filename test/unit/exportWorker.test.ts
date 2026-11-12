@@ -9,6 +9,29 @@ class FakeWorker {
 }
 
 describe("HTML export worker client", () => {
+  it("AC-R6-05: sends a 500 KB export to the worker without local assembly", () => {
+    const worker = new FakeWorker();
+    const client = new HtmlExportClient(worker);
+    const html = "x".repeat(500 * 1024);
+
+    void client.build({
+      title: "Large document",
+      blocks: [{ id: "large", html }],
+      theme: "light",
+      alwaysLight: false,
+    });
+
+    expect(worker.postMessage).toHaveBeenCalledWith({
+      id: 1,
+      input: {
+        title: "Large document",
+        blocks: [{ id: "large", html }],
+        theme: "light",
+        alwaysLight: false,
+      },
+    });
+  });
+
   it("AC-R6-05: sends HTML assembly to a worker", async () => {
     const worker = new FakeWorker();
     const client = new HtmlExportClient(worker);

@@ -13,6 +13,7 @@ plain Markdown with LF line endings and UTF-8, so a test reads them as text.
 | `code-blocks.md` | Fenced code with known, unknown and absent languages | 6 fenced blocks; `js`, `python`, `bash`, `js`, `notalanguage`, no language |
 | `tables.md` | Alignment, inline markup, escaped pipes, a wide table | 6 tables |
 | `images.md` | Local images, a titled image, an image in a link, a missing image | 4 `<img>`; 1 link |
+| `complete.md` | One HTML export with a heading, highlighted code and a relative image | 1 × h1, 1 fenced block, 1 `<img>` |
 | `links.md` | Relative, absolute, mail and anchor links; links that must not be resolved | 10 links |
 | `unicode.md` | Turkish case pairs, CJK text, emoji, non-Latin code | 1 × h1, 8 × h2, 1 × h3, 1 table, 1 fenced block |
 | `unsafe-html.md` | Raw HTML that the sanitiser must clean | see below |

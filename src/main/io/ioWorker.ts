@@ -13,6 +13,7 @@ import {
   isSessionWriteReply,
   isSettingsReadReply,
   isSettingsWriteReply,
+  isExportWriteReply,
   type RegisteredGrant,
   type ResolvedAsset,
   type SettingsReadReply,
@@ -45,7 +46,8 @@ type ControlKind =
   | "readSession"
   | "writeSession"
   | "readSettings"
-  | "writeSettings";
+  | "writeSettings"
+  | "writeExport";
 
 function isReplyFor(kind: ControlKind, message: unknown): boolean {
   if (kind === "registerGrant") {
@@ -63,7 +65,9 @@ function isReplyFor(kind: ControlKind, message: unknown): boolean {
   if (kind === "readSettings") {
     return isSettingsReadReply(message);
   }
-  return isSettingsWriteReply(message);
+  return kind === "writeSettings"
+    ? isSettingsWriteReply(message)
+    : isExportWriteReply(message);
 }
 
 type PortReceiver = (port: MessagePortMain) => void;
@@ -190,6 +194,17 @@ export class IoWorkerSupervisor {
     await this.generationReady;
     return this.child && !this.stopped
       ? this.sendControl<void>({ type: "writeSettings", path: filePath, settings })
+      : failedControl();
+  }
+
+  async writeExport(
+    windowId: number,
+    grant: string,
+    bytes: Uint8Array,
+  ): Promise<Result<void>> {
+    await this.generationReady;
+    return this.child && !this.stopped
+      ? this.sendControl<void>({ type: "writeExport", windowId, grant, bytes })
       : failedControl();
   }
 

@@ -44,6 +44,8 @@ export interface DocumentCommandsOptions {
   compare(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
+  exportHtml?(): void;
+  exportPdf?(): void;
 }
 
 export class DocumentCommands {
@@ -86,6 +88,16 @@ export class DocumentCommands {
       id: "file.saveAs",
       titleKey: "menu.saveAs",
       run: () => this.options.save(true),
+    });
+    this.commands.register({
+      id: "file.exportHtml",
+      titleKey: "menu.exportHtml",
+      run: this.options.exportHtml ?? (() => undefined),
+    });
+    this.commands.register({
+      id: "file.exportPdf",
+      titleKey: "menu.exportPdf",
+      run: this.options.exportPdf ?? (() => undefined),
     });
     this.commands.register({
       id: "file.compareOpen",

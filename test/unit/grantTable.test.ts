@@ -54,6 +54,18 @@ describe("document grants", () => {
     expect(grants.resolve(1, second).ok).toBe(false);
   });
 
+  it("AC-R6-01: revoking an export grant keeps other grants", () => {
+    const grants = new GrantTable();
+    const documentGrant = grants.issue(1, "/documents/note.md", "document");
+    const exportGrant = grants.issue(1, "/documents/note.html", "export");
+
+    grants.revokeExport(1, documentGrant);
+    grants.revokeExport(1, exportGrant);
+
+    expect(grants.resolve(1, documentGrant).ok).toBe(true);
+    expect(grants.resolve(1, exportGrant).ok).toBe(false);
+  });
+
   it("AC-R5-17: lists only one window's live grants for restart replay", () => {
     const grants = new GrantTable();
     const first = grants.issue(1, "/documents/first.md", "document");

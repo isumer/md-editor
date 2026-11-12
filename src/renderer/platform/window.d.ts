@@ -36,8 +36,10 @@ import type {
   OpenWorkspaceFileResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
+import type { ExportDocumentRequest } from "../../shared/ipc/export";
 
 interface Api {
+  exportDocument(request: ExportDocumentRequest): Promise<Result<void>>;
   openFile(): Promise<Result<DocumentReference | null>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
   readDocument(grant: string): Promise<Result<ReadDocumentResponse>>;
