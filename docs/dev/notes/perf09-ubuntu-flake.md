@@ -213,3 +213,114 @@ The local full e2e run passed 97 of 98 tests. Its 20 MB fill did not complete
 inside 360 seconds on this host, so the run stopped before that case's scroll
 measurement. The check's own note records about 4.4 minutes on its target
 machine; no wait, budget, retry, skip, or assertion was changed.
+
+## Gate F1 response (2026-11-12)
+
+Scope: commit 8a0b6e3, CI run 43236411820, AC-PERF-09 20 MB.
+
+The failing case recorded one 33.3 ms frame and no long task.
+
+### LoAF attribution is not available for this frame
+
+The Long Task API reports tasks of 50 ms or more.
+
+The Long Animation Frame API reports frames of 50 ms or more.
+
+A 33.3 ms frame is below both thresholds.
+
+Therefore the probe cannot record LoAF or long-task attribution for this frame.
+
+The "no long task" result is expected and it is not evidence of no work.
+
+The existing AC-PERF-10 probe only sees entries of 50 ms or more.
+
+### Startup work does not run during the scroll
+
+`startRenderer` runs once at `src/renderer/main.ts:372`.
+
+It awaits `beginStartup` and the session restore, then returns.
+
+`wireWindow` adds only `dragover` and `drop` listeners.
+
+The renderer has no scroll listener and no `wheel` listener.
+
+The worker heartbeat sets a 250 ms timer.
+
+It sends a ping and reads a pong in a short task.
+
+It does not write the preview or the status line.
+
+### Status work does not run during the scroll
+
+`createStatusSurface.showPreview` writes `status.textContent`.
+
+Its callers on this path are `applyRenderResult` at
+`src/renderer/features/preview/preview.ts:329` and `:332`.
+
+They run only when the preview applies a render result.
+
+The worker stops the fill at completion.
+
+`scheduleFill` returns when `cache.state.complete` is true
+(`src/renderer/workers/render/handler.ts:256`).
+
+AC-PERF-09 waits for `data-render-complete` before it flings
+(`test/e2e/preview-perf.spec.ts:501`).
+
+The ready check sets that attribute in the same task as the last status write.
+
+No render result follows it.
+
+The remaining heartbeat tasks do not touch the DOM.
+
+### Preview CSS comparison
+
+`src/renderer/styles.css` holds no preview content rule.
+
+Its only preview selectors are `#preview-error` and the `#preview`
+min-width and min-height pair.
+
+The preview content rules are in
+`src/renderer/features/preview/preview.css`.
+
+The scroll path uses the `.preview-page` and `.preview-section`
+`content-visibility: auto` rules there.
+
+This checkout has no git history. Its `.git` file names an absent
+worktree directory. I cannot diff the CSS against main.
+
+I did not run AC-PERF locally. The owner instruction excludes it from the
+local gate run. This host is a Raspberry Pi, not an Ubuntu runner.
+
+### Conclusion
+
+The branch work is not on the scroll path. Startup runs once. Status
+writes stop before the fling. The preview selectors in this tree are the
+existing page and section rules.
+
+The remaining candidate is renderer style, layout, and paint crossing a
+vsync, as in the earlier traced 41.179 ms frame.
+
+F2 needs a main run of the same spec on Ubuntu. This environment cannot
+produce it: no git history, no Ubuntu runner.
+
+No application change is justified without a failing trace. The test is
+unchanged. No budget, retry, or skip changed.
+
+### Validation for this response
+
+`npm run typecheck` passed.
+
+`npm run check:deps` passed with 163 modules and 364 dependencies.
+
+`npm run test:unit` passed 1,253 tests in 120 files.
+
+Statement coverage was 99.01 percent.
+
+Branch coverage was 97.25 percent.
+
+Function coverage was 98.95 percent.
+
+Line coverage was 99.17 percent.
+
+`npm run check:coverage` passed every ratchet.
