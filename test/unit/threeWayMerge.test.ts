@@ -112,6 +112,28 @@ describe("three-way merge", () => {
     expect(resolvedText(result)).toBe("a\nnew\nz\n");
   });
 
+  it("keeps transitively overlapping side changes in one conflict", () => {
+    const base = "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n";
+    const left = "L0\nL1\n2\nL3\nL4\nL5\n6\nL7\nL8\nL9\n10\n";
+    const right = "0\nR1\nR2\nR3\n4\nR5\nR6\nR7\n8\n9\n10\n";
+
+    const result = createThreeWayMerge(base, left, right);
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.kind).toBe("conflict");
+  });
+
+  it("treats an insertion at a modified range boundary as a conflict", () => {
+    const result = createThreeWayMerge(
+      "one\ntwo\n",
+      "added\none\ntwo\n",
+      "ONE\ntwo\n",
+    );
+
+    expect(result.conflictCount).toBe(1);
+    expect(result.chunks).toHaveLength(1);
+  });
+
   it("AC-R15-01: the committed fixture has five changes and two conflicts", async () => {
     const fixtureDirectory = path.resolve("test/fixtures/merge");
     const [base, left, right] = await Promise.all([

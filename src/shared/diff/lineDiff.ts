@@ -3,26 +3,22 @@ export interface LineDiffOptions {
   readonly ignoreCase?: boolean;
   readonly ignoreLineEndings?: boolean;
 }
-
 export interface UnchangedHunk {
   readonly kind: "unchanged";
   readonly leftStart: number;
   readonly rightStart: number;
   readonly lineCount: number;
 }
-
 export interface DeletedLine {
   readonly kind: "deleted";
   readonly leftLineNumber: number;
   readonly left: string;
 }
-
 export interface AddedLine {
   readonly kind: "added";
   readonly rightLineNumber: number;
   readonly right: string;
 }
-
 export interface ModifiedLine {
   readonly kind: "modified";
   readonly leftLineNumber: number;
@@ -30,21 +26,16 @@ export interface ModifiedLine {
   readonly left: string;
   readonly right: string;
 }
-
 export type ChangedLine = DeletedLine | AddedLine | ModifiedLine;
-
 export interface ChangeHunk {
   readonly kind: "change";
   readonly lines: readonly ChangedLine[];
 }
-
 export type DiffHunk = UnchangedHunk | ChangeHunk;
-
 export interface LineDiffResult {
   readonly hunks: readonly DiffHunk[];
   readonly limited: boolean;
 }
-
 type Edit =
   | { readonly kind: "same"; readonly left: number; readonly right: number }
   | { readonly kind: "deleted"; readonly left: number }
