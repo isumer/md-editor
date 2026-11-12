@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 
@@ -19,6 +20,37 @@ export const repositoryRoot = path.resolve(__dirname, "../..");
 export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
+
+// A fresh runner pays one-time OS work per binary exec (macOS security
+// assessment, cold page-in) inside electron.launch: run 43054587932 lost the
+// first test to it (15 s), the next launch passed in 3.7 s. Exec once at
+// module load, outside every test budget. Best effort: launchEditor still
+// fails red on a broken binary.
+const ELECTRON_PREWARM_TIMEOUT_MS = 60_000;
+
+function prewarmElectronBinary(): void {
+  const started = Date.now();
+  let binary: unknown;
+  try {
+    // Same resolution as Playwright's electron.launch: require("electron/index.js").
+    binary = createRequire(__filename)("electron/index.js");
+  } catch {
+    return;
+  }
+  if (typeof binary !== "string") {
+    return;
+  }
+  try {
+    spawnSync(binary, ["--version"], { timeout: ELECTRON_PREWARM_TIMEOUT_MS });
+    console.log(
+      `electron prewarm: ${String(Date.now() - started)} ms`,
+    );
+  } catch {
+    // The first real launch surfaces any spawn failure.
+  }
+}
+
+prewarmElectronBinary();
 
 export interface LaunchEditorOptions {
   // Runs after the first window exists and before the argv document is applied.
