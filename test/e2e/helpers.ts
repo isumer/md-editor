@@ -21,11 +21,8 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
-// A fresh runner pays one-time OS work per binary exec (macOS security
-// assessment, cold page-in) inside electron.launch: run 43054587932 lost the
-// first test to it (15 s), the next launch passed in 3.7 s. Exec once at
-// module load, outside every test budget. Best effort: launchEditor still
-// fails red on a broken binary.
+// Run 43054587932 spent 15 s on macOS first-exec assessment and page-in inside
+// electron.launch; prewarm it before test budgets. The next launch took 3.7 s.
 const ELECTRON_PREWARM_TIMEOUT_MS = 60_000;
 
 function prewarmElectronBinary(): void {
