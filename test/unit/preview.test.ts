@@ -186,6 +186,107 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
+  it("AC-R4-01: a tab switch caches a pending first screen without displaying it", () => {
+    vi.useFakeTimers();
+    let currentTime = 0;
+    const version = { docId: "beta", epoch: 1, version: 1 };
+    const { worker, preview, documents } = wiring({
+      version,
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 4;
+        return html;
+      },
+    });
+    send(worker, {
+      id: 1,
+      docId: "beta",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>beta</p>" }],
+      complete: true,
+    });
+    const betaBlock = blocks(preview)[0];
+    version.docId = "alpha";
+    send(worker, {
+      id: 2,
+      docId: "alpha",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "a1", startLine: 0, endLine: 1, html: "<p>alpha one</p>" },
+        { id: "a2", startLine: 1, endLine: 2, html: "<p>alpha two</p>" },
+        { id: "a3", startLine: 2, endLine: 3, html: "<p>alpha three</p>" },
+      ],
+      complete: true,
+    });
+    version.docId = "beta";
+    expect(documents.show(version)).toBe(true);
+    vi.runAllTimers();
+
+    expect(preview.textContent).toBe("beta");
+    expect(blocks(preview)[0]?.isSameNode(betaBlock ?? null)).toBe(true);
+    version.docId = "alpha";
+    expect(documents.show(version)).toBe(true);
+    const restored = blocks(preview);
+    expect(restored.map((block) => block.dataset["blockId"]))
+      .toEqual(["a1", "a2", "a3"]);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("AC-R4-01: a cached first screen leaves the shown preview's status alone", () => {
+    vi.useFakeTimers();
+    let currentTime = 0;
+    const version = { docId: "beta", epoch: 1, version: 1 };
+    const { worker, preview, documents, showStatus, showError } = wiring({
+      version,
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 4;
+        return html;
+      },
+    });
+    send(worker, {
+      id: 1,
+      docId: "beta",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>beta</p>" }],
+      complete: true,
+    });
+    version.docId = "alpha";
+    send(worker, {
+      id: 2,
+      docId: "alpha",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "a1", startLine: 0, endLine: 1, html: "<p>alpha one</p>" },
+        { id: "a2", startLine: 1, endLine: 2, html: "<p>alpha two</p>" },
+      ],
+      complete: true,
+    });
+    version.docId = "beta";
+    expect(documents.show(version)).toBe(true);
+    const statusCalls = showStatus.mock.calls.length;
+    const errorCalls = showError.mock.calls.length;
+    vi.runAllTimers();
+
+    expect(showStatus).toHaveBeenCalledTimes(statusCalls);
+    expect(showError).toHaveBeenCalledTimes(errorCalls);
+    expect(preview.textContent).toBe("beta");
+    vi.useRealTimers();
+  });
+
   it("AC-PERF-10: a large preview keeps the time budget and acknowledges once", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
@@ -378,7 +479,7 @@ describe("preview render flow", () => {
     vi.useRealTimers();
   });
 
-  it("AC-PERF-10: drops a pending append when the document changes", () => {
+  it("AC-R4-01 AC-PERF-10: a stale fill is not cached after a document change", () => {
     vi.useFakeTimers();
     const version = { docId: "doc", epoch: 1, version: 1 };
     let currentTime = 0;
