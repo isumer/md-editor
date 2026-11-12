@@ -18,7 +18,7 @@ import {
   recordShiftTable,
   resetLayout,
 } from "./previewDocuments";
-import { sanitizeRenderedFragment, sanitizeRenderedHtml } from "./sanitize";
+import { sanitizeRenderedHtml } from "./sanitize";
 
 export { PreviewDocuments } from "./previewDocuments";
 export { blockLine } from "./previewDocuments";
@@ -29,10 +29,6 @@ export interface RenderWorkerEvents {
   onerror: ((event: ErrorEvent) => void) | null;
 }
 
-interface RendererTaskScheduler {
-  postTask(task: () => void): Promise<void>;
-}
-
 interface RenderWorkerWiring {
   scheduler: RenderScheduler;
   preview: HTMLElement;
@@ -40,8 +36,7 @@ interface RenderWorkerWiring {
   showError(message?: string): void;
   currentVersion(): ReplicatedVersion;
   onResync(response: RenderResync): void;
-  rewriteHtml?(html: string): string;
-  rewriteFragment?(fragment: DocumentFragment): void;
+  rewriteHtml(html: string): string;
   now?: () => number;
 }
 
@@ -55,13 +50,12 @@ const SECTION_PAGE_LIMIT = 5;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
 let appendMeasureCount = 0;
-const EAGER_LAYOUT_BLOCK_LIMIT = 4096;
-// Small remainders continue in a task; larger batches wait for a frame first.
-const APPEND_FRAME_BLOCK_THRESHOLD = 32;
+// Worker fills have at most eight blocks; only the larger initial batch is
+// frame-paced.
+const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // Keep the first screens responsive, then avoid an extra task per fill once a
 // document has enough cached content for extended scrolling.
 const DEFERRED_FILL_BLOCK_LIMIT = 512;
-const completionSignals = new WeakMap<HTMLElement, number>();
 // A section also bounds the layout work when it becomes visible: 100 blocks
 // keep each layout task short, at the cost of more containment elements.
 // Patches insert into and remove from existing pages, so later pages can be
@@ -100,10 +94,7 @@ function createBlock(
   const element = document.createElement("div");
   element.className = BLOCK_CLASS;
   element.dataset["blockId"] = block.id;
-  element.dataset["line"] = String(block.startLine);
-  element.dataset["version"] = String(version);
-  recordShiftTable(element, wiring.preview, shifts);
-  writeBlockContent(element, block.html, wiring, false);
+  updateBlock(element, block, version, shifts, wiring);
   return element;
 }
 
@@ -117,57 +108,7 @@ function updateBlock(
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
-  writeBlockContent(element, block.html, wiring, true);
-}
-
-function writeBlockContent(
-  element: HTMLDivElement,
-  html: string,
-  wiring: RenderWorkerWiring,
-  preserveTextNode: boolean,
-): void {
-  if (wiring.rewriteFragment !== undefined &&
-    (preserveTextNode || wiring.rewriteHtml === undefined)) {
-    const fragment = sanitizeRenderedFragment(html);
-    wiring.rewriteFragment(fragment);
-    if (!preserveTextNode || !updateTextOnlyFragment(element, fragment)) {
-      element.replaceChildren(fragment);
-    }
-    return;
-  }
-  const sanitized = sanitizeRenderedHtml(html);
-  const rewritten = wiring.rewriteHtml?.(sanitized) ?? sanitized;
-  if (!preserveTextNode || !updateTextOnlyHtml(element, rewritten)) {
-    element.innerHTML = rewritten;
-  }
-}
-
-function updateTextOnlyHtml(element: HTMLDivElement, html: string): boolean {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  return updateTextOnlyFragment(element, template.content);
-}
-
-function updateTextOnlyFragment(
-  element: HTMLDivElement,
-  fragment: DocumentFragment,
-): boolean {
-  const current = element.firstElementChild;
-  const next = fragment.firstElementChild;
-  if (current === null || element.childNodes.length !== 1 ||
-    current.childNodes.length !== 1 || current.firstChild?.nodeType !== Node.TEXT_NODE ||
-    next === null || fragment.childNodes.length !== 1 ||
-    next.childNodes.length !== 1 || next.firstChild?.nodeType !== Node.TEXT_NODE ||
-    current.tagName !== next.tagName || current.attributes.length !== next.attributes.length) {
-    return false;
-  }
-  for (const attribute of current.attributes) {
-    if (next.getAttribute(attribute.name) !== attribute.value) {
-      return false;
-    }
-  }
-  current.firstChild.nodeValue = next.firstChild.nodeValue;
-  return true;
+  element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
 }
 
 function appendBlocks(
@@ -300,27 +241,6 @@ function patchBlocks(
   performance.measure("preview-patch", { start, end: performance.now() });
 }
 
-function signalRenderComplete(
-  preview: HTMLElement,
-  complete: boolean,
-  settleLayout: boolean,
-): void {
-  const signal = (completionSignals.get(preview) ?? 0) + 1;
-  completionSignals.set(preview, signal);
-  if (!complete || !settleLayout) {
-    const value = String(complete);
-    if (preview.dataset["renderComplete"] !== value) {
-      preview.dataset["renderComplete"] = value;
-    }
-    return;
-  }
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (completionSignals.get(preview) === signal) {
-      preview.dataset["renderComplete"] = "true";
-    }
-  }));
-}
-
 function applyBlocks(
   result: RenderResult & { ok: true },
   shifts: LineShiftRecord[],
@@ -372,19 +292,9 @@ function applyBlocks(
   }
   const appliedCompleteResult = result.mode === "patch" ||
     appliedBlockCount === result.blocks.length;
-  const renderComplete = result.complete && appliedCompleteResult;
-  if (renderComplete) {
-    wiring.preview.classList.add("preview-document-complete");
-    wiring.preview.classList.toggle(
-      "preview-document-eager",
-      elements.size <= EAGER_LAYOUT_BLOCK_LIMIT,
-    );
-  } else if (result.mode === "replace") {
-    wiring.preview.classList.remove("preview-document-complete");
-    wiring.preview.classList.remove("preview-document-eager");
-  }
-  const settleLayout = renderComplete && elements.size > EAGER_LAYOUT_BLOCK_LIMIT;
-  signalRenderComplete(wiring.preview, renderComplete, settleLayout);
+  wiring.preview.dataset["renderComplete"] = String(
+    result.complete && appliedCompleteResult,
+  );
   return appliedBlockCount;
 }
 
@@ -469,38 +379,6 @@ export function wireRenderWorker(
   } | null = null;
   const queuedResponses: RenderResponse[] = [];
   let queuedResponseTimer = 0;
-  const appendTasks = new Map<number, () => void>();
-  const taskScheduler = (window as Window & {
-    scheduler?: RendererTaskScheduler;
-  }).scheduler ?? null;
-  let appendTaskId = 0;
-
-  const runAppendTask = (taskId: number): void => {
-    const task = appendTasks.get(taskId);
-    appendTasks.delete(taskId);
-    task?.();
-  };
-
-  const scheduleAppendTask = (task: () => void): number => {
-    if (taskScheduler === null) {
-      return window.setTimeout(task, 0);
-    }
-    appendTaskId += 1;
-    appendTasks.set(appendTaskId, task);
-    const taskId = appendTaskId;
-    void taskScheduler.postTask(() => runAppendTask(taskId)).catch(
-      () => runAppendTask(taskId),
-    );
-    return appendTaskId;
-  };
-
-  const cancelAppendTask = (taskId: number): void => {
-    if (taskScheduler === null) {
-      window.clearTimeout(taskId);
-    } else {
-      appendTasks.delete(taskId);
-    }
-  };
 
   function scheduleQueuedResponse(): void {
     if (queuedResponses.length === 0 || queuedResponseTimer !== 0) {
@@ -524,10 +402,10 @@ export function wireRenderWorker(
   ): void => {
     if (waitForFrame) {
       pending.frame = requestAnimationFrame(() => {
-        pending.timer = scheduleAppendTask(flushAppend);
+        pending.timer = window.setTimeout(flushAppend, 0);
       });
     } else {
-      pending.timer = scheduleAppendTask(flushAppend);
+      pending.timer = window.setTimeout(flushAppend, 0);
     }
   };
 
@@ -575,7 +453,7 @@ export function wireRenderWorker(
       return;
     }
     cancelAnimationFrame(pending.frame);
-    cancelAppendTask(pending.timer);
+    window.clearTimeout(pending.timer);
     pendingAppend = null;
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
@@ -666,14 +544,6 @@ export function wireRenderWorker(
   }
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
-    if (pendingAppend !== null && !("op" in event.data) &&
-      event.data.version > pendingAppend.response.version) {
-      cancelAnimationFrame(pendingAppend.frame);
-      cancelAppendTask(pendingAppend.timer);
-      pendingAppend = null;
-      handleResponse(event.data);
-      return;
-    }
     if (pendingAppend !== null) {
       flushAppend();
       if (pendingAppend !== null || queuedResponses.length > 0) {

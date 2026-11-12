@@ -30,8 +30,7 @@ export interface RenderControllerOptions {
   current(): DocumentRecord | null;
   preview: HTMLElement;
   restartMessage: string;
-  rewriteHtml?(html: string): string;
-  rewriteFragment?(fragment: DocumentFragment): void;
+  rewriteHtml(html: string): string;
   showError(message?: string): void;
   showStatus(message?: string): void;
   workerUrl: URL;
@@ -66,14 +65,6 @@ export class RenderController {
 
   start(): void {
     this.installHandlers();
-    const rewrite = this.options.rewriteFragment === undefined
-      ? { rewriteHtml: this.options.rewriteHtml }
-      : {
-          rewriteFragment: this.options.rewriteFragment,
-          ...(this.options.rewriteHtml === undefined
-            ? {}
-            : { rewriteHtml: this.options.rewriteHtml }),
-        };
     this.previews = wireRenderWorker(this.proxy, {
       scheduler: this.scheduler,
       preview: this.options.preview,
@@ -85,7 +76,7 @@ export class RenderController {
         version: 0,
       },
       onResync: (response) => this.resync(response),
-      ...rewrite,
+      rewriteHtml: this.options.rewriteHtml,
     });
     this.heartbeat.start();
     this.scheduler.schedule();

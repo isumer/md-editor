@@ -1,6 +1,6 @@
 import type { FeatureRegistration } from "../../editor/featureWiring";
 import { wirePreviewLinks } from "./preview";
-import { rewriteAssetFragment, rewriteAssetUrls } from "./rewriteAssets";
+import { rewriteAssetUrls } from "./rewriteAssets";
 
 export const previewFeature: FeatureRegistration = {
   editorExtensions: [],
@@ -8,5 +8,4 @@ export const previewFeature: FeatureRegistration = {
     start: () => wirePreviewLinks(context.preview, context.showStatus),
   }),
   rewriteHtml: rewriteAssetUrls,
-  rewriteFragment: rewriteAssetFragment,
 };

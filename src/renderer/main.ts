@@ -35,7 +35,6 @@ import { beginStartup } from "./features/background/startup";
 import {
   featureEditorExtensions,
   installFeatures,
-  rewriteFeatureFragment,
   rewriteFeatureHtml,
 } from "./features/registry";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
@@ -125,10 +124,6 @@ const renderController = new RenderController({
   preview,
   restartMessage: formatMessage("preview.workerRestarted", {}),
   rewriteHtml: (html) => rewriteFeatureHtml(html, {
-    windowId,
-    grant: activeDocument?.grant ?? null,
-  }),
-  rewriteFragment: (fragment) => rewriteFeatureFragment(fragment, {
     windowId,
     grant: activeDocument?.grant ?? null,
   }),

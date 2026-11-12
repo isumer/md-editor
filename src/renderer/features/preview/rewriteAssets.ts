@@ -157,24 +157,4 @@ export function rewriteAssetUrls(
   );
 }
 
-export function rewriteAssetFragment(
-  fragment: DocumentFragment,
-  context: AssetRewriteContext,
-): void {
-  if (context.windowId === null || context.grant === null || context.grant === "") {
-    return;
-  }
-  const prefix = `doc-asset://${String(context.windowId)}/${context.grant}/`;
-  for (const image of fragment.querySelectorAll("img")) {
-    const source = image.getAttribute("src");
-    if (source !== null && isRelativeUrl(source)) {
-      image.setAttribute("src", assetUrl(prefix, source.trim()));
-    }
-    const sourceSet = image.getAttribute("srcset");
-    if (sourceSet !== null) {
-      image.setAttribute("srcset", rewriteSrcset(sourceSet, prefix));
-    }
-  }
-}
-
 export const rewriteAssets = rewriteAssetUrls;
