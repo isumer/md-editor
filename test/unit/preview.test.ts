@@ -186,6 +186,57 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
+  it("AC-R4-01: a tab switch caches a pending first screen without displaying it", () => {
+    vi.useFakeTimers();
+    let currentTime = 0;
+    const version = { docId: "alpha", epoch: 1, version: 1 };
+    const { worker, preview, documents } = wiring({
+      version,
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 4;
+        return html;
+      },
+    });
+    send(worker, {
+      id: 1,
+      docId: "alpha",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "a1", startLine: 0, endLine: 1, html: "<p>alpha one</p>" },
+        { id: "a2", startLine: 1, endLine: 2, html: "<p>alpha two</p>" },
+        { id: "a3", startLine: 2, endLine: 3, html: "<p>alpha three</p>" },
+      ],
+      complete: true,
+    });
+    version.docId = "beta";
+    send(worker, {
+      id: 2,
+      docId: "beta",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>beta</p>" }],
+      complete: true,
+    });
+
+    expect(preview.textContent).toBe("beta");
+    vi.runAllTimers();
+
+    expect(preview.textContent).toBe("beta");
+    version.docId = "alpha";
+    expect(documents.show(version)).toBe(true);
+    const restored = blocks(preview);
+    expect(restored.map((block) => block.dataset["blockId"]))
+      .toEqual(["a1", "a2", "a3"]);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("AC-PERF-10: a large preview keeps the time budget and acknowledges once", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];

@@ -13,6 +13,7 @@ import { RenderScheduler } from "./renderScheduler";
 import {
   type BlockElements,
   type BlockLayout,
+  type DocumentPreview,
   type LineShiftRecord,
   PreviewDocuments,
   recordShiftTable,
@@ -38,6 +39,14 @@ interface RenderWorkerWiring {
   onResync(response: RenderResync): void;
   rewriteHtml(html: string): string;
   now?: () => number;
+}
+
+interface PendingAppend {
+  response: RenderResult & { ok: true; mode: "append" };
+  // Replace remainders continue locally; only worker fills are acknowledged.
+  requestFill: boolean;
+  frame: number;
+  timer: number;
 }
 
 const BLOCK_CLASS = "preview-block";
@@ -303,6 +312,25 @@ interface AppliedRenderResult {
   appliedBlockCount: number;
 }
 
+function continueRenderResult(
+  result: RenderResult & { ok: true },
+  preview: DocumentPreview,
+  wiring: RenderWorkerWiring,
+  budget: { milliseconds: number; now: () => number },
+): AppliedRenderResult {
+  return {
+    accepted: true,
+    appliedBlockCount: applyBlocks(
+      result,
+      preview.shifts,
+      wiring,
+      preview.elements,
+      preview.layout,
+      budget,
+    ),
+  };
+}
+
 function applyRenderResult(
   result: RenderResult,
   shifts: LineShiftRecord[],
@@ -369,19 +397,21 @@ export function wireRenderWorker(
   // version has actually been shown; comparing against the live editor version
   // would discard a delta the preview still needs.
   let shown: { docId: string; epoch: number; version: number } | null = null;
-  let pendingAppend: {
-    response: RenderResult & { ok: true; mode: "append" };
-    // A first-screen remainder continues a replace; only worker fills are
-    // acknowledged with fill-ready.
-    requestFill: boolean;
-    frame: number;
-    timer: number;
-  } | null = null;
+  let pendingAppend: PendingAppend | null = null;
+  const pausedAppends: PendingAppend[] = [];
   const queuedResponses: RenderResponse[] = [];
   let queuedResponseTimer = 0;
 
   function scheduleQueuedResponse(): void {
-    if (queuedResponses.length === 0 || queuedResponseTimer !== 0) {
+    if (queuedResponseTimer !== 0 || pendingAppend !== null) {
+      return;
+    }
+    if (queuedResponses.length === 0) {
+      const paused = pausedAppends.shift();
+      if (paused !== undefined) {
+        pendingAppend = paused;
+        deferAppend(paused, false);
+      }
       return;
     }
     queuedResponseTimer = window.setTimeout(() => {
@@ -412,29 +442,36 @@ export function wireRenderWorker(
   const applyAccepted = (
     response: RenderResult,
     requestFill: boolean,
+    display: boolean = true,
+    continuation: boolean = false,
   ): AppliedRenderResult => {
     performance.clearMarks("preview-apply-start");
     performance.clearMarks("preview-apply-end");
     performance.mark("preview-apply-start");
     const documentPreview = previews.getOrCreate(response.docId, response.epoch);
     const documentWiring = { ...wiring, preview: documentPreview.container };
-    const applied = applyRenderResult(
-      response,
-      documentPreview.shifts,
-      documentWiring,
-      documentPreview.elements,
-      documentPreview.layout,
-      { milliseconds: APPEND_TASK_BUDGET_MS, now },
-    );
+    const budget = { milliseconds: APPEND_TASK_BUDGET_MS, now };
+    const applied = continuation && response.ok
+      ? continueRenderResult(response, documentPreview, documentWiring, budget)
+      : applyRenderResult(
+          response,
+          documentPreview.shifts,
+          documentWiring,
+          documentPreview.elements,
+          documentPreview.layout,
+          budget,
+        );
     performance.mark("preview-apply-end");
     if (applied.accepted && response.ok) {
       documentPreview.version = response.version;
-      previews.display(documentPreview);
-      shown = {
-        docId: response.docId,
-        epoch: response.epoch,
-        version: response.version,
-      };
+      if (display) {
+        previews.display(documentPreview);
+        shown = {
+          docId: response.docId,
+          epoch: response.epoch,
+          version: response.version,
+        };
+      }
       if (requestFill && response.mode === "append" &&
         applied.appliedBlockCount === response.blocks.length) {
         requestNextFill(
@@ -458,10 +495,19 @@ export function wireRenderWorker(
     const current = wiring.currentVersion();
     if (pending.response.docId !== current.docId ||
       pending.response.epoch !== current.epoch) {
-      scheduleQueuedResponse();
-      return;
+      if (pending.requestFill) {
+        scheduleQueuedResponse();
+        return;
+      }
     }
-    const applied = applyAccepted(pending.response, pending.requestFill);
+    const display = pending.response.docId === current.docId &&
+      pending.response.epoch === current.epoch;
+    const applied = applyAccepted(
+      pending.response,
+      pending.requestFill,
+      display,
+      true,
+    );
     if (!applied.accepted) {
       scheduleQueuedResponse();
       return;
@@ -544,6 +590,21 @@ export function wireRenderWorker(
   }
 
   renderWorker.onmessage = (event: MessageEvent<RenderResponse>) => {
+    if (pendingAppend !== null && !pendingAppend.requestFill &&
+      !("op" in event.data)) {
+      const current = wiring.currentVersion();
+      if ((pendingAppend.response.docId !== current.docId ||
+          pendingAppend.response.epoch !== current.epoch) &&
+        event.data.docId === current.docId && event.data.epoch === current.epoch) {
+        cancelAnimationFrame(pendingAppend.frame);
+        window.clearTimeout(pendingAppend.timer);
+        pausedAppends.push(pendingAppend);
+        pendingAppend = null;
+        handleResponse(event.data);
+        scheduleQueuedResponse();
+        return;
+      }
+    }
     if (pendingAppend !== null) {
       flushAppend();
       if (pendingAppend !== null || queuedResponses.length > 0) {
