@@ -33,4 +33,16 @@ describe("Playwright configuration", () => {
 
     expect(config.grepInvert).toBeUndefined();
   });
+
+  it("writes JUnit to the path selected for a split test run", async () => {
+    process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE = "reports/perf-e2e-junit.xml";
+    vi.resetModules();
+
+    const { default: config } = await import("../../playwright.config");
+
+    expect(config.reporter).toContainEqual([
+      "junit",
+      { outputFile: "reports/perf-e2e-junit.xml" },
+    ]);
+  });
 });
