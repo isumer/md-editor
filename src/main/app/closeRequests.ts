@@ -3,8 +3,7 @@ import type { SessionCloseResult } from "../../shared/ipc/session";
 export type TimerHandle = unknown;
 
 export interface CloseRequestBrokerOptions {
-  ackTimeoutMilliseconds?: number;
-  keepaliveTimeoutMilliseconds?: number;
+  timeoutMilliseconds?: number;
   setTimer?: (callback: () => void, milliseconds: number) => TimerHandle;
   clearTimer?: (handle: TimerHandle) => void;
 }
@@ -16,10 +15,6 @@ interface PendingClose {
 }
 
 const KEEPALIVE_GRANT = "session-close:keepalive";
-// A live renderer acks immediately, so a short first wait leaves room to quit
-// inside the 15 s e2e budget; a keepalive proves the prompt is open.
-const DEFAULT_ACK_TIMEOUT_MILLISECONDS = 4_000;
-const DEFAULT_KEEPALIVE_TIMEOUT_MILLISECONDS = 15_000;
 const PERSIST_TIMEOUT_MILLISECONDS = 5_000;
 
 function isKeepalive(result: SessionCloseResult): boolean {
@@ -31,8 +26,7 @@ function isKeepalive(result: SessionCloseResult): boolean {
 // out and the window closes without a session snapshot.
 export class CloseRequestBroker {
   private readonly pending = new Map<number, PendingClose>();
-  private readonly ackTimeoutMilliseconds: number;
-  private readonly keepaliveTimeoutMilliseconds: number;
+  private readonly timeoutMilliseconds: number;
   private readonly setTimer: (callback: () => void, milliseconds: number) => TimerHandle;
   private readonly clearTimer: (handle: TimerHandle) => void;
   private nextId = 1;
@@ -45,10 +39,7 @@ export class CloseRequestBroker {
     ) => Promise<void>,
     options: CloseRequestBrokerOptions = {},
   ) {
-    this.ackTimeoutMilliseconds = options.ackTimeoutMilliseconds ??
-      DEFAULT_ACK_TIMEOUT_MILLISECONDS;
-    this.keepaliveTimeoutMilliseconds = options.keepaliveTimeoutMilliseconds ??
-      DEFAULT_KEEPALIVE_TIMEOUT_MILLISECONDS;
+    this.timeoutMilliseconds = options.timeoutMilliseconds ?? 15_000;
     this.setTimer = options.setTimer ??
       ((callback, milliseconds) => setTimeout(callback, milliseconds));
     this.clearTimer = options.clearTimer ??
@@ -59,7 +50,7 @@ export class CloseRequestBroker {
     const id = this.nextId;
     this.nextId += 1;
     return new Promise((resolve) => {
-      const timer = this.startTimer(id, this.ackTimeoutMilliseconds);
+      const timer = this.startTimer(id);
       this.pending.set(id, { resolve, timer, windowId });
       this.send(windowId, id);
     });
@@ -72,7 +63,7 @@ export class CloseRequestBroker {
     }
     if (isKeepalive(result)) {
       this.clearTimer(pending.timer);
-      pending.timer = this.startTimer(result.id, this.keepaliveTimeoutMilliseconds);
+      pending.timer = this.startTimer(result.id);
       return;
     }
     this.pending.delete(result.id);
@@ -105,7 +96,7 @@ export class CloseRequestBroker {
     }
   }
 
-  private startTimer(id: number, milliseconds: number): TimerHandle {
+  private startTimer(id: number): TimerHandle {
     let timer: TimerHandle;
     timer = this.setTimer(() => {
       const pending = this.pending.get(id);
@@ -113,7 +104,7 @@ export class CloseRequestBroker {
         this.pending.delete(id);
         pending.resolve(true);
       }
-    }, milliseconds);
+    }, this.timeoutMilliseconds);
     return timer;
   }
 }
