@@ -554,7 +554,7 @@ async function readKeystrokeTimings(page: Page): Promise<SlowKeystrokeTiming[]> 
         throw new Error("AC-PERF-02 keystroke probe missed the matching response");
       }
       const apply = probe.applies.find((entry) =>
-        entry.start >= measure.start && entry.end <= end);
+        entry.start >= measure.start && entry.start <= end && entry.end >= end);
       if (apply === undefined) {
         throw new Error(
           `AC-PERF-02 keystroke probe missed the measured apply interval: ` +
