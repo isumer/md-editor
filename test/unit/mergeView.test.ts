@@ -299,4 +299,44 @@ describe("merge view", () => {
 
     expect(harness.state.selection.main.head).toBe(0);
   });
+
+  it("keeps the active shell unchanged after its merge state is removed", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+    const counts = document.querySelector('[data-testid="merge-counts"]')?.textContent;
+    harness.state = EditorState.create();
+
+    harness.mergeView.stateChanged("one", harness.state);
+
+    expect(document.querySelector('[data-testid="merge-counts"]')?.textContent)
+      .toBe(counts);
+  });
+
+  it("ignores conflict choices from a shell after its document closes", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+    const choice = document.querySelector<HTMLButtonElement>(
+      '[data-testid="merge-conflict-1-left"]',
+    );
+    const before = harness.state;
+    harness.mergeView.forget("one");
+
+    choice?.click();
+
+    expect(harness.state).toBe(before);
+  });
+
+  it("leaves merge navigation keys with modifiers available to the platform", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+    const event = new KeyboardEvent("keydown", { ctrlKey: true, key: "F7", cancelable: true });
+
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(harness.state.selection.main.head).toBe(0);
+  });
 });
