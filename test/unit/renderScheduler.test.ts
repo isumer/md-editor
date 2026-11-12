@@ -141,6 +141,21 @@ describe("RenderScheduler", () => {
     vi.unstubAllGlobals();
   });
 
+  it("AC-PERF-02: bounds a stalled default frame at 50 ms", () => {
+    const setTimer = vi.fn(() => 2);
+    const scheduler = new RenderScheduler(() => undefined, {
+      now: () => 0,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      setTimer,
+      clearTimer: () => undefined,
+    });
+
+    scheduler.schedule();
+
+    expect(setTimer).toHaveBeenCalledWith(expect.any(Function), 50);
+  });
+
   it("AC-R1-02: a frame that fires after disposal does nothing", () => {
     const frames: (() => void)[] = [];
     const requests: ScheduledRender[] = [];

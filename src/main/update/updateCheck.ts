@@ -175,6 +175,28 @@ export interface StartupUpdateDependencies {
   write(settings: Settings): Promise<void>;
 }
 
+export interface StartupUpdateTimer {
+  unref(): void;
+}
+
+export type SetStartupUpdateTimer = (
+  callback: () => void,
+  delayMilliseconds: number,
+) => StartupUpdateTimer;
+
+const STARTUP_UPDATE_DELAY_MS = 30_000;
+
+export function scheduleStartupUpdateCheck(
+  check: () => Promise<void>,
+  setTimer: SetStartupUpdateTimer = (callback, delay) =>
+    setTimeout(callback, delay),
+): void {
+  const timer = setTimer(() => {
+    void check().catch(() => undefined);
+  }, STARTUP_UPDATE_DELAY_MS);
+  timer.unref();
+}
+
 export function createStartupUpdateCheck(
   dependencies: StartupUpdateDependencies,
 ): () => Promise<void> {

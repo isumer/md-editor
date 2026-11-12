@@ -48,6 +48,7 @@ import { WorkspaceService } from "./services/workspace";
 import {
   createStartupUpdateCheck,
   createUpdateCheck,
+  scheduleStartupUpdateCheck,
 } from "./update/updateCheck";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 import type { Settings } from "../shared/settings/settings";
@@ -224,12 +225,14 @@ void initializeApplication(
     registerDocAssetProtocol(ioWorker);
   },
   () => {
-    void checkForStartupUpdates();
+    void checkForUpdates();
   },
-).catch((error: unknown) => {
-  logProcessEvent("startup", error);
-  app.quit();
-});
+)
+  .then(() => scheduleStartupUpdateCheck(checkForStartupUpdates))
+  .catch((error: unknown) => {
+    logProcessEvent("startup", error);
+    app.quit();
+  });
 
 function createSettingsStore(): SettingsStore {
   return new SettingsStore(

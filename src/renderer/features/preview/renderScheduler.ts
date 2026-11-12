@@ -31,7 +31,7 @@ interface ResolvedOptions {
 function resolve(options: RenderSchedulerOptions): ResolvedOptions {
   return {
     now: options.now ?? (() => performance.now()),
-    maximumWaitMilliseconds: options.maximumWaitMilliseconds ?? 100,
+    maximumWaitMilliseconds: options.maximumWaitMilliseconds ?? 50,
     requestFrame: options.requestFrame ??
       ((callback) => requestAnimationFrame(callback)),
     cancelFrame: options.cancelFrame ?? ((handle) => cancelAnimationFrame(handle)),
