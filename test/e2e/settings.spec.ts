@@ -21,14 +21,28 @@ interface PaneColors {
 
 async function writeSettings(
   profileDirectory: string,
-  editor: string,
-  preview: string,
+  editor: string | null,
+  preview: string | null,
+  theme: "light" | "dark" | "system" = "system",
 ): Promise<void> {
   await fs.writeFile(
     path.join(profileDirectory, "settings.json"),
-    JSON.stringify({ editor: { background: editor }, preview: { background: preview } }),
+    JSON.stringify({ theme, editor: { background: editor }, preview: { background: preview } }),
     "utf8",
   );
+}
+
+async function setColour(page: Page, selector: string, value: string): Promise<void> {
+  await page.locator(selector).evaluate((input, colour) => {
+    if (!(input instanceof HTMLInputElement)) throw new Error("colour input is missing");
+    input.value = colour;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
+}
+
+async function storedSettings(profileDirectory: string): Promise<unknown> {
+  const raw = await fs.readFile(path.join(profileDirectory, "settings.json"), "utf8");
+  return JSON.parse(raw) as unknown;
 }
 
 async function paneColors(page: Page): Promise<PaneColors> {
@@ -57,6 +71,66 @@ function rgb(value: string): Rgb {
   }
   return { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) };
 }
+
+test("AC-R7-01: separate editor and preview backgrounds survive a restart", {
+  tag: "@AC-R7-01",
+  annotation: { type: "AC-R7-01" },
+}, async () => {
+  const profile = await createUserDataDirectory();
+  let editor = await launchEditor(fixturePath, profile);
+  try {
+    await editor.page.getByRole("button", { name: "Settings", exact: true }).click();
+    await expect(editor.page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await setColour(editor.page, "#editor-background-input", "#123456");
+    await setColour(editor.page, "#preview-background-input", "#abcdef");
+    await expect.poll(() => paneColors(editor.page)).toMatchObject({
+      editorBackground: "rgb(18, 52, 86)",
+      previewBackground: "rgb(171, 205, 239)",
+    });
+    await expect.poll(() => storedSettings(profile)).toMatchObject({
+      editor: { background: "#123456" },
+      preview: { background: "#abcdef" },
+    });
+
+    await editor.application.close();
+    editor = await launchEditor(fixturePath, profile);
+    await expect.poll(() => paneColors(editor.page)).toMatchObject({
+      editorBackground: "rgb(18, 52, 86)",
+      previewBackground: "rgb(171, 205, 239)",
+    });
+  } finally {
+    await closeEditor(editor.application, editor.page);
+  }
+});
+
+test("AC-R7-02: a custom background overrides themes until reset", {
+  tag: "@AC-R7-02",
+  annotation: { type: "AC-R7-02" },
+}, async () => {
+  const profile = await createUserDataDirectory();
+  await writeSettings(profile, null, "#123456", "dark");
+  const { application, page } = await launchEditor(fixturePath, profile);
+  try {
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.locator("#background-theme-input").selectOption("light");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect.poll(() => paneColors(page)).toMatchObject({
+      previewBackground: "rgb(18, 52, 86)",
+    });
+
+    await page.locator("#preview-background-reset").click();
+    await expect.poll(() => paneColors(page)).toMatchObject({
+      previewBackground: "rgb(255, 255, 255)",
+    });
+    await expect.poll(() => storedSettings(profile)).toMatchObject({
+      theme: "light",
+      preview: { background: null },
+    });
+  } finally {
+    await closeEditor(application, page);
+  }
+});
 
 test("AC-R7-03: invalid stored colours use the system theme", {
   tag: "@AC-R7-03",

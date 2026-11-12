@@ -25,12 +25,8 @@ import {
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
 import {
-  applyBackgrounds,
-  resetToThemeDefaults,
-  resolveSystemTheme,
-  watchSystemTheme,
-  type ResolvedTheme,
-} from "./features/background/background";
+  createBackgroundSettingsController,
+} from "./features/background/settingsController";
 import { beginStartup } from "./features/background/startup";
 import {
   featureEditorExtensions,
@@ -47,6 +43,7 @@ import {
   onSessionCloseRequest,
   readyForOpenRequests,
   sendChanges,
+  saveSettings,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
@@ -402,19 +399,12 @@ window.addEventListener("drop", (event) => {
 });
 
 async function loadBackgroundSettings(): Promise<void> {
-  const settingsResult = await loadSettings();
-  const applyTheme = (theme: ResolvedTheme): void => {
-    if (settingsResult.ok) {
-      applyBackgrounds(
-        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
-        theme,
-      );
-    } else {
-      resetToThemeDefaults(theme);
-    }
-  };
-  applyTheme(resolveSystemTheme());
-  watchSystemTheme(applyTheme);
+  const controller = createBackgroundSettingsController({
+    load: loadSettings,
+    save: saveSettings,
+    reportError: showUnexpectedError,
+  });
+  await controller.start();
 }
 
 async function initialize(): Promise<void> {

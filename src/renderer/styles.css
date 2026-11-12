@@ -265,8 +265,10 @@ body {
 }
 
 #preview {
+  contain: strict;
   padding: 24px 32px;
   overflow: auto;
+  will-change: scroll-position;
   line-height: 1.55;
   background: var(--custom-background, var(--preview-background));
   color: var(--custom-text-color, var(--preview-text-color));
@@ -314,4 +316,42 @@ body {
   color: #9a3412;
   background: #f6f8fa;
   font-size: 12px;
+}
+
+#background-settings-open {
+  flex: none;
+}
+
+#background-settings-dialog {
+  width: min(460px, calc(100% - 32px));
+  padding: 20px;
+  border: 1px solid #8c959f;
+  border-radius: 8px;
+  color: var(--editor-text-color);
+  background: var(--editor-background);
+}
+
+#background-settings-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+#background-settings-dialog h2 {
+  margin-top: 0;
+}
+
+#background-theme-input {
+  display: block;
+  margin: 6px 0 18px;
+}
+
+.background-settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 14px 0;
+}
+
+.background-settings-row label {
+  grid-column: 1 / -1;
 }
