@@ -73,6 +73,7 @@ export interface RenderBlock {
   startLine: number;
   endLine: number;
   html: string;
+  trusted?: true;
 }
 
 export interface RenderBlockPatch {

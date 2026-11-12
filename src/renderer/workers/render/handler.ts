@@ -2,6 +2,7 @@ import { ChangeSet, Text } from "@codemirror/state";
 
 import type {
   RenderAttachMessage,
+  RenderBlock,
   RenderChangeMessage,
   RenderChangeSetJson,
   RenderFillReadyMessage,
@@ -23,6 +24,7 @@ interface BufferedResync {
 interface CachedRender {
   state: IncrementalRenderState;
   request: RenderRequest | null;
+  fillNotBefore: number;
   fillToken: number;
   fillTimer: ReturnType<typeof setTimeout> | undefined;
 }
@@ -34,6 +36,8 @@ type RenderText = (source: string, env?: RenderEnvironment) => string;
 // loop between batches instead of flooding the main thread with appends. The
 // preview acknowledges each applied batch, so at most one batch is in flight.
 const FILL_DELAY_MS = 1;
+// Restart progressive fill only after a typing burst stops competing with it.
+const EDIT_FILL_DELAY_MS = 250;
 
 function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
   return ChangeSet.fromJSON(changes).apply(document);
@@ -41,6 +45,15 @@ function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
 
 function text(value: string): Text {
   return Text.of(value.split("\n"));
+}
+
+function completedBlocks(blocks: readonly RenderBlock[]): readonly RenderBlock[] {
+  return blocks.map(({ id, startLine, endLine, html }) => ({
+    id,
+    startLine,
+    endLine,
+    html,
+  }));
 }
 
 export class RenderWorkerHandler {
@@ -160,6 +173,7 @@ export class RenderWorkerHandler {
       message.toVersion,
       message.changes,
     );
+    cache.fillNotBefore = Date.now() + EDIT_FILL_DELAY_MS;
   }
 
   private render(request: RenderRequest): void {
@@ -213,6 +227,7 @@ export class RenderWorkerHandler {
         this.renderText,
       ),
       request: null,
+      fillNotBefore: 0,
       fillToken: 0,
       fillTimer: undefined,
     };
@@ -233,7 +248,7 @@ export class RenderWorkerHandler {
         version: request.version,
         ok: true,
         mode: "replace",
-        blocks: batch.blocks,
+        blocks: batch.complete ? completedBlocks(batch.blocks) : batch.blocks,
         complete: batch.complete,
       };
     }
@@ -260,7 +275,8 @@ export class RenderWorkerHandler {
       return;
     }
     const token = cache.fillToken;
-    cache.fillTimer = setTimeout(() => this.fillBatch(cache, token), FILL_DELAY_MS);
+    const delay = Math.max(FILL_DELAY_MS, cache.fillNotBefore - Date.now());
+    cache.fillTimer = setTimeout(() => this.fillBatch(cache, token), delay);
   }
 
   private fillBatch(cache: CachedRender, token: number): void {
@@ -269,6 +285,7 @@ export class RenderWorkerHandler {
       return;
     }
     cache.fillTimer = undefined;
+    cache.fillNotBefore = 0;
     try {
       const batch = cache.state.fill();
       this.postResponse({

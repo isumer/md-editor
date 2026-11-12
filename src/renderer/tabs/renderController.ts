@@ -41,7 +41,8 @@ export function isRenderPong(response: RenderResponse): response is RenderPongMe
 }
 
 export class RenderController {
-  private worker: RenderWorkerPort;
+  private worker: RenderWorkerPort | null = null;
+  private readonly pendingMessages: unknown[] = [];
   private readonly handlers: RenderHandlers = { onmessage: null, onerror: null };
   private previews: PreviewDocuments | null = null;
   private readonly scheduler: RenderScheduler;
@@ -49,7 +50,6 @@ export class RenderController {
   private readonly proxy;
 
   constructor(private readonly options: RenderControllerOptions) {
-    this.worker = this.createWorker();
     this.proxy = this.createProxy();
     this.scheduler = new RenderScheduler((request) => this.render(request.id), {
       onApplied: (latency) => {
@@ -64,6 +64,10 @@ export class RenderController {
   }
 
   start(): void {
+    if (this.worker !== null) {
+      return;
+    }
+    this.worker = this.createWorker();
     this.installHandlers();
     this.previews = wireRenderWorker(this.proxy, {
       scheduler: this.scheduler,
@@ -78,6 +82,7 @@ export class RenderController {
       onResync: (response) => this.resync(response),
       rewriteHtml: this.options.rewriteHtml,
     });
+    this.flushPendingMessages();
     this.heartbeat.start();
     this.scheduler.schedule();
   }
@@ -87,7 +92,7 @@ export class RenderController {
   }
 
   attachVersion(version: ReplicatedVersion, text: string): void {
-    this.worker.postMessage({
+    this.postMessage({
       op: "attach",
       ...version,
       text,
@@ -95,11 +100,11 @@ export class RenderController {
   }
 
   change(message: ChangeDocumentMessage): void {
-    this.worker.postMessage(message);
+    this.postMessage(message);
   }
 
   detach(docId: string): void {
-    this.worker.postMessage({ op: "detach", docId });
+    this.postMessage({ op: "detach", docId });
     this.previews?.drop(docId);
   }
 
@@ -117,10 +122,25 @@ export class RenderController {
     return new Worker(this.options.workerUrl, { type: "module" });
   }
 
+  private postMessage(message: unknown): void {
+    if (this.worker === null) {
+      this.pendingMessages.push(message);
+      return;
+    }
+    this.worker.postMessage(message);
+  }
+
+  private flushPendingMessages(): void {
+    const messages = this.pendingMessages.splice(0);
+    for (const message of messages) {
+      this.postMessage(message);
+    }
+  }
+
   private createProxy() {
     const controller = this;
     return {
-      postMessage: (message: unknown) => this.worker.postMessage(message),
+      postMessage: (message: unknown) => this.postMessage(message),
       get onmessage() {
         return controller.handlers.onmessage;
       },
@@ -137,26 +157,30 @@ export class RenderController {
   }
 
   private installHandlers(): void {
-    this.worker.onmessage = (event) => {
+    const worker = this.worker;
+    if (worker === null) {
+      return;
+    }
+    worker.onmessage = (event) => {
       if (isRenderPong(event.data)) {
         this.heartbeat.pong(event.data.id);
         return;
       }
       this.handlers.onmessage?.(event);
     };
-    this.worker.onerror = (event) => this.handlers.onerror?.(event);
+    worker.onerror = (event) => this.handlers.onerror?.(event);
   }
 
   private render(id: number): void {
     const document = this.options.current();
     if (document) {
-      this.worker.postMessage({ op: "render", id, ...document.replication.current() });
+      this.postMessage({ op: "render", id, ...document.replication.current() });
     }
   }
 
   private ping(id: number): void {
     try {
-      this.worker.postMessage({ op: "ping", id });
+      this.postMessage({ op: "ping", id });
     } catch {
       this.restart();
     }
@@ -164,7 +188,7 @@ export class RenderController {
 
   private restart(): void {
     try {
-      this.worker.terminate();
+      this.worker?.terminate();
     } catch {
       // A worker that already exited needs no termination.
     }

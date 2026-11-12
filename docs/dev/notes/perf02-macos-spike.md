@@ -51,6 +51,12 @@ Its macOS performance step passed.
 Its Ubuntu and Windows performance steps failed.
 Public metadata does not identify the failed tests.
 
+Run 43297370298 used candidate 09467d9.
+Its Ubuntu, Windows, and macOS jobs passed.
+Each job passed its performance step with the unchanged budgets.
+The throttled information-only job failed and did not block the run.
+This run settles the three-OS gate failure from run 43286531323.
+
 The public API exposes these job and step results.
 It does not expose their logs without repository administration rights.
 The failure artifacts also require authentication.
@@ -74,6 +80,10 @@ It stays quiet on other platforms.
 The existing runs did not provide accessible process logs.
 The corrected candidate still needs an AC-PERF-02-only comparison.
 That comparison requires an authenticated macOS CI run.
+
+The public job data cannot name the earlier Ubuntu and Windows failures.
+Run 43297370298 passed both jobs after candidate 09467d9 merged current main.
+No task-owned change exists between the two runs that explains those failures.
 
 ## Test proof
 
@@ -120,7 +130,7 @@ No product or diagnostic failure caused this gate result.
 
 ## Size exceptions
 
-`test/e2e/preview-perf.spec.ts` has 940 lines.
+`test/e2e/preview-perf.spec.ts` has 930 lines.
 The task permits changes only to the existing task-owned files.
 Splitting the probe would add an unapproved file.
 
@@ -132,7 +142,7 @@ The one-line source comment records this constraint.
 
 - `npm run typecheck` passed.
 - `npm run check:deps` passed for 162 modules and 360 dependencies.
-- `npm run test:unit` passed 1,265 tests in 122 files.
+- `npm run test:unit` passed 1,267 tests in 122 files.
 - `npm run check:coverage` passed every ratchet.
 - Statements measured 99.05 percent.
 - Branches measured 97.30 percent.
@@ -142,7 +152,7 @@ The one-line source comment records this constraint.
 - The three focused non-AC-PERF diagnostic tests passed after the correction.
 - The owner-required non-AC-PERF e2e run passed all three diagnostic tests.
 - The focused AC-PERF-02 run captured and validated all 30 diagnostic records.
-- `npm run verify` passed typecheck, dependency checks, all 1,265 unit tests,
+- `npm run verify` passed typecheck, dependency checks, all 1,267 unit tests,
   the build, and 105 of 108 end-to-end tests.
 - Its end-to-end run captured all 30 AC-PERF-02 diagnostic records, then measured
   p95 at 79.9 ms on this host and correctly failed the unchanged 50 ms budget.

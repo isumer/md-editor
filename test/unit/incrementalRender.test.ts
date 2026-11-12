@@ -565,7 +565,7 @@ describe("progressive large-document rendering", () => {
     const first = scope.results()[0];
     expect(first?.ok).toBe(true);
     if (first?.ok && first.mode === "replace") {
-      expect(first.blocks).toHaveLength(12);
+      expect(first.blocks).toHaveLength(1);
       expect(first.complete).toBe(false);
     }
 
@@ -574,9 +574,26 @@ describe("progressive large-document rendering", () => {
     expect(appended.length).toBeGreaterThan(0);
     const appendedBlocks = appended.flatMap((result) =>
       result.ok && result.mode === "append" ? result.blocks : []);
-    expect(appendedBlocks).toHaveLength(108);
+    expect(appendedBlocks).toHaveLength(119);
     const last = appended.at(-1);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
+  });
+
+  it("AC-PERF-09: trusts generated HTML but not raw HTML", () => {
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom("plain\n\n<img src=x onerror=alert(1)>"),
+      (source) => source,
+    );
+
+    const blocks = state.initial().blocks;
+    const first = blocks[0] as { trusted?: true } | undefined;
+    const raw = blocks.at(-1) as { trusted?: true } | undefined;
+
+    expect(first?.trusted).toBe(true);
+    expect(raw?.trusted).toBeUndefined();
   });
 
   it("AC-R1-05: a change during the fill pass cancels the stale fill and patches first", async () => {
@@ -587,7 +604,7 @@ describe("progressive large-document rendering", () => {
     const document = textFrom(text);
     handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text });
     handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
-    const { changes } = changeJson(document, document.line(2).from + 1, "Y");
+    const { changes } = changeJson(document, document.line(1).from + 1, "Y");
 
     handler.handle({ op: "change", docId: "doc", epoch: 1, fromVersion: 0,
       toVersion: 1, changes });
@@ -623,7 +640,7 @@ describe("progressive large-document rendering", () => {
     const last = appends.at(-1);
 
     expect(appends.length).toBeGreaterThanOrEqual(2);
-    expect(appendedBlocks).toHaveLength(238);
+    expect(appendedBlocks).toHaveLength(249);
     expect(last?.ok && last.mode === "append" ? last.complete : false).toBe(true);
   });
 
@@ -765,6 +782,31 @@ describe("render worker cache lifecycle", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("AC-PERF-02: an edit delays background fill until typing is idle", () => {
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (_callback: () => void, delay: number) => {
+      delays.push(delay);
+      return delays.length;
+    });
+    vi.stubGlobal("clearTimeout", () => undefined);
+    const scope = new FakeScope();
+    const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+    const source = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const document = textFrom(source);
+    const { changes } = changeJson(document, 0, "x");
+
+    handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0, text: source });
+    handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+    handler.handle({ op: "change", docId: "doc", epoch: 1,
+      fromVersion: 0, toVersion: 1, changes });
+    handler.handle({ op: "render", id: 2, docId: "doc", epoch: 1, version: 1 });
+
+    expect(delays).toEqual([1, 250]);
   });
 
   it("AC-R1-10: renders an empty document without chunks", () => {

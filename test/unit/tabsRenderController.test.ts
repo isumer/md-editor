@@ -62,7 +62,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function controller(current: () => DocumentRecord | null) {
+async function controller(current: () => DocumentRecord | null, start = true) {
   const { RenderController } = await import("../../src/renderer/tabs/renderController");
   const preview = document.createElement("div");
   document.body.replaceChildren(preview);
@@ -76,10 +76,22 @@ async function controller(current: () => DocumentRecord | null) {
     showStatus: vi.fn(),
     workerUrl: new URL("https://example.test/worker.js"),
   });
+  if (start) {
+    instance.start();
+  }
   return { instance, preview, showError };
 }
 
 describe("render controller", () => {
+  it("AC-PERF-03: constructs the editor before starting the render worker", async () => {
+    const { instance } = await controller(() => null, false);
+
+    expect(workers).toHaveLength(0);
+
+    instance.start();
+    expect(workers).toHaveLength(1);
+  });
+
   it("AC-PERF-11: attach reuses the text the caller supplies", async () => {
     const document = item();
     const { instance } = await controller(() => document);
@@ -228,12 +240,13 @@ describe("render controller", () => {
   });
 
   it("AC-R1-12: a ping transport failure restarts the worker", async () => {
-    const { instance } = await controller(() => null);
+    const { instance } = await controller(() => null, false);
+    instance.start();
     const first = workers[0];
+    first?.onmessage?.({ data: { op: "pong", id: 1 } } as MessageEvent<RenderResponse>);
     if (first) first.throwOnPost = true;
 
-    instance.start();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
     workers[1]?.onmessage?.({ data: {
       id: 1,
       docId: "document-none",
