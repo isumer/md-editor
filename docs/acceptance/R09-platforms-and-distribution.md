@@ -19,7 +19,7 @@ When it is launched again with a file argument (or macOS sends open-file)
 Then no second window or process stays open and the running window opens the file
 
 ### AC-R9-04 — The Windows installer adds and removes the context-menu entries
-status: planned
+status: implemented
 Given a per-user install (no admin)
 When it completes
 Then "Edit with SolidMD" exists for all files and "Open folder in SolidMD" for folders and folder backgrounds, pointing at the installed exe; after uninstall none of the keys remain
@@ -31,13 +31,13 @@ When the licence check runs
 Then it fails on any licence outside the GPL-3-compatible allowlist, and a release contains THIRD_PARTY_NOTICES.txt with every dependency's licence text
 
 ### AC-R9-06 — Each release offers installer and standalone downloads per platform
-status: planned
+status: implemented
 Given a version tag is pushed
 When the release workflow completes
 Then a draft release holds the Windows NSIS installer and portable zip (x64, arm64), macOS dmg (x64, arm64), Linux deb and AppImage (x64, arm64), SHA256SUMS.txt matching every file, and notes from CHANGELOG.md
 
 ### AC-R9-07 — Help > Check for Updates says what it found
-status: planned
+status: implemented
 Given a release newer than the running version exists on the release feed (and, separately, none does, and the feed is unreachable)
 When the user picks Help > Check for Updates
 Then the app names the new version with its release notes, or says it is up to date, or says the check failed and why; nothing is downloaded without the user's yes

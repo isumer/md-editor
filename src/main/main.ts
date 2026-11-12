@@ -3,7 +3,10 @@ import path from "node:path";
 import {
   app,
   BrowserWindow,
+  dialog,
+  net,
   protocol,
+  shell,
   type MessagePortMain,
 } from "electron";
 
@@ -42,6 +45,7 @@ import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 import { WorkspaceService } from "./services/workspace";
+import { createUpdateCheck } from "./update/updateCheck";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
@@ -70,6 +74,16 @@ const fileService = new DocumentGrantService(grants, fileDialogs, ioWorker);
 const workspaceService = new WorkspaceService(fileDialogs, fileService);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
+const checkForUpdates = createUpdateCheck({
+  currentVersion: () => app.getVersion(),
+  fetchFeed: (url) => net.fetch(url),
+  showMessage: (message) => dialog.showMessageBox({
+    ...message,
+    buttons: [...message.buttons],
+    noLink: true,
+  }),
+  openExternal: (url) => shell.openExternal(url),
+});
 let sessionStore: SessionStore | null = null;
 let settingsStore: SettingsStore | null = null;
 
@@ -123,6 +137,9 @@ function createApplicationWindow(): void {
       attachIoPort,
       closeWindow: async (windowId) => fileService.closeWindow(windowId),
       requestClose: async (window) => {
+        if (!openRequests.isRendererReady()) {
+          return true;
+        }
         const allow = await closeRequests.request(window.id);
         if (!allow) {
           applicationEvents.cancelQuit();
@@ -180,6 +197,9 @@ void initializeApplication(
     registerSettingsIpcHandler(settingsStore);
     registerAppProtocol(rendererDirectory);
     registerDocAssetProtocol(ioWorker);
+  },
+  () => {
+    void checkForUpdates();
   },
 ).catch((error: unknown) => {
   logProcessEvent("startup", error);
