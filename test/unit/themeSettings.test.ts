@@ -358,4 +358,37 @@ describe("settings controller", () => {
     await expect(controller.changeFontSize(1)).rejects.toThrow("save failed");
     await expect(controller.changeFontSize(1)).resolves.toEqual(ok(undefined));
   });
+
+  it("serializes rapid saves and writes the newest font size last", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const savedSizes: number[] = [];
+    const save = vi.fn(async (value: SettingsWriteRequest) => {
+      const fontSize = value["fontSize"];
+      if (typeof fontSize !== "number") {
+        throw new Error("saved font size is not a number");
+      }
+      savedSizes.push(fontSize);
+      if (savedSizes.length === 1) {
+        await firstPending;
+      }
+      return ok(undefined);
+    });
+    const controller = new SettingsController(
+      boundary(() => Promise.resolve(ok(DEFAULT_SETTINGS)), save),
+      appearance(() => "light"),
+    );
+    await controller.load();
+
+    const first = controller.changeFontSize(1);
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    const second = controller.changeFontSize(1);
+
+    expect(save).toHaveBeenCalledOnce();
+    releaseFirst?.();
+    await Promise.all([first, second]);
+    expect(savedSizes).toEqual([15, 16]);
+  });
 });
