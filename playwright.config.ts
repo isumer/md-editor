@@ -5,6 +5,7 @@ const junitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE
 
 export default defineConfig({
   testDir: "test/e2e",
+  globalSetup: "./test/e2e/global-setup.ts",
   timeout: 15_000,
   expect: {
     timeout: 2_000,

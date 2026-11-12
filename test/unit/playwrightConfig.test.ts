@@ -33,4 +33,12 @@ describe("Playwright configuration", () => {
 
     expect(config.grepInvert).toBeUndefined();
   });
+
+  it("primes the machine before any e2e budget is measured", async () => {
+    vi.resetModules();
+
+    const { default: config } = await import("../../playwright.config");
+
+    expect(config.globalSetup).toBe("./test/e2e/global-setup.ts");
+  });
 });
