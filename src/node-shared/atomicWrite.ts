@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 export interface AtomicWriteHandle {
-  writeFile(content: string, options: { encoding: "utf8" }): Promise<void>;
+  writeFile(content: string | Uint8Array, options?: { encoding: "utf8" }): Promise<void>;
   sync(): Promise<void>;
   close(): Promise<void>;
 }
@@ -20,7 +20,14 @@ export interface AtomicWriteFs {
 type Delay = (milliseconds: number) => Promise<void>;
 
 const nodeFs: AtomicWriteFs = {
-  open: (filePath, flags) => fs.open(filePath, flags),
+  open: async (filePath, flags) => {
+    const handle = await fs.open(filePath, flags);
+    return {
+      writeFile: (content, options) => handle.writeFile(content, options),
+      sync: () => handle.sync(),
+      close: () => handle.close(),
+    };
+  },
   rename: (oldPath, newPath) => fs.rename(oldPath, newPath),
   unlink: (filePath) => fs.unlink(filePath),
   realpath: (filePath) => fs.realpath(filePath),
@@ -90,7 +97,7 @@ async function renameWithRetry(
 async function writeResolvedTarget(
   originalPath: string,
   targetPath: string,
-  content: string,
+  content: string | Uint8Array,
   fileSystem: AtomicWriteFs,
   platform: NodeJS.Platform,
   delay: Delay,
@@ -114,7 +121,10 @@ async function writeResolvedTarget(
     }
 
     handle = await fileSystem.open(temporaryPath, "wx");
-    await handle.writeFile(content, { encoding: "utf8" });
+    await handle.writeFile(
+      content,
+      typeof content === "string" ? { encoding: "utf8" } : undefined,
+    );
     await handle.sync();
     if (targetMode !== undefined) {
       await fileSystem.chmod(temporaryPath, targetMode);
@@ -143,7 +153,7 @@ async function writeResolvedTarget(
 
 export async function atomicWrite(
   targetPath: string,
-  content: string,
+  content: string | Uint8Array,
   fileSystem: AtomicWriteFs = nodeFs,
   platform: NodeJS.Platform = process.platform,
   delay: Delay = defaultDelay,
@@ -177,4 +187,11 @@ export async function atomicWrite(
       writeQueues.delete(queuePath);
     }
   }
+}
+
+export async function atomicWriteBytes(
+  targetPath: string,
+  content: Uint8Array,
+): Promise<void> {
+  await atomicWrite(targetPath, content);
 }

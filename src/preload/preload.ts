@@ -48,6 +48,10 @@ import type {
   WORKSPACE_CHANNELS as SharedWorkspaceChannels,
   WorkspacePathRequest,
 } from "../shared/ipc/workspace";
+import type {
+  EXPORT_CHANNEL as SharedExportChannel,
+  ExportDocumentRequest,
+} from "../shared/ipc/export";
 
 const FILE_CHANNELS = {
   openFile: "file:open",
@@ -57,6 +61,7 @@ const FILE_CHANNELS = {
   openRequestsReady: "file:open-requests-ready",
   openRequest: "file:open-request",
 } as const satisfies typeof SharedFileChannels;
+const EXPORT_CHANNEL = "export:document" as const satisfies typeof SharedExportChannel;
 const IO_PORT_CHANNEL = "io:port" as const satisfies typeof SharedIoPortChannel;
 const IO_PORT_LOST_CHANNEL = "io:port-lost" as const satisfies
   typeof SharedIoPortLostChannel;
@@ -292,6 +297,7 @@ export class IoPortClient {
 }
 
 interface Api {
+  exportDocument(request: ExportDocumentRequest): Promise<Result<void>>;
   openFile(): Promise<Result<DocumentReference | null>>;
   chooseSaveTarget(request: ChooseSaveTargetRequest): Promise<Result<DocumentReference | null>>;
   readDocument(grant: string): Promise<Result<ReadDocumentResponse>>;
@@ -370,6 +376,10 @@ ipcRenderer.on(IO_PORT_CHANNEL, (event: Electron.IpcRendererEvent) => {
 ipcRenderer.on(IO_PORT_LOST_CHANNEL, () => ioClient.portLost());
 
 const api: Api = {
+  exportDocument: (request) => ipcRenderer.invoke(
+    EXPORT_CHANNEL,
+    request,
+  ) as Promise<Result<void>>,
   openFile: () => ipcRenderer.invoke(FILE_CHANNELS.openFile, {}) as Promise<
     Result<DocumentReference | null>
   >,

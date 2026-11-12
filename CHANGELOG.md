@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
 - The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
+- The File menu has Export HTML… and Export PDF…: the preview becomes one self-contained HTML file (light or dark styles, images keep their relative paths), or a multi-page PDF where you choose the page size, margins and whether the background prints. Typing stays responsive while a large export runs; cancelling the file chooser changes nothing.
 
 ### Changed
 

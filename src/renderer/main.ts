@@ -380,6 +380,8 @@ lifecycle = new DocumentLifecycle({
 });
 documentCommands = new DocumentCommands({
   compare: () => installedFeatures.runCommand("file.compareOpen"),
+  exportHtml: () => installedFeatures.runCommand("file.exportHtml"),
+  exportPdf: () => installedFeatures.runCommand("file.exportPdf"),
   editor,
   onError: showUnexpectedError,
   onResult: (result) => {

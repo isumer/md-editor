@@ -46,6 +46,8 @@ describe("tab modules", () => {
       "file-open",
       "file-save",
       "file-save-as",
+      "file-export-html",
+      "file-export-pdf",
       "file-compare-open",
     ]);
   });

@@ -223,6 +223,7 @@ test("the preload exposes only the fixed named API", {
         "contributeMenu",
         "detachDocument",
         "draftDocument",
+        "exportDocument",
         "listDrafts",
         "listWorkspaceChildren",
         "loadSession",

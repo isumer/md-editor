@@ -9,6 +9,8 @@ export const MENU_ITEM_IDS = [
   "file-open",
   "file-save",
   "file-save-as",
+  "file-export-html",
+  "file-export-pdf",
   "file-compare-open",
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
@@ -18,6 +20,8 @@ export const MENU_COMMAND_IDS = [
   "file.open",
   "file.save",
   "file.saveAs",
+  "file.exportHtml",
+  "file.exportPdf",
   "file.compareOpen",
 ] as const;
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];

@@ -7,10 +7,12 @@ import {
   type ResolveAssetReply,
   type SettingsReadReply,
   type SettingsWriteReply,
+  type ExportWriteReply,
   type SessionReadReply,
   type SessionWriteReply,
   type WriteSessionRequest,
   type WriteSettingsRequest,
+  type WriteExportRequest,
 } from "../shared/ipc/ioControl";
 import { serviceError, toServiceError } from "../shared/ipc/result";
 import type { IoGrantTable } from "./grants";
@@ -72,6 +74,8 @@ export class IoControlHandler {
       void this.readSettings(data);
     } else if (data.type === "writeSettings") {
       void this.writeSettings(data);
+    } else if (data.type === "writeExport") {
+      void this.writeExport(data);
     } else if (data.type === "revokeGrant") {
       this.grants.revoke(data.windowId, data.handle);
     } else if (data.type === "revokeWindow") {
@@ -189,6 +193,21 @@ export class IoControlHandler {
         id: request.id,
         result: { ok: false, error: toServiceError(error) },
       } satisfies SettingsWriteReply);
+    }
+  }
+
+  private async writeExport(request: WriteExportRequest): Promise<void> {
+    try {
+      await this.files.writeExport(request.windowId, request.grant, request.bytes);
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: true, value: {} },
+      } satisfies ExportWriteReply);
+    } catch (error) {
+      this.parent.postMessage({
+        id: request.id,
+        result: { ok: false, error: toServiceError(error) },
+      } satisfies ExportWriteReply);
     }
   }
 }

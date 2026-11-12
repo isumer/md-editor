@@ -2,6 +2,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => {
   type ProtocolHandler = (request: { url: string }) => Response | Promise<Response>;
+  const appHandlers = new Map<string, Set<() => void>>();
+  const app = {
+    once: vi.fn((event: string, handler: () => void) => {
+      const handlers = appHandlers.get(event) ?? new Set();
+      handlers.add(handler);
+      appHandlers.set(event, handlers);
+    }),
+    removeListener: vi.fn((event: string, handler: () => void) => {
+      appHandlers.get(event)?.delete(handler);
+    }),
+    emit(event: string): void {
+      const handlers = [...(appHandlers.get(event) ?? [])];
+      appHandlers.delete(event);
+      for (const handler of handlers) handler();
+    },
+  };
   const protocolState = {
     handlers: new Map<string, ProtocolHandler>(),
     isProtocolHandled: vi.fn((scheme: string) => protocolState.handlers.has(scheme)),
@@ -12,6 +28,7 @@ const electron = vi.hoisted(() => {
 
   class BrowserWindowMock {
     static instances: BrowserWindowMock[] = [];
+    static loadWait: Promise<void> | null = null;
     static printError: Error | null = null;
     readonly options: Record<string, unknown>;
     readonly handlers = new Map<string, (...args: unknown[]) => void>();
@@ -23,6 +40,7 @@ const electron = vi.hoisted(() => {
       return Buffer.from("%PDF-1.7\n/Type /Page\n");
     });
     readonly loadURL = vi.fn(async (url: string) => {
+      await BrowserWindowMock.loadWait;
       const scheme = new URL(url).protocol.replace(/:$/, "");
       const handler = protocolState.handlers.get(scheme);
       if (!handler) {
@@ -52,10 +70,11 @@ const electron = vi.hoisted(() => {
     }
   }
 
-  return { BrowserWindowMock, protocolState };
+  return { app, appHandlers, BrowserWindowMock, protocolState };
 });
 
 vi.mock("electron", () => ({
+  app: electron.app,
   BrowserWindow: electron.BrowserWindowMock,
   protocol: electron.protocolState,
 }));
@@ -77,7 +96,9 @@ function request(overrides: Partial<PdfExportRequest> = {}): PdfExportRequest {
 
 beforeEach(() => {
   electron.BrowserWindowMock.instances.length = 0;
+  electron.BrowserWindowMock.loadWait = null;
   electron.BrowserWindowMock.printError = null;
+  electron.appHandlers.clear();
   electron.protocolState.handlers.clear();
   vi.clearAllMocks();
 });
@@ -141,6 +162,23 @@ describe("PDF export", () => {
     const window = electron.BrowserWindowMock.instances[0];
 
     expect(Buffer.from(bytes).subarray(0, 5).toString()).toBe("%PDF-");
+    expect(window?.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("AC-R6-05: destroys an active PDF window before application quit", async () => {
+    let finishLoad: (() => void) | undefined;
+    const loading = new Promise<void>((resolve) => {
+      finishLoad = resolve;
+    });
+    electron.BrowserWindowMock.loadWait = loading;
+    const operation = createPdfBytes(request());
+    const window = electron.BrowserWindowMock.instances[0];
+
+    electron.app.emit("before-quit");
+    expect(window?.destroy).toHaveBeenCalledOnce();
+
+    finishLoad?.();
+    await operation;
     expect(window?.destroy).toHaveBeenCalledOnce();
   });
 

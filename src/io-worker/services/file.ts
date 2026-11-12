@@ -1,7 +1,7 @@
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 
-import { atomicWrite } from "../../node-shared/atomicWrite";
+import { atomicWrite, atomicWriteBytes } from "../../node-shared/atomicWrite";
 import { resolvePathUnderRoot } from "../../node-shared/pathPolicy";
 import type {
   AttachDocumentInput,
@@ -186,6 +186,16 @@ export class IoFileService {
       await atomicWrite(filePath, document.toString());
       this.drafts.get(windowId)?.delete(input.docId);
       return { name: path.basename(filePath), version: input.version };
+    } catch (error) {
+      return fileError(error, filePath);
+    }
+  }
+
+  async writeExport(windowId: number, grant: string, bytes: Uint8Array): Promise<void> {
+    const filePath = this.grants.resolve(windowId, grant);
+    try {
+      await ensureWritable(filePath);
+      await atomicWriteBytes(filePath, bytes);
     } catch (error) {
       return fileError(error, filePath);
     }

@@ -9,6 +9,10 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-s": "file.save",
   "Mod-Shift-s": "file.saveAs",
   "Mod-Shift-c": "file.compareOpen",
+  // On win32 AltGr arrives as Ctrl+Alt+<char> and stays text (chordForEvent),
+  // so these chords fire only on a deliberate Ctrl+Alt or on macOS Cmd+Alt.
+  "Mod-Alt-h": "file.exportHtml",
+  "Mod-Alt-p": "file.exportPdf",
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",
   "Mod-y": "redo",

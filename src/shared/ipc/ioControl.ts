@@ -76,6 +76,14 @@ export interface WriteSettingsRequest {
   settings: unknown;
 }
 
+export interface WriteExportRequest {
+  type: "writeExport";
+  id: string;
+  windowId: number;
+  grant: string;
+  bytes: Uint8Array;
+}
+
 export type IoControlRequest =
   | RegisterGrantRequest
   | RevokeGrantRequest
@@ -85,7 +93,8 @@ export type IoControlRequest =
   | ReadSessionRequest
   | WriteSessionRequest
   | ReadSettingsRequest
-  | WriteSettingsRequest;
+  | WriteSettingsRequest
+  | WriteExportRequest;
 
 export interface RegisteredGrant {
   canonicalPath: string;
@@ -139,6 +148,13 @@ export interface SettingsReadReply {
 }
 
 export interface SettingsWriteReply {
+  id: string;
+  result:
+    | { ok: true; value: Record<string, never> }
+    | { ok: false; error: ControlError };
+}
+
+export interface ExportWriteReply {
   id: string;
   result:
     | { ok: true; value: Record<string, never> }
@@ -334,11 +350,19 @@ function isWriteSettings(value: unknown): value is WriteSettingsRequest {
     !Array.isArray(request["settings"]);
 }
 
+function isWriteExport(value: unknown): value is WriteExportRequest {
+  const request = exactData(value, ["type", "id", "windowId", "grant", "bytes"]);
+  return request !== null && request["type"] === "writeExport" &&
+    validId(request["id"]) && validWindowId(request["windowId"]) &&
+    validHandle(request["grant"]) && request["bytes"] instanceof Uint8Array &&
+    request["bytes"].byteLength <= MAX_SESSION_TEXT_LENGTH;
+}
+
 export function isIoControlRequest(value: unknown): value is IoControlRequest {
   return isRegister(value) || isRevokeGrant(value) ||
     isWindowMessage(value, "revokeWindow") || isWindowMessage(value, "attachPort") ||
     isResolveAsset(value) || isReadSession(value) || isWriteSession(value) ||
-    isReadSettings(value) || isWriteSettings(value);
+    isReadSettings(value) || isWriteSettings(value) || isWriteExport(value);
 }
 
 export function controlRequestId(value: unknown): string | null {
@@ -434,6 +458,12 @@ export function isSettingsReadReply(value: unknown): value is SettingsReadReply 
 }
 
 export function isSettingsWriteReply(value: unknown): value is SettingsWriteReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], (candidate) => exactData(candidate, []) !== null);
+}
+
+export function isExportWriteReply(value: unknown): value is ExportWriteReply {
   const reply = exactData(value, ["id", "result"]);
   return reply !== null && validId(reply["id"]) &&
     validResult(reply["result"], (candidate) => exactData(candidate, []) !== null);

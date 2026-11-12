@@ -46,6 +46,16 @@ describe("atomicWrite", () => {
     await expect(fs.readFile(target, "utf8")).resolves.toBe("replacement");
   });
 
+  it("AC-R6-01 AC-R6-03: writes binary export bytes atomically", async () => {
+    const directory = await temporaryDirectory();
+    const target = path.join(directory, "document.pdf");
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0, 255]);
+
+    await atomicWrite(target, bytes);
+
+    await expect(fs.readFile(target)).resolves.toEqual(Buffer.from(bytes));
+  });
+
   it("AC-R5-03: keeps the original and removes the temporary file when writing fails", async () => {
     const directory = await temporaryDirectory();
     const target = path.join(directory, "document.md");
@@ -155,7 +165,10 @@ describe("atomicWrite", () => {
                 new Promise<void>((resolve) => setTimeout(resolve, 25)),
               ]);
             }
-            temporaryContent.set(filePath, content);
+            temporaryContent.set(
+              filePath,
+              typeof content === "string" ? content : Buffer.from(content).toString("utf8"),
+            );
           },
           async sync() {},
           async close() {},

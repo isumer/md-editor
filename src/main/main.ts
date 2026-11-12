@@ -34,6 +34,7 @@ import { createWindow, setMainWindow } from "./app/window";
 import { GrantTable } from "./grants/grantTable";
 import { createIoWorkerSupervisor } from "./io/ioWorker";
 import { registerFileIpcHandlers } from "./ipc/file";
+import { registerExportIpcHandler } from "./ipc/export";
 import { openExternalBackstop, registerLinkIpcHandler } from "./ipc/link";
 import { registerMenuIpcHandler } from "./ipc/menu";
 import { registerSessionIpcHandler } from "./ipc/session";
@@ -41,6 +42,7 @@ import { registerSettingsIpcHandler } from "./ipc/settings";
 import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
+import { ExportService } from "./export/service";
 import { WorkspaceService } from "./services/workspace";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 
@@ -67,6 +69,7 @@ const ioWorker = createIoWorkerSupervisor(
 );
 const fileDialogs = new FileDialogs();
 const fileService = new DocumentGrantService(grants, fileDialogs, ioWorker);
+const exportService = new ExportService(grants, ioWorker);
 const workspaceService = new WorkspaceService(fileDialogs, fileService);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
@@ -154,6 +157,7 @@ async function attachIoPort(window: BrowserWindow): Promise<void> {
 }
 
 registerFileIpcHandlers(fileService);
+registerExportIpcHandler(exportService);
 registerLinkIpcHandler();
 registerOpenRequestIpcHandler(openRequests);
 registerMenuIpcHandler(menuContributions);
