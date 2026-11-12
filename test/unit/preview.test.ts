@@ -561,6 +561,34 @@ describe("preview render flow", () => {
     clearMarks.mockRestore();
   });
 
+  it("AC-PERF-11: marks each first-preview main-thread phase", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      complete: true,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-sanitize-start",
+      "preview-sanitize-end",
+      "preview-rewrite-start",
+      "preview-rewrite-end",
+      "preview-dom-start",
+      "preview-dom-end",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
   it("AC-PERF-10: samples one append timing in every 64 batches", () => {
     const clearMeasures = vi.spyOn(performance, "clearMeasures");
     const measure = vi.spyOn(performance, "measure");

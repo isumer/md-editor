@@ -60,6 +60,8 @@ interface DiffInput {
 type Gap = readonly [left: LineRange, right: LineRange];
 const MAX_EDIT_DISTANCE = 512;
 const MAX_WORK = 1_000_000;
+const ALIGNED_SCAN_MIN_LINES = 100_000;
+const ALIGNED_SCAN_MAX_LINES = MAX_WORK * 2;
 
 // Scans back from the end: a regex here is quadratic on a long inner blank run.
 function withoutTrailingBlanks(line: string): string {
@@ -364,12 +366,69 @@ function appendMiddle(
   ]) || limited;
 }
 
+function alignedSparseDiff(input: DiffInput): LineDiffResult | undefined {
+  const { left, right, options } = input;
+  if (
+    left.length !== right.length ||
+    left.length < ALIGNED_SCAN_MIN_LINES ||
+    left.length > ALIGNED_SCAN_MAX_LINES
+  ) {
+    return undefined;
+  }
+  const hunks: DiffHunk[] = [];
+  let unchangedStart = 0;
+  let changedCount = 0;
+  let changes: ChangedLine[] = [];
+  const changeLimit = Math.max(MAX_EDIT_DISTANCE, left.length >>> 4);
+  for (let index = 0; index < left.length; index += 1) {
+    const leftLine = left[index] as string;
+    const rightLine = right[index] as string;
+    if (normalized(leftLine, options) !== normalized(rightLine, options)) {
+      if (changes.length === 0) {
+        appendUnchanged(
+          hunks,
+          unchangedStart + 1,
+          unchangedStart + 1,
+          index - unchangedStart,
+        );
+      }
+      changes.push({
+        kind: "modified",
+        leftLineNumber: index + 1,
+        rightLineNumber: index + 1,
+        left: leftLine,
+        right: rightLine,
+      });
+      changedCount += 1;
+      if (changedCount > changeLimit) return undefined;
+      continue;
+    }
+    if (changes.length > 0) {
+      hunks.push({ kind: "change", lines: changes });
+      changes = [];
+      unchangedStart = index;
+    }
+  }
+  if (changes.length > 0) hunks.push({ kind: "change", lines: changes });
+  else {
+    appendUnchanged(
+      hunks,
+      unchangedStart + 1,
+      unchangedStart + 1,
+      left.length - unchangedStart,
+    );
+  }
+  return { hunks, limited: left.length > MAX_WORK };
+}
+
 export function diffLines(
   left: readonly string[],
   right: readonly string[],
   options: LineDiffOptions,
 ): LineDiffResult {
   const input = { left, right, options };
+  const aligned = alignedSparseDiff(input);
+  if (aligned) return aligned;
   const equal = (leftIndex: number, rightIndex: number): boolean =>
     normalized(left[leftIndex] as string, options) ===
     normalized(right[rightIndex] as string, options);

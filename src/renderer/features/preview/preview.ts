@@ -50,6 +50,7 @@ const SECTION_PAGE_LIMIT = 5;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
 let appendMeasureCount = 0;
+let measureNextPreviewBlock = false;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
@@ -108,7 +109,25 @@ function updateBlock(
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
-  element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
+  const measurePhases = measureNextPreviewBlock;
+  measureNextPreviewBlock = false;
+  if (measurePhases) {
+    performance.mark("preview-sanitize-start");
+  }
+  const sanitized = sanitizeRenderedHtml(block.html);
+  if (measurePhases) {
+    performance.mark("preview-sanitize-end");
+    performance.mark("preview-rewrite-start");
+  }
+  const rewritten = wiring.rewriteHtml(sanitized);
+  if (measurePhases) {
+    performance.mark("preview-rewrite-end");
+    performance.mark("preview-dom-start");
+  }
+  element.innerHTML = rewritten;
+  if (measurePhases) {
+    performance.mark("preview-dom-end");
+  }
 }
 
 function appendBlocks(
@@ -153,6 +172,8 @@ function replaceBlocks(
   elements.clear();
   wiring.preview.replaceChildren();
   resetLayout(layout);
+  // Record only the first block. Per-block marks would add work to large fills.
+  measureNextPreviewBlock = true;
   return appendBlocks(blocks, version, shifts, wiring, elements, layout, budget);
 }
 

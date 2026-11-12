@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Performance criteria share one generated fixture and reporting helpers. */
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -100,41 +101,38 @@ interface LongAnimationScript {
   sourceURL: string;
 }
 
-async function installLongTaskProbe(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const probe: LongTaskProbe = { longtasks: [], marks: [], frames: [] };
-    (window as unknown as { __longTaskProbe?: LongTaskProbe }).__longTaskProbe = probe;
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        if (entry.entryType === "longtask") {
-          probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
-        } else if (entry.entryType === "mark") {
-          probe.marks.push({ name: entry.name, start: entry.startTime });
-        } else if (entry.entryType === "long-animation-frame") {
-          const frame = entry as PerformanceEntry & {
-            blockingDuration: number;
-            renderStart: number;
-            styleAndLayoutStart: number;
-            scripts: LongAnimationScript[];
-          };
-          probe.frames.push({
-            start: frame.startTime,
-            duration: frame.duration,
-            blockingDuration: frame.blockingDuration,
-            renderStart: frame.renderStart,
-            styleAndLayoutStart: frame.styleAndLayoutStart,
-            scripts: frame.scripts.map((script) => ({
-              duration: script.duration,
-              forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
-              invoker: script.invoker,
-              sourceFunctionName: script.sourceFunctionName,
-              sourceURL: script.sourceURL,
-            })),
-          });
-        }
+function beginLongTaskProbe(): void {
+  const probe: LongTaskProbe = { longtasks: [], marks: [], frames: [] };
+  (window as unknown as { __longTaskProbe?: LongTaskProbe }).__longTaskProbe = probe;
+  new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (entry.entryType === "longtask") {
+        probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
+      } else if (entry.entryType === "mark") {
+        probe.marks.push({ name: entry.name, start: entry.startTime });
+      } else if (entry.entryType === "long-animation-frame") {
+        const frame = entry as PerformanceEntry & LongAnimationFrame;
+        probe.frames.push({
+          start: frame.startTime,
+          duration: frame.duration,
+          blockingDuration: frame.blockingDuration,
+          renderStart: frame.renderStart,
+          styleAndLayoutStart: frame.styleAndLayoutStart,
+          scripts: frame.scripts.map((script) => ({
+            duration: script.duration,
+            forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+            invoker: script.invoker,
+            sourceFunctionName: script.sourceFunctionName,
+            sourceURL: script.sourceURL,
+          })),
+        });
       }
-    }).observe({ entryTypes: ["longtask", "mark", "long-animation-frame"] });
-  });
+    }
+  }).observe({ entryTypes: ["longtask", "mark", "long-animation-frame"] });
+}
+
+async function startLongTaskProbe(page: Page): Promise<void> {
+  await page.evaluate(beginLongTaskProbe);
 }
 
 function frameDiagnostics(
@@ -192,6 +190,48 @@ function openTaskDiagnostics(
     `frames=[${frameDiagnostics(largest, frames)}]`;
 }
 
+function phaseDuration(
+  marks: readonly { name: string; start: number }[],
+  startName: string,
+  endName: string,
+): number | undefined {
+  const start = marks.find((mark) => mark.name === startName)?.start;
+  const end = marks.find((mark) => mark.name === endName)?.start;
+  return start === undefined || end === undefined ? undefined : end - start;
+}
+
+function phaseSummary(
+  marks: readonly { name: string; start: number }[],
+): string {
+  const phases = [
+    ["editable", "open-20mb-start", "open-20mb-editable"],
+    ["firstPreview", "open-20mb-start", "open-20mb-first-preview"],
+    ["warm", "preview-sanitize-warm-start", "preview-sanitize-warm-end"],
+    ["sanitize", "preview-sanitize-start", "preview-sanitize-end"],
+    ["rewrite", "preview-rewrite-start", "preview-rewrite-end"],
+    ["dom", "preview-dom-start", "preview-dom-end"],
+    ["apply", "preview-apply-start", "preview-apply-end"],
+  ] as const;
+  return phases.map(([label, start, end]) => {
+    const duration = phaseDuration(marks, start, end);
+    return `${label}=${duration === undefined ? "missing" : duration.toFixed(1)}ms`;
+  }).join(" ");
+}
+
+function markedFrameDiagnostics(
+  marks: readonly { name: string; start: number }[],
+  frames: readonly LongAnimationFrame[],
+  startName: string,
+  endName: string,
+): string {
+  const start = marks.find((mark) => mark.name === startName)?.start;
+  const end = marks.find((mark) => mark.name === endName)?.start;
+  if (start === undefined || end === undefined) {
+    return "window-missing";
+  }
+  return frameDiagnostics({ start, duration: end - start }, frames) || "none";
+}
+
 async function openLargeThroughMenu(
   application: Awaited<ReturnType<typeof launchEditor>>["application"],
   page: Page,
@@ -219,8 +259,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
   const firstLine = (await fs.readFile(large20, "utf8")).split("\n")[0] ?? "";
   const { application, page } = await launchEditor();
   try {
-    await installLongTaskProbe(page);
-    await page.reload();
+    await startLongTaskProbe(page);
     await expect(page.getByTestId("editor").locator(".cm-content")).toBeVisible();
     await openLargeThroughMenu(application, page, large20);
     await expect(page.getByTestId("editor").locator(".cm-content")).toContainText(
@@ -251,6 +290,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
       `max=${Math.max(...afterOpen.map((entry) => entry.duration), 0).toFixed(1)} ms ` +
       `blocks=${String(probe.blocks)}`,
     );
+    console.log(`AC-PERF-10 open attribution: ${diagnostics}`);
     expect(probe.blocks).toBeGreaterThan(1);
     expect(
       afterOpen.filter((entry) => entry.duration >= 100),
@@ -383,6 +423,8 @@ interface ScrollProbe {
   done: boolean;
   frames: number[];
   longtasks: number[];
+  loafs: LongAnimationFrame[];
+  scrollSteps: number[];
 }
 
 async function startScrollProbe(page: Page): Promise<void> {
@@ -392,6 +434,8 @@ async function startScrollProbe(page: Page): Promise<void> {
       done: false,
       frames: [] as number[],
       longtasks: [] as number[],
+      loafs: [] as LongAnimationFrame[],
+      scrollSteps: [] as number[],
     };
     (window as unknown as { __scrollProbe?: ScrollProbe }).__scrollProbe = probe;
     new PerformanceObserver((list) => {
@@ -399,6 +443,25 @@ async function startScrollProbe(page: Page): Promise<void> {
         probe.longtasks.push(entry.duration);
       }
     }).observe({ type: "longtask" });
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const frame = entry as PerformanceEntry & LongAnimationFrame;
+        probe.loafs.push({
+          start: frame.startTime,
+          duration: frame.duration,
+          blockingDuration: frame.blockingDuration,
+          renderStart: frame.renderStart,
+          styleAndLayoutStart: frame.styleAndLayoutStart,
+          scripts: frame.scripts.map((script) => ({
+            duration: script.duration,
+            forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+            invoker: script.invoker,
+            sourceFunctionName: script.sourceFunctionName,
+            sourceURL: script.sourceURL,
+          })),
+        });
+      }
+    }).observe({ type: "long-animation-frame" });
     let previous = 0;
     const tick = (time: number): void => {
       if (previous > 0) {
@@ -429,7 +492,9 @@ async function flingPreview(page: Page): Promise<ScrollProbe> {
         probe.done = true;
         return;
       }
+      const stepStarted = performance.now();
       preview.scrollTop += 400;
+      probe.scrollSteps.push(performance.now() - stepStarted);
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -447,7 +512,7 @@ async function flingPreview(page: Page): Promise<ScrollProbe> {
     }
     probe.active = false;
     return { active: probe.active, done: probe.done, frames: probe.frames,
-      longtasks: probe.longtasks };
+      longtasks: probe.longtasks, loafs: probe.loafs, scrollSteps: probe.scrollSteps };
   });
 }
 
@@ -460,7 +525,12 @@ async function expectSmoothScroll(page: Page, label: string): Promise<void> {
     `maxFrame=${Math.max(...probe.frames, 0).toFixed(1)}ms ` +
     `frames>32ms=${String(slowFrames.length)} ` +
     `longtasks=${String(probe.longtasks.length)} ` +
-    `longtaskDurations=[${distribution(probe.longtasks)}]`,
+    `longtaskDurations=[${distribution(probe.longtasks)}] ` +
+    `maxScrollStep=${Math.max(...probe.scrollSteps, 0).toFixed(1)}ms`,
+  );
+  console.log(
+    `${label} LoAF attribution: ` +
+    `${frameDiagnostics({ start: 0, duration: Number.MAX_SAFE_INTEGER }, probe.loafs) || "none"}`,
   );
   expect(slowFrames).toEqual([]);
   expect(probe.longtasks).toEqual([]);
@@ -515,12 +585,14 @@ test("AC-PERF-11: a 20 MB document is editable and shows its first screen in tim
   const firstLine = (await fs.readFile(large20, "utf8")).split("\n")[0] ?? "";
   const { application, page } = await launchEditor();
   try {
+    await startLongTaskProbe(page);
     await expect(page.getByTestId("editor").locator(".cm-content")).toBeVisible();
     await stubOpenDialog(application, large20);
     await expect.poll(() => application.evaluate(({ Menu }) =>
       Boolean(Menu.getApplicationMenu()?.getMenuItemById("file-open"))),
     { timeout: 5_000 }).toBe(true);
     // The clock starts at the open request, not at launch.
+    await page.evaluate(() => performance.mark("open-20mb-start"));
     const started = Date.now();
     const clicked = await application.evaluate(({ Menu }) => {
       const item = Menu.getApplicationMenu()?.getMenuItemById("file-open");
@@ -533,15 +605,40 @@ test("AC-PERF-11: a 20 MB document is editable and shows its first screen in tim
     expect(clicked).toBe(true);
     const editor = page.getByTestId("editor").locator(".cm-content");
     await expect(editor).toContainText(firstLine, { timeout: 10_000 });
+    await page.evaluate(() => performance.mark("open-20mb-editable"));
     const editableAfter = Date.now() - started;
     await expect(page.getByTestId("preview").locator("h1").first()).toHaveText(
       firstLine.replace(/^#+\s*/u, ""),
       { timeout: 10_000 },
     );
+    await page.evaluate(() => performance.mark("open-20mb-first-preview"));
     const previewAfter = Date.now() - started;
+    const probe = await page.evaluate(() => {
+      const value = (window as unknown as { __longTaskProbe?: LongTaskProbe })
+        .__longTaskProbe;
+      const retainedMarks = performance.getEntriesByType("mark").map((entry) => ({
+        name: entry.name,
+        start: entry.startTime,
+      }));
+      return {
+        longtasks: value?.longtasks ?? [],
+        marks: [...(value?.marks ?? []), ...retainedMarks],
+        frames: value?.frames ?? [],
+      };
+    });
     console.log(
       `AC-PERF-11 20MB open: editable=${String(editableAfter)}ms ` +
       `firstPreview=${String(previewAfter)}ms`,
+    );
+    console.log(`AC-PERF-11 phases: ${phaseSummary(probe.marks)}`);
+    console.log(
+      `AC-PERF-11 LoAF attribution: ` +
+      markedFrameDiagnostics(
+        probe.marks,
+        probe.frames,
+        "open-20mb-start",
+        "open-20mb-first-preview",
+      ),
     );
     expect(editableAfter).toBeLessThan(1_500);
     expect(previewAfter).toBeLessThan(1_000);
