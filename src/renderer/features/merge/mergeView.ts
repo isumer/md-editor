@@ -1,9 +1,5 @@
 import type { ChunkChoice, ChunkKind } from "../../../shared/merge/mergeChunks";
-import {
-  mergeCounts,
-  nextChunk,
-  previousChunk,
-} from "../../../shared/merge/mergeChunks";
+import { nextChunk, previousChunk } from "../../../shared/merge/mergeChunks";
 import { formatMessage } from "../../core/messages";
 import type {
   MergeEditorState,
@@ -12,8 +8,11 @@ import type {
 import {
   applyMarkerChanges,
   createMarkerMergeState,
+  markerChunkIsValid,
   markerMergeState,
+  positionedMarkerMerge,
   resolveMarkerConflict,
+  type ActiveMarkerMergeState,
   type MarkerMergeState,
 } from "./markerMergeState";
 
@@ -40,6 +39,7 @@ interface MergeShell {
   readonly root: HTMLElement;
   readonly counter: HTMLElement;
   readonly counts: HTMLElement;
+  rendered: ActiveMarkerMergeState | null;
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(
@@ -85,14 +85,14 @@ export class MergeView {
       return;
     }
     if (this.activeId === documentId && session.shell !== null) {
-      this.refresh(session.shell, merge);
+      this.refreshChanged(session.shell, merge);
       return;
     }
     this.hide();
     const shell = session.shell ?? this.build(documentId, merge);
     this.sessions.set(documentId, { ...session, shell });
     this.show(documentId, shell);
-    this.refresh(shell, merge);
+    this.refreshChanged(shell, merge);
   }
 
   stateChanged(documentId: string | null, state: MergeEditorState): void {
@@ -100,7 +100,7 @@ export class MergeView {
     const session = this.sessions.get(documentId);
     const merge = markerMergeState(state);
     if (session?.shell !== null && session?.shell !== undefined && merge !== null) {
-      this.refresh(session.shell, merge);
+      this.refreshChanged(session.shell, merge);
     }
   }
 
@@ -135,7 +135,7 @@ export class MergeView {
     const centre = this.pane("result", "");
     centre.append(this.options.editorHost);
     root.append(centre, this.pane("right", merge.right));
-    return { buttons, counter, counts, root };
+    return { buttons, counter, counts, rendered: null, root };
   }
 
   private show(documentId: string, shell: MergeShell): void {
@@ -231,43 +231,55 @@ export class MergeView {
     const merge = markerMergeState(this.options.editor.state);
     if (merge === null) return;
     const offset = this.options.editor.state.selection.main.head;
+    const positioned = positionedMarkerMerge(merge);
     const candidates = (["change", "conflict"] as const)
-      .map((kind) => this.chunkIndex(merge, offset, kind, direction))
+      .map((kind) => this.chunkIndex(positioned, offset, kind, direction))
       .filter((index): index is number => index !== null);
     const index = direction === 1 ? Math.min(...candidates) : Math.max(...candidates);
-    const position = merge.merge.chunks[index]?.start;
+    const position = positioned.chunks[index]?.start;
     if (position !== undefined) {
       this.options.editor.dispatch({ selection: { anchor: position }, scrollIntoView: true });
     }
   }
 
   private chunkIndex(
-    merge: MarkerMergeState,
+    merge: MarkerMergeState["merge"],
     offset: number,
     kind: ChunkKind,
     direction: 1 | -1,
   ): number | null {
     return direction === 1
-      ? nextChunk(merge.merge, offset, kind)
-      : previousChunk(merge.merge, offset, kind);
+      ? nextChunk(merge, offset, kind)
+      : previousChunk(merge, offset, kind);
   }
 
-  private refresh(shell: MergeShell, merge: MarkerMergeState): void {
-    const counts = mergeCounts(merge.merge);
-    const count = counts.conflictsLeft;
+  private refreshChanged(shell: MergeShell, merge: ActiveMarkerMergeState): void {
+    if (shell.rendered === merge) return;
+    if (shell.rendered?.counts !== merge.counts) this.refreshCounts(shell, merge);
+    for (const index of merge.changed) this.refreshButtons(shell, merge, index);
+    shell.rendered = merge;
+  }
+
+  private refreshCounts(shell: MergeShell, merge: ActiveMarkerMergeState): void {
+    const count = merge.counts.conflictsLeft;
     shell.counter.textContent = formatMessage(
       count === 1 ? "merge.conflictLeft" : "merge.conflictsLeft",
       { count: String(count) },
     );
     shell.counts.textContent = formatMessage("merge.counts", {
-      changes: String(counts.changesLeft),
-      conflicts: String(counts.conflictsLeft),
-      changeLabel: counts.changesLeft === 1 ? "change" : "changes",
-      conflictLabel: counts.conflictsLeft === 1 ? "conflict" : "conflicts",
+      changes: String(merge.counts.changesLeft),
+      conflicts: String(merge.counts.conflictsLeft),
+      changeLabel: merge.counts.changesLeft === 1 ? "change" : "changes",
+      conflictLabel: merge.counts.conflictsLeft === 1 ? "conflict" : "conflicts",
     });
-    shell.buttons.forEach((buttons, index) => {
-      const disabled = merge.merge.resolved[index] === true || merge.valid[index] !== true;
-      for (const button of buttons) button.disabled = disabled;
-    });
+  }
+
+  private refreshButtons(
+    shell: MergeShell,
+    merge: ActiveMarkerMergeState,
+    index: number,
+  ): void {
+    const disabled = merge.merge.resolved[index] === true || !markerChunkIsValid(merge, index);
+    for (const button of shell.buttons[index] ?? []) button.disabled = disabled;
   }
 }

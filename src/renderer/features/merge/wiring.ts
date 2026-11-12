@@ -31,7 +31,6 @@ function markerState(result: MergeWorkerResult) {
     left: result.left,
     merge: createMergeState(result.chunks),
     right: result.right,
-    valid: result.chunks.map(() => true),
   };
 }
 

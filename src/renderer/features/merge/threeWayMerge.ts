@@ -242,6 +242,5 @@ export function createThreeWayMergeState(
     left,
     merge: createMergeState(result.chunks),
     right,
-    valid: result.chunks.map(() => true),
   };
 }

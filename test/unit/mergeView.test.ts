@@ -179,6 +179,21 @@ describe("merge view", () => {
     expect(counter?.textContent).toBe("2 conflicts left");
   });
 
+  it("selection-only updates do not refresh merge counters or buttons", () => {
+    const harness = createHarness();
+    detect(harness);
+    harness.mergeView.activate("one", harness.state);
+    const root = document.querySelector('[data-testid="merge-view"]');
+    const observer = new MutationObserver(() => undefined);
+    if (root !== null) observer.observe(root, { attributes: true, childList: true, subtree: true });
+
+    harness.state = harness.state.update({ selection: { anchor: 1 } }).state;
+    harness.mergeView.stateChanged("one", harness.state);
+
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+  });
+
   it("forgets the active session and hides the merge view", () => {
     const harness = createHarness();
     detect(harness);
