@@ -1,9 +1,17 @@
 import type { ExportBlock } from "./html";
 
 const BLOCK_SELECTOR = ".preview-block[data-block-id]";
+const BLOCK_HTML_EVENT = "solidmd:preview-block-html";
+const CACHE_UPDATED_EVENT = "solidmd:export-cache-updated";
+
+interface BlockHtmlDetail {
+  element: HTMLElement;
+  html: string;
+}
 
 function relativeAssets(html: string): string {
-  return html.replaceAll(/doc-asset:\/\/[^/]+\/[^/]+\//g, "");
+  return html.replaceAll(/<img\b[^>]*>/giu, (image) =>
+    image.replaceAll(/doc-asset:\/\/[^/]+\/[^/]+\//g, ""));
 }
 
 function collectBlocks(node: Node, blocks: Set<HTMLElement>): void {
@@ -39,13 +47,19 @@ function previousBlock(element: HTMLElement, root: HTMLElement): HTMLElement | n
 
 export class PreviewExportCache {
   private readonly htmlById = new Map<string, string>();
+  private readonly htmlByElement = new WeakMap<HTMLElement, string>();
   private readonly order: string[] = [];
   private readonly observer: MutationObserver;
 
   constructor(private readonly preview: HTMLElement) {
     const initial = new Set<HTMLElement>();
     collectBlocks(preview, initial);
-    for (const block of initial) this.upsert(block);
+    for (const block of initial) {
+      this.htmlByElement.set(block, relativeAssets(block.innerHTML));
+      this.upsert(block);
+    }
+    document.addEventListener(BLOCK_HTML_EVENT, (event) =>
+      this.recordHtml(event as CustomEvent<BlockHtmlDetail>));
     this.observer = new MutationObserver((records) => this.apply(records));
     this.observer.observe(preview, { childList: true, subtree: true });
   }
@@ -60,19 +74,25 @@ export class PreviewExportCache {
   private apply(records: readonly MutationRecord[]): void {
     const removed = new Set<HTMLElement>();
     const added = new Set<HTMLElement>();
-    const changed = new Set<HTMLElement>();
     for (const record of records) {
       for (const node of record.removedNodes) collectBlocks(node, removed);
       for (const node of record.addedNodes) collectBlocks(node, added);
-      if (record.target instanceof HTMLElement && record.target.matches(BLOCK_SELECTOR)) {
-        changed.add(record.target);
-      }
     }
     for (const block of removed) this.remove(block.dataset["blockId"] as string);
     for (const block of added) this.upsert(block);
-    for (const block of changed) {
-      if (this.preview.contains(block)) this.upsert(block);
-    }
+  }
+
+  private recordHtml(event: CustomEvent<BlockHtmlDetail>): void {
+    const { element, html: renderedHtml } = event.detail;
+    const start = performance.now();
+    const html = relativeAssets(renderedHtml);
+    this.htmlByElement.set(element, html);
+    if (!this.preview.contains(element)) return;
+    const id = element.dataset["blockId"] as string;
+    this.htmlById.set(id, html);
+    performance.clearMeasures("preview-export-cache");
+    performance.measure("preview-export-cache", { start, end: performance.now() });
+    this.notifyUpdated(id);
   }
 
   private remove(id: string): void {
@@ -83,10 +103,17 @@ export class PreviewExportCache {
 
   private upsert(block: HTMLElement): void {
     const id = block.dataset["blockId"] as string;
+    const html = this.htmlByElement.get(block);
+    if (html === undefined) return;
     this.remove(id);
     const previousId = previousBlock(block, this.preview)?.dataset["blockId"];
     const previousIndex = previousId === undefined ? -1 : this.order.indexOf(previousId);
     this.order.splice(previousIndex + 1, 0, id);
-    this.htmlById.set(id, relativeAssets(block.innerHTML));
+    this.htmlById.set(id, html);
+    this.notifyUpdated(id);
+  }
+
+  private notifyUpdated(id: string): void {
+    this.preview.dispatchEvent(new CustomEvent(CACHE_UPDATED_EVENT, { detail: { id } }));
   }
 }

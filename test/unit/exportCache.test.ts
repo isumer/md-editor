@@ -12,8 +12,14 @@ function block(id: string, html: string): HTMLDivElement {
   return element;
 }
 
+function publish(element: HTMLElement, html: string): void {
+  document.dispatchEvent(new CustomEvent("solidmd:preview-block-html", {
+    detail: { element, html },
+  }));
+}
+
 describe("preview export cache", () => {
-  it("AC-R6-01 AC-R6-05: snapshots sanitised blocks without reading the live DOM", async () => {
+  it("AC-R6-01 AC-R6-05: updates snapshots without serialising preview mutations", async () => {
     const preview = document.createElement("div");
     const firstPage = document.createElement("div");
     const secondPage = document.createElement("div");
@@ -25,7 +31,13 @@ describe("preview export cache", () => {
     const cache = new PreviewExportCache(preview);
 
     first.innerHTML = "<h1>Updated</h1>";
+    Object.defineProperty(first, "innerHTML", {
+      configurable: true,
+      get: () => { throw new Error("The cache serialised a preview mutation"); },
+    });
+    publish(first, "<h1>Updated</h1>");
     const inserted = block("inserted", "<p>Inserted</p>");
+    publish(inserted, "<p>Inserted</p>");
     const emptySibling = document.createElement("div");
     emptySibling.append(document.createElement("span"));
     secondPage.prepend(emptySibling, inserted);
@@ -38,6 +50,23 @@ describe("preview export cache", () => {
       { id: "first", html: "<h1>Updated</h1>" },
       { id: "inserted", html: "<p>Inserted</p>" },
     ]);
+  });
+
+  it("AC-R6-01: rewrites asset URLs only inside image tags", () => {
+    const preview = document.createElement("div");
+    const rendered = block(
+      "one",
+      '<p>doc-asset://4/grant/assets/text.png</p>' +
+      '<img src="doc-asset://4/grant/assets/image.png">',
+    );
+    preview.append(rendered);
+
+    const cache = new PreviewExportCache(preview);
+
+    expect(cache.snapshot()).toEqual([{
+      id: "one",
+      html: '<p>doc-asset://4/grant/assets/text.png</p><img src="assets/image.png">',
+    }]);
   });
 
   it("AC-R6-01: ignores nested user data that resembles a preview block", () => {
@@ -53,5 +82,15 @@ describe("preview export cache", () => {
       id: "outer",
       html: '<div class="preview-block" data-block-id="user-content">Text</div>',
     }]);
+  });
+
+  it("AC-R6-01: ignores added blocks without preview-produced HTML", async () => {
+    const preview = document.createElement("div");
+    const cache = new PreviewExportCache(preview);
+
+    preview.append(block("unreported", "<p>User-injected block</p>"));
+    await Promise.resolve();
+
+    expect(cache.snapshot()).toEqual([]);
   });
 });

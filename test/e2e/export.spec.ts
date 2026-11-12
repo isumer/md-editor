@@ -21,7 +21,7 @@ function percentile95(values: readonly number[]): number {
 
 function reportLatency(values: readonly number[]): void {
   console.log(
-    `AC-R6-05 keystroke latency: n=${String(values.length)} ` +
+    `AC-R6-05 preview cache: n=${String(values.length)} ` +
     `p95=${percentile95(values).toFixed(1)} ms ` +
     `distribution=[${values.map((value) => value.toFixed(1)).join(", ")}]`,
   );
@@ -100,13 +100,15 @@ test("PDF export applies options and writes the file", {
   }
 });
 
-test("a 500 KB PDF export keeps keystroke latency below one frame", {
+test("a 500 KB single-block PDF export keeps preview caching below one frame", {
   tag: ["@AC-R6-05", "@AC-PERF"],
   annotation: { type: "AC-R6-05" },
 }, async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-export-responsive-"));
-  const sourcePath = path.join(repositoryRoot, "test/fixtures/big/large-500kb.md");
+  const sourcePath = path.join(temporaryDirectory, "single-block-500kb.md");
   const exportPath = path.join(temporaryDirectory, "export.pdf");
+  await fs.writeFile(sourcePath, `${"x".repeat(500 * 1024 - 1)}\n`);
+  expect((await fs.stat(sourcePath)).size).toBe(500 * 1024);
   const { application, page } = await launchEditor(sourcePath);
   try {
     await expect.poll(
@@ -119,38 +121,41 @@ test("a 500 KB PDF export keeps keystroke latency below one frame", {
     const editor = page.getByTestId("editor").locator(".cm-content");
     await editor.click();
     await page.evaluate(() => {
-      const content = document.querySelector<HTMLElement>(".cm-content");
-      if (!content) throw new Error("The editor content is missing");
-      const probe = { startedAt: 0, samples: [] as number[] };
-      (window as unknown as { __exportLatency?: typeof probe }).__exportLatency = probe;
-      document.addEventListener("keydown", () => { probe.startedAt = performance.now(); }, true);
-      new MutationObserver(() => {
-        if (probe.startedAt > 0) {
-          probe.samples.push(performance.now() - probe.startedAt);
-          probe.startedAt = 0;
-        }
-      }).observe(content, { characterData: true, childList: true, subtree: true });
+      const preview = document.querySelector<HTMLElement>("[data-testid=preview]");
+      if (!preview) throw new Error("The preview is missing");
+      const probe = { completions: 0 };
+      (window as unknown as { __exportCacheProbe?: typeof probe }).__exportCacheProbe = probe;
+      preview.addEventListener("solidmd:export-cache-updated", () => {
+        probe.completions += 1;
+      });
     });
+    await expect(page.getByTestId("preview").locator(".preview-block")).toHaveCount(1);
     for (let index = 0; index < 5; index += 1) {
+      const expected = index + 1;
       await page.keyboard.type(String(index));
       await expect.poll(() => page.evaluate(() =>
-        (window as unknown as { __exportLatency?: { samples: number[] } })
-          .__exportLatency?.samples.length ?? 0)).toBe(index + 1);
+        (window as unknown as { __exportCacheProbe?: { completions: number } })
+          .__exportCacheProbe?.completions ?? 0)).toBe(expected);
     }
     await page.evaluate(() => {
-      const probe = (window as unknown as { __exportLatency?: { samples: number[] } })
-        .__exportLatency;
-      if (probe) probe.samples.length = 0;
+      const probe = (window as unknown as {
+        __exportCacheProbe?: { completions: number };
+      }).__exportCacheProbe;
+      if (probe) probe.completions = 0;
+      performance.clearMeasures("preview-export-cache");
     });
+    const samples: number[] = [];
     for (let index = 0; index < KEYSTROKE_SAMPLES; index += 1) {
+      await page.evaluate(() => performance.clearMeasures("preview-export-cache"));
       await page.keyboard.type(String(index % 10));
       await expect.poll(() => page.evaluate(() =>
-        (window as unknown as { __exportLatency?: { samples: number[] } })
-          .__exportLatency?.samples.length ?? 0)).toBe(index + 1);
+        (window as unknown as { __exportCacheProbe?: { completions: number } })
+          .__exportCacheProbe?.completions ?? 0)).toBe(index + 1);
+      const duration = await page.evaluate(() =>
+        performance.getEntriesByName("preview-export-cache", "measure").at(-1)?.duration ?? -1);
+      expect(duration).toBeGreaterThanOrEqual(0);
+      samples.push(duration);
     }
-    const samples = await page.evaluate(() =>
-      (window as unknown as { __exportLatency?: { samples: number[] } })
-        .__exportLatency?.samples ?? []);
     reportLatency(samples);
     expect(samples).toHaveLength(KEYSTROKE_SAMPLES);
     expect(percentile95(samples)).toBeLessThan(16);

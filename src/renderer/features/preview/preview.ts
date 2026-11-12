@@ -108,7 +108,11 @@ function updateBlock(
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
-  element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
+  const html = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
+  element.innerHTML = html;
+  document.dispatchEvent(new CustomEvent("solidmd:preview-block-html", {
+    detail: { element, html },
+  }));
 }
 
 function appendBlocks(
