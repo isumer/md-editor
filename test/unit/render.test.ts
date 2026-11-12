@@ -12,7 +12,7 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("```js\nconst answer = 42;\n```")).toContain("hljs");
   });
 
-  it("AC-PERF-12: reuses highlighting for repeated code", () => {
+  it("AC-PERF-11: reuses highlighting for repeated code", () => {
     const highlight = vi.spyOn(hljs, "highlight");
     const markdown = "```js\nconst cacheProbe = 'repeated';\n```";
 
@@ -22,7 +22,7 @@ describe("renderMarkdown", () => {
     expect(highlight).toHaveBeenCalledTimes(1);
   });
 
-  it("AC-PERF-12: evicts the oldest highlight after 64 entries", () => {
+  it("AC-PERF-11: evicts the oldest highlight after 64 entries", () => {
     const highlight = vi.spyOn(hljs, "highlight");
     const oldestSource = "const cacheProbeOldest = 0;\n";
 
@@ -37,7 +37,7 @@ describe("renderMarkdown", () => {
     ).toHaveLength(2);
   });
 
-  it("AC-PERF-12: does not retain code blocks larger than 64 KiB", () => {
+  it("AC-PERF-11: does not retain code blocks larger than 64 KiB", () => {
     const highlight = vi.spyOn(hljs, "highlight");
     const source = `${"x".repeat(64 * 1024)}\n`;
     const markdown = `\`\`\`plaintext\n${source}\`\`\``;
