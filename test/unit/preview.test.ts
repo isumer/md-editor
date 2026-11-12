@@ -5,8 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { RenderResponse } from "../../src/shared/workers/render";
 import {
   blockLine,
-  usesEagerPreviewLayout,
-  usesInitialEagerPreviewLayout,
   wireRenderWorker,
 } from "../../src/renderer/features/preview/preview";
 import { RenderScheduler } from "../../src/renderer/features/preview/renderScheduler";
@@ -188,7 +186,7 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-10: a large preview acknowledges the first background fill", () => {
+  it("AC-PERF-10: a large preview keeps the time budget and acknowledges once", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -236,54 +234,12 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(["new-1", "new-2", "new-3"]);
-    expect(frames).toHaveLength(0);
+    expect(frames).toHaveLength(1);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    frames[0]?.(16);
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 5,
     });
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it("AC-PERF-09: paces four background fill batches per frame", () => {
-    vi.useFakeTimers();
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frames.push(callback);
-      return frames.length;
-    });
-    const { worker, documents } = wiring();
-    const documentPreview = documents.getOrCreate("doc", 1);
-    const existing = document.createElement("div");
-    for (let index = 0; index < 513; index += 1) {
-      documentPreview.elements.set(`existing-${String(index)}`, existing);
-    }
-
-    for (let index = 0; index < 8; index += 1) {
-      send(worker, {
-        id: index + 1,
-        docId: "doc",
-        epoch: 1,
-        version: 1,
-        ok: true,
-        mode: "append",
-        blocks: [{
-          id: `new-${String(index)}`,
-          startLine: 513 + index,
-          endLine: 514 + index,
-          html: `<p>${String(index)}</p>`,
-        }],
-        fillToken: index,
-        complete: false,
-      });
-    }
-
-    expect(frames).toHaveLength(2);
-    expect(worker.postMessage).toHaveBeenCalledTimes(6);
-    for (const [index, frame] of frames.entries()) {
-      frame(16);
-      expect(worker.postMessage).toHaveBeenCalledTimes(index + 7);
-    }
-    expect(worker.postMessage).toHaveBeenCalledTimes(8);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -699,9 +655,9 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-09: groups 400 preview blocks per contained section", () => {
+  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 401 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -722,24 +678,12 @@ describe("preview render flow", () => {
     const sections = [...preview.querySelectorAll(".preview-section")];
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([400, 1]);
+      .toEqual([100, 1]);
     expect(sections.map((section) => section.querySelectorAll(".preview-page").length))
-      .toEqual([20, 1]);
+      .toEqual([5, 1]);
     expect([...sections[0]?.querySelectorAll(".preview-page") ?? []]
       .map((page) => page.querySelectorAll(".preview-block").length))
-      .toEqual(Array.from({ length: 20 }, () => 20));
-  });
-
-  it("AC-PERF-09: eagerly lays out only completed medium previews", () => {
-    expect(usesEagerPreviewLayout(999)).toBe(false);
-    expect(usesEagerPreviewLayout(1_000)).toBe(true);
-    expect(usesEagerPreviewLayout(3_000)).toBe(true);
-    expect(usesEagerPreviewLayout(3_001)).toBe(false);
-  });
-
-  it("AC-PERF-09: eagerly lays out only the initial large-preview region", () => {
-    expect(usesInitialEagerPreviewLayout(800)).toBe(true);
-    expect(usesInitialEagerPreviewLayout(801)).toBe(false);
+      .toEqual(Array.from({ length: 5 }, () => 20));
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {

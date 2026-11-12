@@ -316,8 +316,8 @@ body {
 /* Off-screen regions skip layout and paint but keep their space. Blocks are
    grouped into pages and pages into sections: content-visibility checks scale
    with the number of contained elements, so one wrapper per block makes
-   scrolling worse as the document grows. A section holds 20 pages of 20
-   blocks, so its estimate is 48,000px and a page's is 2,400px. */
+   scrolling worse as the document grows. A section holds 5 pages of 20
+   blocks, so its estimate is 12,000px and a page's is 2,400px. */
 .preview-page {
   content-visibility: auto;
   contain-intrinsic-size: auto 2400px;
@@ -325,12 +325,7 @@ body {
 
 .preview-section {
   content-visibility: auto;
-  contain-intrinsic-size: auto 48000px;
-}
-
-.preview-eager-layout {
-  content-visibility: visible;
-  contain: layout paint style;
+  contain-intrinsic-size: auto 12000px;
 }
 
 #preview pre {

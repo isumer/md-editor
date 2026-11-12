@@ -78,6 +78,7 @@ export class IoControlHandler {
     } else if (data.type === "writeSettings") {
       void this.writeSettings(data);
     } else if (data.type === "revokeGrant") {
+      this.workspaces.revokeRoot(data.windowId, data.handle);
       this.grants.revoke(data.windowId, data.handle);
     } else if (data.type === "revokeWindow") {
       this.grants.revokeWindow(data.windowId);

@@ -4,6 +4,7 @@ import { EditorState, Text } from "@codemirror/state";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatMessage } from "../../src/renderer/core/messages";
+import type { SettingsReadResponse } from "../../src/shared/ipc/settings";
 
 const ok = <T>(value: T) => ({ ok: true, value } as const);
 const failure = {
@@ -57,6 +58,15 @@ beforeEach(() => {
   api.createWorkspaceFile.mockResolvedValue(ok(undefined));
   api.deleteWorkspaceFile.mockResolvedValue(ok(undefined));
   api.renameWorkspaceFile.mockResolvedValue(ok(undefined));
+  api.loadSettings.mockResolvedValue(ok({
+    version: 1, theme: "system", fontSize: 14,
+    preview: { scrollSync: true, background: null },
+    editor: { wrap: true, tabSize: 2, background: null },
+    encoding: { default: "utf-8", lineEndings: "lf" },
+    updates: { enabled: true, lastCheckedAt: null },
+    ignore: [],
+  }));
+  api.saveSettings.mockResolvedValue(ok(undefined));
 });
 
 function fixture() {
@@ -110,7 +120,8 @@ describe("workspace sidebar", () => {
     const context = fixture();
     document.documentElement.dataset["sidebarTogglePending"] = "true";
 
-    await createSidebar(context);
+    const sidebar = await createSidebar(context);
+    sidebar.start();
 
     expect(context.elements.sidebar.hidden).toBe(true);
     expect(context.elements.workspace.classList.contains("sidebar-closed")).toBe(true);
@@ -129,7 +140,9 @@ describe("workspace sidebar", () => {
     sidebar.start();
     await vi.waitFor(() => expect(api.loadSettings).toHaveBeenCalled());
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      code: "KeyB", key: "b", ctrlKey: true,
+    }));
 
     expect(context.elements.sidebar.hidden).toBe(true);
     expect(context.elements.workspace.classList.contains("sidebar-closed")).toBe(true);
@@ -316,15 +329,32 @@ describe("workspace sidebar", () => {
     api.loadSettings.mockReturnValueOnce(new Promise((resolve) => {
       resolveSettings = resolve;
     }));
+    const loadedSettings: SettingsReadResponse = {
+      version: 1, theme: "dark", fontSize: 18,
+      preview: { scrollSync: false, background: "#fff" },
+      editor: { wrap: false, tabSize: 4, background: "#000" },
+      encoding: { default: "utf-8", lineEndings: "crlf" },
+      updates: { enabled: false, lastCheckedAt: 1_762_819_200_000 },
+      ignore: ["drafts"],
+    };
     api.saveSettings.mockResolvedValue(failure);
     const sidebar = await createSidebar(context);
     sidebar.start();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "x", ctrlKey: true }));
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true }));
-    resolveSettings?.(ok({ workspaceSidebarOpen: true } as never));
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      altKey: true, code: "KeyB", ctrlKey: true, key: "и",
+    }));
+    expect(context.elements.sidebar.hidden).toBe(false);
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      code: "KeyB", metaKey: true, key: "и",
+    }));
+    resolveSettings?.(ok({ ...loadedSettings, workspaceSidebarOpen: true }));
 
     await vi.waitFor(() => expect(context.elements.sidebar.hidden).toBe(true));
+    await vi.waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({
+      ...loadedSettings,
+      workspaceSidebarOpen: false,
+    }));
     await vi.waitFor(() => expect(context.showStatus).toHaveBeenCalled());
   });
 

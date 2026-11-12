@@ -405,9 +405,12 @@ interface TrustedDropEvent {
 }
 
 interface EarlyShortcutEvent {
+  readonly altKey: boolean;
+  readonly code: string;
   readonly ctrlKey: boolean;
   readonly key: string;
   readonly metaKey: boolean;
+  readonly shiftKey: boolean;
   preventDefault(): void;
   stopImmediatePropagation(): void;
 }
@@ -562,7 +565,7 @@ const api: Api = {
       WORKSPACE_CHANNELS.chooseRoot,
       {},
     ) as Result<ChooseWorkspaceRootResponse>;
-    if (result.ok) workspaceGrant = result.value?.grant ?? null;
+    if (result.ok && result.value !== null) workspaceGrant = result.value.grant;
     return result;
   },
   listWorkspaceChildren: (request) => workspaceGrant
@@ -596,8 +599,8 @@ const preloadTarget = globalThis as unknown as Partial<PreloadTarget>;
 if (typeof preloadTarget.addEventListener === "function") {
   preloadTarget.addEventListener("keydown", (event) => {
     const dataset = preloadTarget.document?.documentElement?.dataset;
-    if (!dataset || (!event.metaKey && !event.ctrlKey) ||
-      event.key.toLowerCase() !== "b" || dataset["sidebarShortcutReady"] === "true") {
+    if (!dataset || event.code !== "KeyB" || event.metaKey === event.ctrlKey ||
+      event.altKey || event.shiftKey || dataset["sidebarShortcutReady"] === "true") {
       return;
     }
     event.preventDefault();

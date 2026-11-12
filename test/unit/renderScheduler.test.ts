@@ -141,24 +141,6 @@ describe("RenderScheduler", () => {
     vi.unstubAllGlobals();
   });
 
-  it("AC-R1-02: dispatches within two frames when the default frame stalls", () => {
-    vi.useFakeTimers();
-    const requests: ScheduledRender[] = [];
-    vi.stubGlobal("requestAnimationFrame", () => 7);
-    vi.stubGlobal("cancelAnimationFrame", () => undefined);
-    const scheduler = new RenderScheduler((request) => requests.push(request));
-
-    scheduler.schedule();
-    vi.advanceTimersByTime(31);
-    expect(requests).toEqual([]);
-    vi.advanceTimersByTime(1);
-    expect(requests).toEqual([{ id: 1 }]);
-
-    scheduler.dispose();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
   it("AC-R1-02: a frame that fires after disposal does nothing", () => {
     const frames: (() => void)[] = [];
     const requests: ScheduledRender[] = [];

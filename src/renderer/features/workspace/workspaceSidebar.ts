@@ -57,12 +57,18 @@ function requiredRowPath(row: HTMLButtonElement): string {
   return path;
 }
 
+function isSidebarShortcut(event: KeyboardEvent): boolean {
+  return event.code === "KeyB" && event.metaKey !== event.ctrlKey &&
+    !event.altKey && !event.shiftKey;
+}
+
 export class WorkspaceSidebar {
   private readonly store = new WorkspaceTreeStore((request) => {
     void this.loadChildren(request);
   });
   private filter = "";
   private preferenceChanged = false;
+  private settingsLoaded = false;
   private settings: Record<string, unknown> = {};
 
   constructor(private readonly options: WorkspaceSidebarOptions) {
@@ -81,7 +87,7 @@ export class WorkspaceSidebar {
       this.openActions(event);
     });
     document.addEventListener("keydown", (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+      if (isSidebarShortcut(event)) {
         event.preventDefault();
         this.preferenceChanged = true;
         this.setOpen(options.elements.sidebar.hidden !== false);
@@ -103,9 +109,15 @@ export class WorkspaceSidebar {
   private async loadPreference(): Promise<void> {
     const result = await loadSettings();
     if (!result.ok) return;
-    this.settings = result.value;
+    const pendingOpen = this.settings["workspaceSidebarOpen"];
+    this.settings = this.preferenceChanged
+      ? { ...result.value, workspaceSidebarOpen: pendingOpen }
+      : result.value;
+    this.settingsLoaded = true;
     if (!this.preferenceChanged) {
       this.setOpen(result.value["workspaceSidebarOpen"] !== false, false);
+    } else {
+      this.persistPreference();
     }
   }
 
@@ -114,10 +126,15 @@ export class WorkspaceSidebar {
     this.options.elements.workspace.classList.toggle("sidebar-closed", !open);
     if (persist) {
       this.settings = { ...this.settings, workspaceSidebarOpen: open };
-      void saveSettings(this.settings).then((result) => {
-        if (!result.ok) this.options.showStatus(errorText(result.error));
-      });
+      this.persistPreference();
     }
+  }
+
+  private persistPreference(): void {
+    if (!this.settingsLoaded) return;
+    void saveSettings(this.settings).then((result) => {
+      if (!result.ok) this.options.showStatus(errorText(result.error));
+    });
   }
 
   private async chooseRoot(): Promise<void> {

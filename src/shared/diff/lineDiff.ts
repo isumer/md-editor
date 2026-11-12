@@ -340,78 +340,11 @@ function appendGap(hunks: DiffHunk[], input: DiffInput, gap: Gap): boolean {
   return exact === undefined;
 }
 
-function appendAlignedChange(
-  hunks: DiffHunk[],
-  input: DiffInput,
-  left: number,
-  right: number,
-): void {
-  hunks.push({
-    kind: "change",
-    lines: [{
-      kind: "modified",
-      leftLineNumber: left + 1,
-      rightLineNumber: right + 1,
-      left: input.left[left] as string,
-      right: input.right[right] as string,
-    }],
-  });
-}
-
-function appendSparseAligned(
-  hunks: DiffHunk[],
-  input: DiffInput,
-  middle: Gap,
-): boolean {
-  const leftLength = middle[0][1] - middle[0][0];
-  const rightLength = middle[1][1] - middle[1][0];
-  if (
-    leftLength !== rightLength ||
-    leftLength === 0 ||
-    leftLength >= MAX_WORK
-  ) return false;
-  const differs = (index: number): boolean =>
-    normalized(input.left[middle[0][0] + index] as string, input.options) !==
-    normalized(input.right[middle[1][0] + index] as string, input.options);
-  let changes = 0;
-  let previousChanged = false;
-  for (let index = 0; index < leftLength; index += 1) {
-    const changed = differs(index);
-    if (changed && previousChanged) return false;
-    if (changed) changes += 1;
-    previousChanged = changed;
-  }
-  if (changes * 8 > leftLength) return false;
-  let unchangedStart = 0;
-  for (let index = 0; index < leftLength; index += 1) {
-    const left = middle[0][0] + index;
-    const right = middle[1][0] + index;
-    if (differs(index)) {
-      appendUnchanged(
-        hunks,
-        middle[0][0] + unchangedStart + 1,
-        middle[1][0] + unchangedStart + 1,
-        index - unchangedStart,
-      );
-      appendAlignedChange(hunks, input, left, right);
-      unchangedStart = index + 1;
-    }
-  }
-  appendUnchanged(
-    hunks,
-    middle[0][0] + unchangedStart + 1,
-    middle[1][0] + unchangedStart + 1,
-    leftLength - unchangedStart,
-  );
-  return true;
-}
-
 function appendMiddle(
   hunks: DiffHunk[],
   input: DiffInput,
   middle: Gap,
 ): boolean {
-  if (appendSparseAligned(hunks, input, middle)) return false;
   const anchors = increasingAnchors(anchorCandidates(input, middle[0], middle[1]));
   let leftStart = middle[0][0];
   let rightStart = middle[1][0];

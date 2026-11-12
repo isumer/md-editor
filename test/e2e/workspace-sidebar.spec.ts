@@ -329,7 +329,7 @@ test("workspace file actions stay inside the root and keep state after failure",
     await rename.getByRole("textbox").fill("existing.md");
     await rename.getByRole("button", { name: "Rename" }).click();
     await expect(page.getByTestId("status")).toHaveText(
-      "Could not save “created.md”: it changed on disk.",
+      "Could not rename “created.md”: “existing.md” already exists.",
     );
     await expect(tree.getByRole("button", { name: "created.md" })).toBeVisible();
     await expect(tree.getByRole("button", { name: "existing.md" })).toBeVisible();

@@ -19,6 +19,7 @@ describe("English messages", () => {
       "file.permissionDenied": "Could not access “{file}”: permission was denied.",
       "file.diskFull": "Could not save “{file}”: the disk is full.",
       "file.conflict": "Could not save “{file}”: it changed on disk.",
+      "file.nameConflict": "Could not rename “{file}”: “{target}” already exists.",
       "file.tooLarge": "Could not access “{file}”: it is too large.",
       "file.binary": "Could not open “{file}”: it is a binary file.",
       "file.alreadyOpen": "{file} is open in another tab. Close it first or choose another name.",

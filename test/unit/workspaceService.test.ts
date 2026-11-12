@@ -43,11 +43,12 @@ function workerService(
   root: string,
   linkFile?: (source: string, target: string) => Promise<void>,
   unlinkFile?: (filePath: string) => Promise<void>,
+  removeFile?: (filePath: string) => Promise<void>,
 ) {
   const grants = new IoGrantTable();
   grants.register(1, "root", root, "root");
   grants.register(2, "other-root", root, "root");
-  return new IoWorkspaceService(grants, linkFile, unlinkFile);
+  return new IoWorkspaceService(grants, linkFile, unlinkFile, removeFile);
 }
 
 describe("io-worker workspace service", () => {
@@ -103,7 +104,11 @@ describe("io-worker workspace service", () => {
     const service = workerService(root);
 
     await expect(service.renameFile(1, "root", "first.md", "second.md"))
-      .rejects.toMatchObject({ code: "CONFLICT", params: { file: "first.md" } });
+      .rejects.toMatchObject({
+        code: "CONFLICT",
+        messageKey: "file.nameConflict",
+        params: { file: "first.md", target: "second.md" },
+      });
     await expect(fs.readFile(path.join(root, "first.md"), "utf8")).resolves.toBe("first");
     await expect(fs.readFile(path.join(root, "second.md"), "utf8")).resolves.toBe("second");
   });
@@ -184,6 +189,58 @@ describe("io-worker workspace service", () => {
     await expect(fs.readFile(source, "utf8")).resolves.toBe("protected");
   });
 
+  it("AC-R11-08: a source unlink failure removes the linked rename target", async () => {
+    const root = await temporaryDirectory();
+    const source = path.join(root, "first.md");
+    const target = path.join(root, "second.md");
+    await fs.writeFile(source, "source");
+    const unlink = vi.fn(async (filePath: string) => {
+      if (filePath === source) throw Object.assign(new Error("denied"), { code: "EACCES" });
+      await fs.unlink(filePath);
+    });
+    const service = workerService(root, undefined, unlink);
+
+    await expect(service.renameFile(1, "root", "first.md", "second.md"))
+      .rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("source");
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("AC-R11-08: a rollback unlink failure uses the recovery removal", async () => {
+    const root = await temporaryDirectory();
+    const source = path.join(root, "first.md");
+    const target = path.join(root, "second.md");
+    await fs.writeFile(source, "source");
+    const unlink = vi.fn(async () => {
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    });
+    const remove = vi.fn(async (filePath: string) => fs.rm(filePath, { force: true }));
+    const service = workerService(root, undefined, unlink, remove);
+
+    await expect(service.renameFile(1, "root", "first.md", "second.md"))
+      .rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(remove).toHaveBeenCalledWith(target);
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("source");
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("AC-R11-08: an unlink that completes before its error leaves a completed rename", async () => {
+    const root = await temporaryDirectory();
+    const source = path.join(root, "first.md");
+    const target = path.join(root, "second.md");
+    await fs.writeFile(source, "source");
+    const unlink = vi.fn(async (filePath: string) => {
+      await fs.unlink(filePath);
+      throw new Error("late transport error");
+    });
+    const service = workerService(root, undefined, unlink);
+
+    await expect(service.renameFile(1, "root", "first.md", "second.md"))
+      .resolves.toBeUndefined();
+    await expect(fs.stat(source)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(target, "utf8")).resolves.toBe("source");
+  });
+
   it("AC-R11-01: lists folders first and hides unsupported entries", async () => {
     const root = await temporaryDirectory();
     await Promise.all([
@@ -204,7 +261,7 @@ describe("io-worker workspace service", () => {
     ]);
   });
 
-  it("AC-R11-05: classifies watcher changes and closes a failed watcher", async () => {
+  it("AC-R11-05: retries a failed watcher and closes only its revoked grant", async () => {
     const root = await temporaryDirectory();
     await fs.writeFile(path.join(root, "note.md"), "note");
     await fs.writeFile(path.join(root, "data.txt"), "data");
@@ -246,8 +303,11 @@ describe("io-worker workspace service", () => {
     const watcher = internals.watchers.values().next().value;
     watcher?.emit("change", "rename", Buffer.from("ignored.md"));
     watcher?.emit("error", new Error("watch failed"));
+    await vi.waitFor(() => expect(internals.watchers.size).toBe(1));
     await service.listChildren(2, "other-root", "");
-    service.revokeWindow(1);
+    service.revokeRoot(1, "root");
+    await expect(internals.inspectChange(1, "root", root, "change", "note.md"))
+      .resolves.toBeUndefined();
     expect(internals.watchers.size).toBe(1);
     service.revokeWindow(2);
     expect(internals.watchers.size).toBe(0);

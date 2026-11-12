@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Worker supervision stays together to preserve restart state. */
 import {
   MessageChannelMain,
   utilityProcess,

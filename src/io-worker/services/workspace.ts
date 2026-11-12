@@ -9,6 +9,7 @@ import type { IoGrantTable } from "../grants";
 type ChangeSink = (windowId: number, change: WorkspaceChangeMessage) => void;
 type LinkFile = (source: string, target: string) => Promise<void>;
 type UnlinkFile = (filePath: string) => Promise<void>;
+type RemoveFile = (filePath: string) => Promise<void>;
 
 function isInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
@@ -39,6 +40,7 @@ export class IoWorkspaceService {
     private readonly grants: IoGrantTable,
     private readonly linkFile: LinkFile = fs.link,
     private readonly unlinkFile: UnlinkFile = fs.unlink,
+    private readonly removeFile: RemoveFile = (filePath) => fs.rm(filePath, { force: true }),
   ) {}
 
   setChangeSink(sink: ChangeSink): void {
@@ -91,9 +93,15 @@ export class IoWorkspaceService {
     const target = await this.newFilePath(windowId, grant, newPath);
     try {
       await this.linkFile(source, target);
-      await fs.unlink(source);
+      await this.unlinkFile(source);
     } catch (error) {
-      if (errorCode(error) !== "EEXIST") await this.rollbackLink(source, target);
+      if (errorCode(error) === "EEXIST") {
+        throw serviceError("CONFLICT", "file.nameConflict", {
+          file: path.basename(relativePath),
+          target: path.basename(newPath),
+        });
+      }
+      if (!(await this.rollbackLink(source, target))) return;
       throw toServiceError(error, { file: path.basename(relativePath) });
     }
   }
@@ -117,13 +125,24 @@ export class IoWorkspaceService {
     }
   }
 
-  private async rollbackLink(source: string, target: string): Promise<void> {
+  revokeRoot(windowId: number, grant: string): void {
+    const key = `${windowId}:${grant}`;
+    this.watchers.get(key)?.close();
+    this.watchers.delete(key);
+  }
+
+  private async rollbackLink(source: string, target: string): Promise<boolean> {
     try {
       await fs.lstat(source);
-      await fs.unlink(target);
     } catch {
-      // The source was removed, or the target was not created by this operation.
+      return false;
     }
+    try {
+      await this.unlinkFile(target);
+    } catch {
+      await this.removeFile(target);
+    }
+    return true;
   }
 
   private async newFilePath(
@@ -172,7 +191,12 @@ export class IoWorkspaceService {
     return canonical;
   }
 
-  private startWatching(windowId: number, grant: string, root: string): void {
+  private startWatching(
+    windowId: number,
+    grant: string,
+    root: string,
+    allowRetry = true,
+  ): void {
     const key = `${windowId}:${grant}`;
     if (this.watchers.has(key)) return;
     try {
@@ -182,10 +206,22 @@ export class IoWorkspaceService {
       watcher.on("error", () => {
         watcher.close();
         this.watchers.delete(key);
+        if (allowRetry) queueMicrotask(() => this.retryWatch(windowId, grant, root));
       });
       this.watchers.set(key, watcher);
     } catch {
       this.watchers.delete(key);
+      if (allowRetry) queueMicrotask(() => this.retryWatch(windowId, grant, root));
+    }
+  }
+
+  private retryWatch(windowId: number, grant: string, root: string): void {
+    try {
+      if (this.grants.resolve(windowId, grant, "root") === root) {
+        this.startWatching(windowId, grant, root, false);
+      }
+    } catch {
+      // The grant was revoked while the retry was queued.
     }
   }
 
@@ -196,7 +232,11 @@ export class IoWorkspaceService {
     event: string,
     fileName: string,
   ): Promise<void> {
-    if (this.grants.resolve(windowId, grant, "root") !== root) return;
+    try {
+      if (this.grants.resolve(windowId, grant, "root") !== root) return;
+    } catch {
+      return;
+    }
     const relative = fileName.split(path.sep).join("/");
     const checked = checkWorkspacePath(relative);
     if (!checked.ok || checked.segments.some((part) =>

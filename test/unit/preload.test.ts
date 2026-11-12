@@ -77,9 +77,12 @@ describe("preload bridge", () => {
     await loadPreload();
     const listener = dropListeners.get("keydown");
     const shortcut = {
+      altKey: false,
+      code: "KeyB",
       ctrlKey: true,
-      key: "b",
+      key: "и",
       metaKey: false,
+      shiftKey: false,
       preventDefault: vi.fn(),
       stopImmediatePropagation: vi.fn(),
     };
@@ -100,9 +103,12 @@ describe("preload bridge", () => {
     await loadPreload();
     const listener = dropListeners.get("keydown");
     const event = {
-      ctrlKey: false,
-      key: "b",
+      altKey: true,
+      code: "KeyB",
+      ctrlKey: true,
+      key: "и",
       metaKey: false,
+      shiftKey: false,
       preventDefault: vi.fn(),
       stopImmediatePropagation: vi.fn(),
     };
@@ -251,12 +257,13 @@ describe("preload bridge", () => {
     });
   });
 
-  it("AC-R11-01 AC-R11-07: sends workspace operations through the worker port", async () => {
+  it("AC-R11-01 AC-R11-07: a canceled replacement keeps worker operations active", async () => {
     const { api, portListener } = await loadPreload();
     electron.invoke.mockResolvedValueOnce({
       ok: true,
       value: { grant: "workspace-root", name: "notes" },
     });
+    await api.chooseWorkspaceRoot();
     await api.chooseWorkspaceRoot();
     const port = new FakePort();
     portListener({ ports: [port] });
