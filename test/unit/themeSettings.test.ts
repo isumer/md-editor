@@ -7,7 +7,13 @@ import type {
   SettingsWriteRequest,
   SettingsWriteResponse,
 } from "../../src/shared/ipc/settings";
+import type { Settings } from "../../src/shared/settings/settings";
 import { DEFAULT_SETTINGS } from "../../src/shared/settings/settings";
+import {
+  applyFontSizeChange,
+  createAppearanceController,
+} from "../../src/renderer/appearance";
+import { formatMessage } from "../../src/renderer/core/messages";
 import {
   applyBackgrounds,
   watchSystemTheme,
@@ -26,6 +32,10 @@ import {
   type Appearance,
   type SettingsBoundary,
 } from "../../src/renderer/features/theme/settingsController";
+
+function settings(overrides: Partial<Settings> = {}): Settings {
+  return { ...DEFAULT_SETTINGS, ...overrides };
+}
 
 function createPanes(): void {
   const editorHost = document.createElement("div");
@@ -97,6 +107,12 @@ beforeEach(() => {
   document.body.innerHTML = "";
   document.documentElement.style.cssText = "";
   delete document.documentElement.dataset["theme"];
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
   createPanes();
 });
 
@@ -136,6 +152,70 @@ describe("font size", () => {
 
     expect(document.documentElement.style.getPropertyValue("--editor-font-size"))
       .toBe("18px");
+  });
+});
+
+describe("appearance controller", () => {
+  it("applies the theme, backgrounds and font size from loaded settings", async () => {
+    const save = vi.fn(async (): Promise<Result<void>> => ({ ok: true, value: undefined }));
+    const controller = createAppearanceController({
+      load: async () => ({
+        ok: true,
+        value: settings({
+          theme: "light",
+          fontSize: 16,
+          editor: { wrap: true, tabSize: 2, background: "#123456" },
+        }),
+      }),
+      save,
+    });
+
+    await controller.load();
+
+    expect(document.documentElement.dataset["theme"]).toBe("light");
+    expect(document.documentElement.style.getPropertyValue("--editor-font-size"))
+      .toBe("16px");
+    expect(document.documentElement.style.getPropertyValue("--editor-background"))
+      .toBe("#123456");
+  });
+
+  it("reports a failed font-size save", async () => {
+    const controller = createAppearanceController({
+      load: async () => ({ ok: true, value: settings() }),
+      save: async () => ({
+        ok: false,
+        error: {
+          code: "UNKNOWN",
+          messageKey: "file.unknown",
+          params: {},
+          retryable: false,
+        },
+      }),
+    });
+    const showStatus = vi.fn();
+    const onError = vi.fn();
+
+    applyFontSizeChange(controller, 1, showStatus, onError);
+
+    await vi.waitFor(() => expect(showStatus).toHaveBeenCalledWith(
+      formatMessage("file.unknown", {}),
+    ));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("forwards a rejected font-size save to the error handler", async () => {
+    const failure = new Error("save failed");
+    const controller = createAppearanceController({
+      load: async () => ({ ok: true, value: settings() }),
+      save: async () => Promise.reject(failure),
+    });
+    const showStatus = vi.fn();
+    const onError = vi.fn();
+
+    applyFontSizeChange(controller, -1, showStatus, onError);
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
+    expect(showStatus).not.toHaveBeenCalled();
   });
 });
 

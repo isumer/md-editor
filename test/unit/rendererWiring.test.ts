@@ -4,29 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentReference, OpenRequestReady } from "../../src/shared/ipc/file";
 import type { Result } from "../../src/shared/ipc/result";
 import type { SessionCloseRequest } from "../../src/shared/ipc/session";
-import type { Settings } from "../../src/shared/settings/settings";
-import { DEFAULT_SETTINGS } from "../../src/shared/settings/settings";
-import {
-  applyFontSizeChange,
-  createAppearanceController,
-} from "../../src/renderer/appearance";
 import { formatMessage } from "../../src/renderer/core/messages";
 import { rendererElements } from "../../src/renderer/platform/dom";
 import { startRenderer, wireWindow } from "../../src/renderer/startup";
 import { createStatusSurface } from "../../src/renderer/status";
-import {
-  onOpenRequest,
-  onSessionCloseRequest,
-} from "../../src/renderer/platform/api";
-
-vi.mock("../../src/renderer/platform/api", () => ({
-  onOpenRequest: vi.fn(),
-  onSessionCloseRequest: vi.fn(),
-}));
-
-function settings(overrides: Partial<Settings> = {}): Settings {
-  return { ...DEFAULT_SETTINGS, ...overrides };
-}
 
 function ready(overrides: Partial<OpenRequestReady> = {}): Result<OpenRequestReady> {
   return {
@@ -170,74 +151,6 @@ describe("createStatusSurface", () => {
 
     surface.unexpected("plain failure");
     expect(status.textContent).toBe("plain failure");
-  });
-});
-
-describe("createAppearanceController", () => {
-  it("applies the theme, backgrounds and font size from loaded settings", async () => {
-    const editor = document.createElement("div");
-    editor.className = "cm-editor";
-    document.body.appendChild(editor);
-    document.body.appendChild(document.createElement("div")).id = "preview";
-    const save = vi.fn(async (): Promise<Result<void>> => ({ ok: true, value: undefined }));
-    const controller = createAppearanceController({
-      load: async () => ({
-        ok: true,
-        value: settings({
-          theme: "light",
-          fontSize: 16,
-          editor: { wrap: true, tabSize: 2, background: "#123456" },
-        }),
-      }),
-      save,
-    });
-
-    await controller.load();
-
-    expect(document.documentElement.dataset["theme"]).toBe("light");
-    expect(document.documentElement.style.getPropertyValue("--editor-font-size"))
-      .toBe("16px");
-    expect(document.documentElement.style.getPropertyValue("--editor-background"))
-      .toBe("#123456");
-  });
-
-  it("reports a failed font-size save", async () => {
-    const controller = createAppearanceController({
-      load: async () => ({ ok: true, value: settings() }),
-      save: async () => ({
-        ok: false,
-        error: {
-          code: "UNKNOWN",
-          messageKey: "file.unknown",
-          params: {},
-          retryable: false,
-        },
-      }),
-    });
-    const showStatus = vi.fn();
-    const onError = vi.fn();
-
-    applyFontSizeChange(controller, 1, showStatus, onError);
-
-    await vi.waitFor(() => expect(showStatus).toHaveBeenCalledWith(
-      formatMessage("file.unknown", {}),
-    ));
-    expect(onError).not.toHaveBeenCalled();
-  });
-
-  it("forwards a rejected font-size save to the error handler", async () => {
-    const failure = new Error("save failed");
-    const controller = createAppearanceController({
-      load: async () => ({ ok: true, value: settings() }),
-      save: async () => Promise.reject(failure),
-    });
-    const showStatus = vi.fn();
-    const onError = vi.fn();
-
-    applyFontSizeChange(controller, -1, showStatus, onError);
-
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
-    expect(showStatus).not.toHaveBeenCalled();
   });
 });
 
@@ -398,11 +311,11 @@ describe("wireWindow", () => {
   it("forwards open and close requests to the document lifecycle", async () => {
     let openListener: ((request: Result<DocumentReference>) => void) | undefined;
     let closeListener: ((request: SessionCloseRequest) => void) | undefined;
-    vi.mocked(onOpenRequest).mockImplementation((listener) => {
+    const open = vi.fn((listener: (request: Result<DocumentReference>) => void) => {
       openListener = listener;
       return () => undefined;
     });
-    vi.mocked(onSessionCloseRequest).mockImplementation((listener) => {
+    const close = vi.fn((listener: (request: SessionCloseRequest) => void) => {
       closeListener = listener;
       return () => undefined;
     });
@@ -410,7 +323,7 @@ describe("wireWindow", () => {
     const handleSessionClose = vi.fn(async () => undefined);
     const showError = vi.fn();
 
-    wireWindow({ handleOpenRequest, handleSessionClose }, showError);
+    wireWindow({ handleOpenRequest, handleSessionClose }, showError, { open, close });
     openListener?.({
       ok: true,
       value: { canonicalPath: "/notes.md", grant: "grant-a", name: "notes.md" },
@@ -421,10 +334,38 @@ describe("wireWindow", () => {
     await vi.waitFor(() => expect(handleSessionClose).toHaveBeenCalledOnce());
   });
 
+  it("reports a rejected session-close request", async () => {
+    let closeListener: ((request: SessionCloseRequest) => void) | undefined;
+    const failure = new Error("close failed");
+    const showError = vi.fn();
+    wireWindow(
+      {
+        handleOpenRequest: vi.fn(),
+        handleSessionClose: vi.fn(async () => Promise.reject(failure)),
+      },
+      showError,
+      {
+        open: vi.fn(() => () => undefined),
+        close: vi.fn((listener: (request: SessionCloseRequest) => void) => {
+          closeListener = listener;
+          return () => undefined;
+        }),
+      },
+    );
+
+    closeListener?.({} as SessionCloseRequest);
+
+    await vi.waitFor(() => expect(showError).toHaveBeenCalledWith(failure));
+  });
+
   it("prevents the window from opening dropped files", () => {
     wireWindow(
       { handleOpenRequest: vi.fn(), handleSessionClose: vi.fn(async () => undefined) },
       vi.fn(),
+      {
+        open: vi.fn(() => () => undefined),
+        close: vi.fn(() => () => undefined),
+      },
     );
     const dragOver = new Event("dragover", { cancelable: true });
     const drop = new Event("drop", { cancelable: true });

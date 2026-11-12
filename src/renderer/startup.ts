@@ -21,6 +21,16 @@ export interface StartupBoundary {
   showError(error: unknown): void;
 }
 
+export interface WindowSubscriptions {
+  open: typeof onOpenRequest;
+  close: typeof onSessionCloseRequest;
+}
+
+const windowSubscriptions: WindowSubscriptions = {
+  open: onOpenRequest,
+  close: onSessionCloseRequest,
+};
+
 export async function startRenderer(boundary: StartupBoundary): Promise<void> {
   for (const action of ["cancel", "discard", "save"] as const) {
     const button = boundary.closePrompt.querySelector<HTMLButtonElement>(
@@ -63,9 +73,10 @@ export function wireWindow(
     "handleOpenRequest" | "handleSessionClose"
   >,
   showError: (error: unknown) => void,
+  subscriptions: WindowSubscriptions = windowSubscriptions,
 ): void {
-  onOpenRequest((request) => lifecycle.handleOpenRequest(request));
-  onSessionCloseRequest((request) => {
+  subscriptions.open((request) => lifecycle.handleOpenRequest(request));
+  subscriptions.close((request) => {
     void lifecycle.handleSessionClose(request).catch(showError);
   });
   window.addEventListener("dragover", (event) => {
