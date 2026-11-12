@@ -56,7 +56,6 @@ import {
 export interface EditorCallbacks {
   onDocumentChanged(): void;
   onChanges(changes: ChangeSet, state: EditorState): void;
-  updateTitle(): void;
   onStateChanged?(state: EditorState): void;
 }
 
@@ -140,8 +139,6 @@ export function handleDocumentUpdate(
     return;
   }
   if (!documentState.applyingDocument) {
-    documentState.dirty = !update.state.doc.eq(documentState.saved);
-    callbacks.updateTitle();
     callbacks.onChanges(update.changes, update.state);
   }
   callbacks.onDocumentChanged();

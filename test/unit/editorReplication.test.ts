@@ -6,6 +6,44 @@ import { DocumentReplication } from "../../src/renderer/core/replication";
 import { handleDocumentUpdate } from "../../src/renderer/editor/editor";
 
 describe("editor replication performance", () => {
+  it("typing defers dirty state work until after the editor transaction", () => {
+    const initial = Text.of(["saved"]);
+    const state = EditorState.create({ doc: initial });
+    const documentState = createDocumentState();
+    documentState.saved = initial;
+    const onChanges = vi.fn();
+    const transaction = state.update({ changes: { from: 0, insert: "x" } });
+
+    handleDocumentUpdate({
+      docChanged: transaction.docChanged,
+      state: transaction.state,
+      changes: transaction.changes,
+    }, documentState, {
+      onDocumentChanged: vi.fn(),
+      onChanges,
+    });
+
+    expect(documentState.dirty).toBe(false);
+  });
+
+  it("typing sends change messages before it schedules the preview", () => {
+    const state = EditorState.create({ doc: "saved" });
+    const documentState = createDocumentState();
+    const order: string[] = [];
+    const transaction = state.update({ changes: { from: 0, insert: "x" } });
+
+    handleDocumentUpdate({
+      docChanged: transaction.docChanged,
+      state: transaction.state,
+      changes: transaction.changes,
+    }, documentState, {
+      onDocumentChanged: () => order.push("schedule"),
+      onChanges: () => order.push("transport"),
+    });
+
+    expect(order).toEqual(["transport", "schedule"]);
+  });
+
   it("AC-PERF-05: a one-character edit of 20 MB never flattens the document", () => {
     const initial = Text.of(["x".repeat(20 * 1024 * 1024)]);
     const state = EditorState.create({ doc: initial });
@@ -29,7 +67,6 @@ describe("editor replication performance", () => {
       onChanges: (changes) => {
         changeMessage = replication.changed(changes);
       },
-      updateTitle: vi.fn(),
     });
 
     expect(toString).not.toHaveBeenCalled();

@@ -139,9 +139,11 @@ const callbacks: EditorCallbacks = {
       // Every update, including a selection change, is the tab's view state.
       document.state = editor.state;
       document.scrollTop = editor.scrollDOM.scrollTop;
-      dirtyFrame.changed(document);
     }
     renderController.schedule();
+    if (document) {
+      dirtyFrame.changed(document);
+    }
   },
   onChanges: (changes, state) => {
     const document = activeDocument;
@@ -152,9 +154,7 @@ const callbacks: EditorCallbacks = {
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderController.change(message);
-    dirtyFrame.changed(document);
   },
-  updateTitle,
   onStateChanged: (state) => {
     documentCommands?.refresh();
     installedFeatures.documentStateChanged(activeDocument?.id ?? null, state);
@@ -178,10 +178,12 @@ const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
 });
 
-// Dirty state is evaluated at most once per frame, and only that tab row updates.
+// Dirty state runs after paint when the renderer has idle time.
 const dirtyFrame = new FrameCoalescer<DocumentRecord>({
   requestFrame: (callback) => {
-    requestAnimationFrame(callback);
+    requestAnimationFrame(() => window.requestIdleCallback(() => callback(), {
+      timeout: 32,
+    }));
   },
   apply: (document) => {
     if (!registry.get(document.id)) {
