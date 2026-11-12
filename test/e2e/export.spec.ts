@@ -104,6 +104,14 @@ test("a 500 KB PDF export leaves the editor responsive", {
     await page.keyboard.type("responsive export");
 
     await expect(editor).toContainText("responsive export");
+    // The export must finish before close: quitting during printToPDF holds
+    // shutdown and the process outlives the close wait.
+    await expect.poll(
+      async () =>
+        (await fs.readFile(exportPath).catch(() => Buffer.alloc(0)))
+          .subarray(0, 5).toString(),
+      { timeout: 10_000 },
+    ).toBe("%PDF-");
   } finally {
     await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
