@@ -1,10 +1,11 @@
-import type { Result } from "../../../shared/ipc/result";
+import type { Result, ServiceError } from "../../../shared/ipc/result";
 import type {
   SettingsReadResponse,
   SettingsWriteRequest,
   SettingsWriteResponse,
 } from "../../../shared/ipc/settings";
 import { normalizeSettings } from "../../../shared/settings/settings";
+import { formatMessage } from "../../core/messages";
 import {
   applyBackgrounds,
   resolveSystemTheme,
@@ -19,7 +20,7 @@ import {
 export interface BackgroundSettingsDependencies {
   load(): Promise<Result<SettingsReadResponse>>;
   save(settings: SettingsWriteRequest): Promise<Result<SettingsWriteResponse>>;
-  reportError(error: unknown): void;
+  reportError(message: string): void;
 }
 
 export interface BackgroundSettingsController {
@@ -29,6 +30,10 @@ export interface BackgroundSettingsController {
 
 function defaultSettings(): SettingsReadResponse {
   return normalizeSettings({});
+}
+
+function settingsError(error: ServiceError): string {
+  return formatMessage(error.messageKey, { file: "settings", ...error.params });
 }
 
 function copySettings(settings: SettingsReadResponse): SettingsReadResponse {
@@ -55,7 +60,7 @@ class Controller implements BackgroundSettingsController {
     if (result.ok) {
       this.settings = copySettings(result.value);
     } else {
-      this.dependencies.reportError(result.error);
+      this.dependencies.reportError(settingsError(result.error));
     }
     this.dialog = installBackgroundSettingsDialog({
       changeBackground: (pane, value) => this.changeBackground(pane, value),
@@ -126,7 +131,7 @@ class Controller implements BackgroundSettingsController {
       const settings = this.pendingSave;
       this.pendingSave = null;
       const result = await this.dependencies.save(settings);
-      if (!result.ok) this.dependencies.reportError(result.error);
+      if (!result.ok) this.dependencies.reportError(settingsError(result.error));
     }
     this.saving = false;
   }

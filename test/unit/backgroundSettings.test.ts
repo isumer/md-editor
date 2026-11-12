@@ -19,6 +19,7 @@ function settings(
     preview: { scrollSync: true, background: preview },
     editor: { wrap: true, tabSize: 2, background: editor },
     encoding: { default: "utf-8", lineEndings: "lf" },
+    updates: { enabled: true, lastCheckedAt: null },
     ignore: ["node_modules", ".git"],
   };
 }
@@ -160,7 +161,7 @@ describe("background settings", () => {
     const failure = {
       code: "UNKNOWN" as const,
       messageKey: "file.unknown" as const,
-      params: {},
+      params: { reason: "settings storage is unavailable" },
       retryable: false,
     };
     const reportError = vi.fn();
@@ -174,7 +175,9 @@ describe("background settings", () => {
     await controller.start();
     expect(document.documentElement.style.getPropertyValue("--editor-background"))
       .toBe("#0d1117");
-    expect(reportError).toHaveBeenCalledWith(failure);
+    expect(reportError).toHaveBeenCalledWith(
+      "Could not access “settings”: settings storage is unavailable.",
+    );
     media.dispatch(false);
     expect(document.documentElement.style.getPropertyValue("--editor-background"))
       .toBe("#ffffff");
@@ -191,6 +194,8 @@ describe("background settings", () => {
     required<HTMLButtonElement>('[data-action="close"]').click();
 
     expect(dialog.open).toBe(false);
-    await vi.waitFor(() => expect(reportError).toHaveBeenLastCalledWith(failure));
+    await vi.waitFor(() => expect(reportError).toHaveBeenLastCalledWith(
+      "Could not access “settings”: settings storage is unavailable.",
+    ));
   });
 });
