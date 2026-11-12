@@ -62,9 +62,9 @@ describe("document dirty tracking", () => {
 
 describe("document title", () => {
   it("AC-R5-02: names an untitled clean document without a marker", () => {
-    const state = { ...createDocumentState(), productName: "MD Editor" };
+    const state = { ...createDocumentState(), productName: "SolidMD" };
 
-    expect(documentTitle(state)).toBe("Untitled — MD Editor");
+    expect(documentTitle(state)).toBe("Untitled — SolidMD");
   });
 
   it("AC-R5-02: shows the display name without exposing a file path", () => {
@@ -72,10 +72,10 @@ describe("document title", () => {
       ...createDocumentState(),
       currentGrant: "opaque-grant",
       currentName: "today.md",
-      productName: "MD Editor",
+      productName: "SolidMD",
     };
 
-    expect(documentTitle(state)).toBe("today.md — MD Editor");
+    expect(documentTitle(state)).toBe("today.md — SolidMD");
   });
 
   it("AC-R5-02: prefixes the dirty marker only while there are unsaved changes", () => {
@@ -83,11 +83,11 @@ describe("document title", () => {
       ...createDocumentState(),
       currentName: "a.md",
       dirty: true,
-      productName: "MD Editor",
+      productName: "SolidMD",
     };
 
-    expect(documentTitle(dirty)).toBe("• a.md — MD Editor");
-    expect(documentTitle({ ...dirty, dirty: false })).toBe("a.md — MD Editor");
+    expect(documentTitle(dirty)).toBe("• a.md — SolidMD");
+    expect(documentTitle({ ...dirty, dirty: false })).toBe("a.md — SolidMD");
   });
 
   it("AC-R5-02: omits the product suffix before the product name is known", () => {

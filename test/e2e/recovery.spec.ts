@@ -21,7 +21,7 @@ const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control
 test.describe.configure({ timeout: 30_000 });
 
 async function copyFixture(): Promise<{ directory: string; document: string }> {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-recovery-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-recovery-"));
   const document = path.join(directory, "alpha.md");
   await fs.copyFile(fixturePath, document);
   return { directory, document };

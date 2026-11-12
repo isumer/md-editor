@@ -138,6 +138,16 @@ function plainMarkdownParse(length: number) {
 
 const markdownSupport = markdown({
   extensions: {
+    // Plain word runs contain no Markdown delimiters, so parse them in one step.
+    parseInline: [{
+      name: "PlainTextRun",
+      before: "Escape",
+      parse: (context, _next, position) => {
+        const start = position - context.offset;
+        const end = plainTextRunEnd(context.text, start);
+        return end === start ? -1 : context.offset + end;
+      },
+    }],
     wrap: (inner, input) => {
       const text = input.chunk(0);
       return text.length === input.length &&
@@ -163,6 +173,18 @@ export function editorCallbacksEffect(
   callbacks: EditorCallbacks,
 ): StateEffect<unknown> {
   return callbacksCompartment.reconfigure(callbacksExtension(documentState, callbacks));
+}
+
+function plainTextRunEnd(text: string, start: number): number {
+  let end = start;
+  while (end < text.length) {
+    const code = text.charCodeAt(end);
+    const isDigit = code >= 48 && code <= 57;
+    const isLetter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (!isDigit && !isLetter) break;
+    end += 1;
+  }
+  return end;
 }
 
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.

@@ -1,4 +1,4 @@
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "../core/messages";
 import type { DocumentRecord } from "../core/document";
 
 export type TabViewCommand = "tab.cloneToOtherView" | "tab.moveToOtherView";

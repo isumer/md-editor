@@ -43,7 +43,7 @@ export interface LaunchedEditor {
 }
 
 export async function createUserDataDirectory(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-userdata-"));
+  return fs.mkdtemp(path.join(os.tmpdir(), "solidmd-userdata-"));
 }
 
 function launchEnvironment(): Record<string, string> {
@@ -56,21 +56,29 @@ function launchEnvironment(): Record<string, string> {
   return environment;
 }
 
+const ARGV_TITLE_POLL_MS = 10;
+
 async function waitForArgvDocument(
   page: Page,
   filePath: string,
   timeout: number,
 ): Promise<void> {
   const waitStarted = Date.now();
-  await expect.poll(
-    () => page.title(),
-    {
-      message: `argv document did not open: ${path.basename(filePath)}`,
+  const name = path.basename(filePath);
+  // expect.poll backs off to 1 s between reads, so a startup measured
+  // through it gains up to a second the app never spent. The title is
+  // checked inside the page every 10 ms instead.
+  await page
+    .waitForFunction((expected) => document.title.includes(expected), name, {
+      polling: ARGV_TITLE_POLL_MS,
       timeout,
-    },
-  ).toContain(path.basename(filePath));
+    })
+    .catch(async (error: unknown) => {
+      const title = await page.title().catch(() => "<closed>");
+      throw new Error(`argv document did not open: ${name} (title "${title}")`, { cause: error });
+    });
   console.log(
-    `argv title wait: ${String(Date.now() - waitStarted)} ms (${path.basename(filePath)})`,
+    `argv title wait: ${String(Date.now() - waitStarted)} ms (${name})`,
   );
 }
 
@@ -125,7 +133,7 @@ export async function launchEditor(
   }
 }
 
-const PROFILE_PREFIX = "mdeditor-userdata-";
+const PROFILE_PREFIX = "solidmd-userdata-";
 
 // A crashed Playwright page cannot be reused, but the window reloads. Execute
 // an expression in the live renderer through the main process instead.

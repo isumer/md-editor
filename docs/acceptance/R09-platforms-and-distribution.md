@@ -22,7 +22,7 @@ Then no second window or process stays open and the running window opens the fil
 status: planned
 Given a per-user install (no admin)
 When it completes
-Then "Edit with MD Editor" exists for all files and "Open folder in MD Editor" for folders and folder backgrounds, pointing at the installed exe; after uninstall none of the keys remain
+Then "Edit with SolidMD" exists for all files and "Open folder in SolidMD" for folders and folder backgrounds, pointing at the installed exe; after uninstall none of the keys remain
 
 ### AC-R9-05 — Every shipped dependency is GPL-3-compatible and credited
 status: implemented

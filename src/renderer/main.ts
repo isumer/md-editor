@@ -3,7 +3,7 @@ import { Text, Transaction, type ChangeSet, type EditorState } from "@codemirror
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
-import { formatMessage } from "../shared/messages/en";
+import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
   createDocumentRecord,
@@ -26,26 +26,26 @@ import {
   editorCallbacksEffect,
   type EditorCallbacks,
 } from "./editor/editor";
-import { CompareController } from "./features/compare/controller";
-import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
-import "./features/compare/compare.css";
-import { MergeView } from "./features/merge/mergeView";
-import "./features/merge/merge.css";
+import type { InstalledFeatures } from "./editor/featureWiring";
 import {
-  initializeMarkerMerge,
-  markerMergeExtension,
-  type MarkerMergeState,
-} from "./features/merge/markerMergeState";
+  applyBackgrounds,
+  resetToThemeDefaults,
+  resolveSystemTheme,
+  watchSystemTheme,
+  type ResolvedTheme,
+} from "./features/background/background";
+import { beginStartup } from "./features/background/startup";
 import {
-  wirePreviewLinks,
-} from "./features/preview/preview";
-import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
-import { WorkspaceSidebar } from "./features/workspace/workspaceSidebar";
+  featureEditorExtensions,
+  installFeatures,
+  rewriteFeatureHtml,
+} from "./features/registry";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
   clearDraft,
   detachDocument,
+  loadSettings,
   onOpenRequest,
   onSessionCloseRequest,
   readyForOpenRequests,
@@ -80,13 +80,6 @@ const editorTwoHost = requiredElement<HTMLElement>("#editor-two");
 const viewTwoHost = requiredElement<HTMLElement>("#document-view-two");
 const closePrompt = requiredElement<HTMLElement>("#close-prompt");
 const closePromptMessage = requiredElement<HTMLElement>("#close-prompt-message");
-const workspaceElements = {
-  empty: requiredElement<HTMLElement>("#workspace-empty"),
-  filter: requiredElement<HTMLInputElement>("#workspace-filter"),
-  open: requiredElement<HTMLButtonElement>("#workspace-open"),
-  title: requiredElement<HTMLElement>("#workspace-title"),
-  tree: requiredElement<HTMLElement>("#workspace-tree"),
-};
 const documentState = createDocumentState();
 const secondaryDocumentState = createDocumentState();
 const registry = new DocumentRegistry();
@@ -98,26 +91,13 @@ let editorTwo: EditorView;
 let secondaryDocument: DocumentRecord | null = null;
 let mirroring = false;
 const documentViews = new DocumentViews();
-let mergeView: MergeView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
-let compareController: CompareController | null = null;
+let installedFeatures: InstalledFeatures;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
   status.textContent = message;
-}
-
-function openCompare(): void {
-  compareController ??= new CompareController({
-    documents: () => registry.all(),
-    editor: editorHost,
-    preview,
-    showStatus,
-    workspace,
-    workerUrl: new URL(compareWorkerUrl, window.location.href),
-  });
-  compareController.open();
 }
 
 // A successful render clears only the preview's own error, never a file failure.
@@ -170,7 +150,7 @@ const renderController = new RenderController({
   current: () => activeDocument,
   preview,
   restartMessage: formatMessage("preview.workerRestarted", {}),
-  rewriteHtml: (html) => rewriteAssetUrls(html, {
+  rewriteHtml: (html) => rewriteFeatureHtml(html, {
     windowId,
     grant: activeDocument?.grant ?? null,
   }),
@@ -202,7 +182,7 @@ const callbacks: EditorCallbacks = {
   onStateChanged: (state) => {
     if (mirroring) return;
     documentCommands?.refresh();
-    mergeView?.stateChanged(activeDocument?.id ?? null, state);
+    installedFeatures.documentStateChanged(activeDocument?.id ?? null, state);
   },
 };
 
@@ -324,11 +304,16 @@ function runHistory(event: "redo" | "undo"): void {
   if (event === "undo") dispatchUndo(activeEditor);
   else dispatchRedo(activeEditor);
 }
-mergeView = new MergeView({
+installedFeatures = installFeatures({
+  documents: () => registry.all(),
   editorHost,
   preview,
   workspace,
   editor,
+  hasDocument: (documentId) => registry.get(documentId) !== undefined,
+  isActive: (document) => activeDocument === document,
+  openDocument: (reference) => lifecycle.openReference(reference),
+  showStatus,
 });
 
 const drafts = new DraftScheduler({
@@ -403,7 +388,7 @@ function activateDocument(document: DocumentRecord): void {
   tabStrip.render();
   showPreviewError();
   renderController.activate(document);
-  mergeView.activate(document.id, document.state);
+  installedFeatures.documentActivated(document);
   editor.focus();
 }
 
@@ -459,40 +444,43 @@ function newDocument(input: {
   text: string;
 }): DocumentRecord {
   const replication = new DocumentReplication();
+  const version = replication.current();
+  // Without "\r" the editor splits lines like split("\n") and its text equals
+  // the input. The render worker then gets the text before the editor state
+  // exists and splits its copy while this thread builds the state.
+  const isLineFeedOnly = !input.text.includes("\r");
+  if (isLineFeedOnly) {
+    renderController.attachVersion(version, input.text);
+  }
+  const state = createEditorState(
+    input.text,
+    documentState,
+    callbacks,
+    featureEditorExtensions,
+  );
   const document = createDocumentRecord({
     canonicalPath: input.canonicalPath,
     grant: input.grant,
     name: input.name,
     replication,
-    savedText: Text.of(input.savedText.split("\n")),
-    state: createEditorState(input.text, documentState, callbacks, markerMergeExtension),
+    // A freshly opened file shares the editor's Text: no second split, and
+    // the dirty check compares one object instead of every line.
+    savedText: isLineFeedOnly && input.savedText === input.text
+      ? state.doc
+      : Text.of(input.savedText.split("\n")),
+    state,
   });
   registry.add(document);
   documentViews.add(document.id);
-  const version = replication.current();
-  const text = document.state.doc.toString();
-  renderController.attach(document, text);
-  window.setTimeout(() => detectMerge(document, text), 0);
+  const text = isLineFeedOnly ? input.text : state.doc.toString();
+  if (!isLineFeedOnly) {
+    renderController.attach(document, text);
+  }
+  window.setTimeout(() => installedFeatures?.documentCreated(document, text), 0);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);
   }).catch(showUnexpectedError);
   return document;
-}
-
-function installMerge(document: DocumentRecord, source: string, merge: MarkerMergeState): void {
-  if (!registry.get(document.id)) return;
-  const spec = initializeMarkerMerge(document.state, source, merge);
-  if (spec === null) return;
-  if (activeDocument === document) {
-    editor.dispatch(spec);
-    mergeView.activate(document.id, editor.state);
-  } else {
-    document.state = document.state.update(spec).state;
-  }
-}
-
-function detectMerge(document: DocumentRecord, text: string): void {
-  mergeView.detect(document.id, text, (merge) => installMerge(document, text, merge));
 }
 
 function createUntitled(): DocumentRecord {
@@ -552,7 +540,7 @@ function removeDocument(document: DocumentRecord): void {
       workspace.classList.remove("has-document-view-two");
     }
   }
-  mergeView.forget(document.id);
+  installedFeatures.documentRemoved(document.id);
   dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderController.detach(document.id);
@@ -570,7 +558,12 @@ function removeDocument(document: DocumentRecord): void {
     } else {
       preview.replaceChildren();
       documentState.applyingDocument = true;
-      editor.setState(createEditorState("", documentState, callbacks, markerMergeExtension));
+      editor.setState(createEditorState(
+        "",
+        documentState,
+        callbacks,
+        featureEditorExtensions,
+      ));
       documentState.applyingDocument = false;
       documentState.currentGrant = null;
       documentState.currentName = null;
@@ -597,13 +590,8 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
-new WorkspaceSidebar({
-  elements: workspaceElements,
-  openDocument: (reference) => lifecycle.openReference(reference),
-  showStatus,
-});
 documentCommands = new DocumentCommands({
-  compare: openCompare,
+  compare: () => installedFeatures.runCommand("file.compareOpen"),
   editor: () => editorTwo.hasFocus ? editorTwo : editor,
   onError: showUnexpectedError,
   onResult: (result) => {
@@ -631,6 +619,22 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
 });
 
+async function loadBackgroundSettings(): Promise<void> {
+  const settingsResult = await loadSettings();
+  const applyTheme = (theme: ResolvedTheme): void => {
+    if (settingsResult.ok) {
+      applyBackgrounds(
+        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
+        theme,
+      );
+    } else {
+      resetToThemeDefaults(theme);
+    }
+  };
+  applyTheme(resolveSystemTheme());
+  watchSystemTheme(applyTheme);
+}
+
 async function initialize(): Promise<void> {
   for (const action of ["cancel", "discard", "save"] as const) {
     const button = closePrompt.querySelector<HTMLButtonElement>(
@@ -641,12 +645,19 @@ async function initialize(): Promise<void> {
     }
   }
   renderController.start();
-  wirePreviewLinks(preview, showStatus);
-  const untitled = createUntitled();
-  activateDocument(untitled);
-  updateTitle();
+  installedFeatures.start();
+  const readyRequest = beginStartup({
+    openInitialDocument: () => {
+      const untitled = createUntitled();
+      activateDocument(untitled);
+      updateTitle();
+    },
+    requestOpenRequests: readyForOpenRequests,
+    loadSettings: loadBackgroundSettings,
+    showError: showUnexpectedError,
+  });
   try {
-    const ready = valueOrStatus(await readyForOpenRequests());
+    const ready = valueOrStatus(await readyRequest);
     if (ready) {
       windowId = ready.windowId;
       documentState.productName = ready.productName;
@@ -665,4 +676,4 @@ async function initialize(): Promise<void> {
   }
 }
 
-void initialize();
+void initialize().catch(showUnexpectedError);

@@ -1,10 +1,10 @@
-import { formatMessage } from "../../../shared/messages/en";
 import type {
   CompareRow,
   CompareSide,
   CompareState,
   HighlightMode,
 } from "../../../shared/workers/compare";
+import { formatMessage } from "../../core/messages";
 
 export interface CompareViewActions {
   close(): void;

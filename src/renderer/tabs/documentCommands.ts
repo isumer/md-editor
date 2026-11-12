@@ -1,8 +1,14 @@
 import type { EditorView } from "@codemirror/view";
 
-import type { MenuCommandMessage, MenuContribution, MenuItemId } from "../../shared/ipc/menu";
+import { compareMenu } from "../../shared/ipc/menu/compare";
+import { composeMenuItems } from "../../shared/ipc/menu/compose";
+import { fileMenu } from "../../shared/ipc/menu/file";
+import {
+  type MenuCommandMessage,
+  type MenuContribution,
+} from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "../core/messages";
 import { createCommandRegistry } from "../core/commands";
 import { createContextKeys } from "../core/contextKeys";
 import { installKeymap } from "../core/keymap";
@@ -24,23 +30,18 @@ export function selectFocusedDocument<T>(
   return secondaryHasFocus ? secondary : primary;
 }
 
+// The renderer composes its own item list; main composes the same list
+// from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
+export const menuItems = composeMenuItems([fileMenu, compareMenu]);
+
 export function menuContribution(): MenuContribution {
   return {
-    fileMenuTitle: formatMessage("menu.file", {}),
-    items: [
-      { id: "file-open", title: formatMessage("menu.open", {}), accelerator: "CmdOrCtrl+O" },
-      { id: "file-save", title: formatMessage("menu.save", {}), accelerator: "CmdOrCtrl+S" },
-      {
-        id: "file-save-as",
-        title: formatMessage("menu.saveAs", {}),
-        accelerator: "CmdOrCtrl+Shift+S",
-      },
-      {
-        id: "file-compare-open",
-        title: formatMessage("menu.compareOpen", {}),
-        accelerator: "CmdOrCtrl+Shift+C",
-      },
-    ],
+    fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
+    items: menuItems.map((item) => ({
+      id: item.id,
+      title: formatMessage(item.titleKey, {}),
+      accelerator: item.accelerator,
+    })),
   };
 }
 
@@ -60,13 +61,6 @@ export class DocumentCommands {
   private readonly contextKeys = createContextKeys();
   private readonly commandContext = { contextKeys: this.contextKeys };
   private readonly commands = createCommandRegistry();
-  private readonly menuCommands: Readonly<Record<MenuItemId, string>> = {
-    "file-open": "file.open",
-    "file-save": "file.save",
-    "file-save-as": "file.saveAs",
-    "file-compare-open": "file.compareOpen",
-  };
-
   constructor(private readonly options: DocumentCommandsOptions) {
     this.register();
     onMenuCommand((item) => this.runMenu(item));
@@ -158,10 +152,9 @@ export class DocumentCommands {
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {
-    const commandId = this.menuCommands[menuItemId];
-    if (commandId !== undefined) {
-      void this.commands.run(commandId, this.commandContext, undefined, "menu");
-    }
+    const item = menuItems.find((candidate) => candidate.id === menuItemId);
+    if (item === undefined) return;
+    void this.commands.run(item.commandId, this.commandContext, undefined, "menu");
   }
 
   private async publish(): Promise<void> {
