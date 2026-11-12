@@ -86,6 +86,7 @@ export const APP_SCHEME_PRIVILEGES: CustomScheme = {
     secure: true,
     supportFetchAPI: true,
     allowServiceWorkers: false,
+    codeCache: true,
   },
 };
 

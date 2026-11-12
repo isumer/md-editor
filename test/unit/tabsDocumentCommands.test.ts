@@ -6,6 +6,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MenuCommandMessage, MenuContribution } from "../../src/shared/ipc/menu";
 import { menuItems as mainMenuItems } from "../../src/main/app/menu/registry";
+import {
+  createSecondaryDocumentCommands,
+  type SecondaryDocumentCommands,
+} from "../../src/renderer/tabs/documentCommandsSecondary";
 
 const contributeMenu = vi.fn(async (_request: MenuContribution) =>
   ({ ok: true, value: undefined } as const));
@@ -28,21 +32,30 @@ beforeEach(() => {
   document.body.replaceChildren();
 });
 
+function createEditor(): EditorView {
+  const parent = document.createElement("div");
+  document.body.append(parent);
+  return new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+}
+
 describe("document commands", () => {
-  it("AC-R5-08 AC-R5-15: publishes fixed menu ids and dispatches each command", async () => {
+  it("AC-PERF-03 AC-R5-15: primary commands run while the secondary module is pending", async () => {
     const { DocumentCommands } = await import(
       "../../src/renderer/tabs/documentCommands"
     );
-    const parent = document.createElement("div");
-    document.body.append(parent);
-    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    const editor = createEditor();
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
     const onResult = vi.fn();
+    let resolveSecondary!: (value: SecondaryDocumentCommands) => void;
+    const pendingSecondary = new Promise<SecondaryDocumentCommands>((resolve) => {
+      resolveSecondary = resolve;
+    });
+    const loadSecondary = vi.fn(() => pendingSecondary);
     const commands = new DocumentCommands({
-      compare,
       editor,
+      loadSecondary,
       onError: vi.fn(),
       onResult,
       open,
@@ -56,32 +69,48 @@ describe("document commands", () => {
         { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
         { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
-        {
-          id: "file-compare-open",
-          title: "Compare Open Files",
-          accelerator: "CmdOrCtrl+Shift+C",
-        },
       ],
     });
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
-    menuListener?.("file-compare-open");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
-    expect(compare).toHaveBeenCalledOnce();
+    expect(onResult).toHaveBeenCalledWith({ ok: true, value: undefined });
+
+    commands.startSecondaryFeatures();
+    commands.startSecondaryFeatures();
+    await Promise.resolve();
+    expect(loadSecondary).toHaveBeenCalledOnce();
+    expect(contributeMenu).toHaveBeenCalledOnce();
+
+    menuListener?.("file-compare-open");
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
-    expect(compare).toHaveBeenCalledTimes(2);
+    await Promise.resolve();
+    expect(compare).not.toHaveBeenCalled();
+
+    resolveSecondary(createSecondaryDocumentCommands({ compare }));
+    await vi.waitFor(() => expect(contributeMenu).toHaveBeenCalledTimes(2));
+    expect(contributeMenu.mock.calls[1]?.[0].items.map((item) => item.id))
+      .toEqual([
+        "file-open",
+        "file-save",
+        "file-save-as",
+        "file-compare-open",
+      ]);
+
+    menuListener?.("file-compare-open");
     document.dispatchEvent(new KeyboardEvent("keydown", {
-      bubbles: true, ctrlKey: true, altKey: true, key: "c",
+      bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
+    await Promise.resolve();
     expect(compare).toHaveBeenCalledTimes(2);
-    expect(onResult).toHaveBeenCalledWith({ ok: true, value: undefined });
+
     editor.contentDOM.focus();
     editor.dispatch({ selection: { anchor: 0, head: 2 } });
     commands.refresh();
@@ -95,13 +124,20 @@ describe("document commands", () => {
     editor.destroy();
   });
 
-  it("composes the same ordered item list as the main registry", async () => {
-    const { menuItems } = await import(
+  it("AC-R5-08 AC-R5-20: secondary items join the primary list in main order", async () => {
+    const { menuContribution, menuItems } = await import(
       "../../src/renderer/tabs/documentCommands"
     );
+    const secondary = createSecondaryDocumentCommands({ compare: vi.fn() });
+    const combined = [...menuItems, ...secondary.menuItems];
 
-    expect(menuItems).toEqual(mainMenuItems);
     expect(menuItems.map((item) => item.id)).toEqual([
+      "file-open",
+      "file-save",
+      "file-save-as",
+    ]);
+    expect(combined).toEqual(mainMenuItems);
+    expect(menuContribution(combined).items.map((item) => item.id)).toEqual([
       "file-open",
       "file-save",
       "file-save-as",
