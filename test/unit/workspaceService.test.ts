@@ -313,6 +313,54 @@ describe("io-worker workspace service", () => {
     expect(internals.watchers.size).toBe(0);
   });
 
+  it("AC-R11-05: discards a disk change completed after its root is revoked", async () => {
+    const root = await temporaryDirectory();
+    const note = path.join(root, "note.md");
+    await fs.writeFile(note, "note");
+    const grants = new IoGrantTable();
+    grants.register(1, "root", root, "root");
+    const service = new IoWorkspaceService(grants);
+    const sink = vi.fn();
+    service.setChangeSink(sink);
+    let continueStat = (): void => undefined;
+    const statPaused = new Promise<void>((resolve) => {
+      continueStat = resolve;
+    });
+    let markStarted = (): void => undefined;
+    const statStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const realStat = fs.stat.bind(fs);
+    const stat = vi.spyOn(fs, "stat").mockImplementation(async (filePath) => {
+      if (filePath === note) {
+        markStarted();
+        await statPaused;
+      }
+      return realStat(filePath);
+    });
+    const inspect = service as unknown as {
+      inspectChange(
+        windowId: number,
+        grant: string,
+        watchedRoot: string,
+        event: string,
+        file: string,
+      ): Promise<void>;
+    };
+
+    try {
+      const pending = inspect.inspectChange(1, "root", root, "change", "note.md");
+      await statStarted;
+      grants.revoke(1, "root");
+      continueStat();
+      await pending;
+
+      expect(sink).not.toHaveBeenCalled();
+    } finally {
+      stat.mockRestore();
+    }
+  });
+
   it("AC-R11-05: sends created, changed and deleted entries through the worker port", async () => {
     const root = await temporaryDirectory();
     const note = path.join(root, "note.md");

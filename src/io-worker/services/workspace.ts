@@ -225,6 +225,14 @@ export class IoWorkspaceService {
     }
   }
 
+  private rootIsActive(windowId: number, grant: string, root: string): boolean {
+    try {
+      return this.grants.resolve(windowId, grant, "root") === root;
+    } catch {
+      return false;
+    }
+  }
+
   private async inspectChange(
     windowId: number,
     grant: string,
@@ -232,11 +240,7 @@ export class IoWorkspaceService {
     event: string,
     fileName: string,
   ): Promise<void> {
-    try {
-      if (this.grants.resolve(windowId, grant, "root") !== root) return;
-    } catch {
-      return;
-    }
+    if (!this.rootIsActive(windowId, grant, root)) return;
     const relative = fileName.split(path.sep).join("/");
     const checked = checkWorkspacePath(relative);
     if (!checked.ok || checked.segments.some((part) =>
@@ -246,11 +250,12 @@ export class IoWorkspaceService {
       const stat = await fs.stat(canonicalPath);
       const entryKind = stat.isDirectory() ? "folder" : "file";
       if (entryKind === "file" && !relative.toLowerCase().endsWith(".md")) return;
+      if (!this.rootIsActive(windowId, grant, root)) return;
       this.changeSink(windowId, event === "change"
         ? { canonicalPath, kind: "changed", path: relative }
         : { canonicalPath, entryKind, kind: "created", path: relative });
     } catch (error) {
-      if (errorCode(error) === "ENOENT") {
+      if (errorCode(error) === "ENOENT" && this.rootIsActive(windowId, grant, root)) {
         this.changeSink(windowId, { canonicalPath, kind: "deleted", path: relative });
       }
     }
