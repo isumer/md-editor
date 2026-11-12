@@ -30,6 +30,8 @@ describe("English messages", () => {
       "menu.save": "Save",
       "menu.saveAs": "Save As",
       "menu.compareOpen": "Compare Open Files",
+      "menu.increaseFontSize": "Increase Font Size",
+      "menu.decreaseFontSize": "Decrease Font Size",
       "menu.undo": "Undo",
       "menu.redo": "Redo",
       "merge.left": "Left",

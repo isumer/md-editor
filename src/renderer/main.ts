@@ -26,12 +26,13 @@ import {
 import type { InstalledFeatures } from "./editor/featureWiring";
 import {
   applyBackgrounds,
-  resetToThemeDefaults,
   resolveSystemTheme,
   watchSystemTheme,
-  type ResolvedTheme,
 } from "./features/background/background";
 import { beginStartup } from "./features/background/startup";
+import { applyFontSize } from "./features/theme/fontSize";
+import { SettingsController } from "./features/theme/settingsController";
+import { applyTheme } from "./features/theme/theme";
 import {
   featureEditorExtensions,
   installFeatures,
@@ -46,6 +47,7 @@ import {
   onOpenRequest,
   onSessionCloseRequest,
   readyForOpenRequests,
+  saveSettings,
   sendChanges,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
@@ -162,6 +164,27 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
+const settingsController = new SettingsController(
+  {
+    load: loadSettings,
+    save: saveSettings,
+  },
+  {
+    systemTheme: resolveSystemTheme,
+    apply: (theme, settings) => {
+      applyTheme(theme);
+      applyBackgrounds(
+        {
+          editor: settings.editor.background,
+          preview: settings.preview.background,
+        },
+        theme,
+      );
+      applyFontSize(settings.fontSize);
+    },
+    watchSystem: watchSystemTheme,
+  },
+);
 installedFeatures = installFeatures({
   documents: () => registry.all(),
   editorHost,
@@ -378,9 +401,19 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
+function applyFontSizeChange(delta: number): void {
+  void settingsController.changeFontSize(delta).then((result) => {
+    if (!result.ok) {
+      showStatus(formatMessage(result.error.messageKey, result.error.params));
+    }
+  }).catch(showUnexpectedError);
+}
+
 documentCommands = new DocumentCommands({
   compare: () => installedFeatures.runCommand("file.compareOpen"),
+  decreaseFontSize: () => applyFontSizeChange(-1),
   editor,
+  increaseFontSize: () => applyFontSizeChange(1),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
@@ -401,22 +434,6 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
 });
 
-async function loadBackgroundSettings(): Promise<void> {
-  const settingsResult = await loadSettings();
-  const applyTheme = (theme: ResolvedTheme): void => {
-    if (settingsResult.ok) {
-      applyBackgrounds(
-        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
-        theme,
-      );
-    } else {
-      resetToThemeDefaults(theme);
-    }
-  };
-  applyTheme(resolveSystemTheme());
-  watchSystemTheme(applyTheme);
-}
-
 async function initialize(): Promise<void> {
   for (const action of ["cancel", "discard", "save"] as const) {
     const button = closePrompt.querySelector<HTMLButtonElement>(
@@ -426,6 +443,7 @@ async function initialize(): Promise<void> {
       button.textContent = formatMessage(`close.${action}`, {});
     }
   }
+  settingsController.apply();
   renderController.start();
   installedFeatures.start();
   const readyRequest = beginStartup({
@@ -435,7 +453,7 @@ async function initialize(): Promise<void> {
       updateTitle();
     },
     requestOpenRequests: readyForOpenRequests,
-    loadSettings: loadBackgroundSettings,
+    loadSettings: () => settingsController.load(),
     showError: showUnexpectedError,
   });
   try {

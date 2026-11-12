@@ -12,6 +12,8 @@ export const DEFAULT_BINDINGS: KeyBindings = Object.freeze({
   "Mod-z": "undo",
   "Mod-Shift-z": "redo",
   "Mod-y": "redo",
+  "Mod-=": "view.increaseFontSize",
+  "Mod--": "view.decreaseFontSize",
 });
 
 const DARWIN_DEFAULT_BINDINGS: KeyBindings = Object.freeze({

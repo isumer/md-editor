@@ -5,4 +5,6 @@ export const menuMessages = {
   "menu.saveAs": "Save As",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
+  "menu.increaseFontSize": "Increase Font Size",
+  "menu.decreaseFontSize": "Decrease Font Size",
 } as const;

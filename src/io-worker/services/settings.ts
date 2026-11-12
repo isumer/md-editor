@@ -11,6 +11,11 @@ export class SettingsStore {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return {};
       }
+      // A truncated or otherwise unparsable file gives defaults, and the
+      // corrupt bytes stay on disk until a later save replaces them.
+      if (error instanceof SyntaxError) {
+        return {};
+      }
       throw error;
     }
   }
