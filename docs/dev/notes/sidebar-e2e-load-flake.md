@@ -56,11 +56,13 @@ These candidates are unlikely, but the artifact cannot exclude them.
 
 ### 4. Windows 5,001-row expand loop
 
-AC-R11-02 took 10.9 seconds locally.
+AC-R11-02 took 12.5 seconds in the latest local run.
 The row renders 5,001 rows and runs 30 expand cycles.
 The Windows timeout could occur in this loop or during quit.
 Run 43027415248 is required to separate those candidates.
-`gh` is unavailable in these lanes, so I could not download that run.
+GitHub still retains artifact `failure-windows-latest` as ID 13859052076.
+The artifact download requires authentication.
+This lane has no GitHub credentials, so I could not inspect its trace.
 
 ## Close helper diagnostic
 
@@ -95,9 +97,9 @@ Several full-suite runs must pass on macOS and Windows before closing this flake
 
 ## Validation
 
-The fake-clock regression test failed with the 4,000 ms default.
+Two close-request tests failed with the 4,000 ms default.
 At 4,001 ms, the request had resolved and the snapshot was ignored.
-The test passed after restoring the 15,000 ms timeout.
+All 10 close-request tests passed after restoring the 15,000 ms timeout.
 `npm run typecheck` passed.
 `npm run check:deps` passed for 153 modules and 333 dependencies.
 `npm run test:unit` passed 1,185 tests in 116 files.
@@ -107,6 +109,14 @@ Branches measured 97.29 percent.
 Functions measured 99.23 percent.
 Lines measured 99.22 percent.
 The production build passed.
-The four affected sidebar e2e tests passed once without `@AC-PERF`.
-AC-R11-02 measured 281.7 ms expand p95.
-AC-R11-04 measured 52.6 ms open p95.
+The 88-test non-performance e2e suite passed, including all four sidebar rows.
+AC-R11-02 measured 264.2 ms expand p95.
+AC-R11-04 measured 55.9 ms open p95.
+
+The full local e2e rerun passed 96 of 98 tests. AC-PERF-09 did not finish the
+20 MB preview fill inside 360 seconds. Its 114,567 blocks require more than
+14,000 serialized eight-block fill handshakes. The next AC-PERF-11 row then
+missed its first-preview budget at 1,139 ms, but passed alone at 572 ms.
+Those renderer files are outside this brief, and the perf09 owner records the
+same 20 MB fill failure, so this investigation made no preview or
+performance-test change.
