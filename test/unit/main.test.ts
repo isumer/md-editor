@@ -176,6 +176,7 @@ const electron = vi.hoisted(() => {
     getAppPath: vi.fn(() => "/application"),
     getName: vi.fn(() => "SolidMD"),
     getPath: vi.fn(() => "/profiles/default"),
+    getVersion: vi.fn(() => "0.0.1"),
     isPackaged: false,
     requestSingleInstanceLock: vi.fn(() => true),
     setPath: vi.fn(),
@@ -207,6 +208,7 @@ const electron = vi.hoisted(() => {
   const dialog = {
     showOpenDialog: vi.fn(),
     showSaveDialog: vi.fn(),
+    showMessageBox: vi.fn(async () => ({ checkboxChecked: false, response: 0 })),
   };
   const shell = { openExternal: vi.fn(async () => undefined) };
 
@@ -814,6 +816,39 @@ describe("main process", () => {
     expect(electron.app.quit).toHaveBeenCalledTimes(process.platform === "darwin" ? 0 : 1);
   });
 
+  it("AC-R9-07: the Help menu checks the feed and opens an accepted release", async () => {
+    await loadMain();
+    await readyApplication();
+    electron.net.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      tag_name: "v1.2.3",
+      html_url: "https://github.com/isumer/solidmd/releases/tag/v1.2.3",
+      body: "Release notes.",
+    }), { status: 200 }));
+    type MenuNode = { id?: string; click?: () => void; submenu?: MenuNode[] };
+    const pending = [...electron.menuTemplate] as MenuNode[];
+    let updateItem: MenuNode | undefined;
+    while (pending.length > 0) {
+      const item = pending.shift();
+      if (item?.id === "help-check-updates") {
+        updateItem = item;
+        break;
+      }
+      pending.push(...(item?.submenu ?? []));
+    }
+
+    updateItem?.click?.();
+
+    await vi.waitFor(() => expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "SolidMD v1.2.3 is available." }),
+    ));
+    expect(electron.net.fetch).toHaveBeenCalledWith(
+      "https://api.github.com/repos/isumer/solidmd/releases/latest",
+    );
+    expect(electron.shell.openExternal).toHaveBeenCalledWith(
+      "https://github.com/isumer/solidmd/releases/tag/v1.2.3",
+    );
+  });
+
   it("AC-R5-17 AC-SEC-10: sends io-worker ports only to the app frame and logs worker exits", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await loadMain();
@@ -877,9 +912,27 @@ describe("main process", () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"io-worker-exit"'));
   });
 
+  it("closes without waiting for a renderer that has not become ready", async () => {
+    await loadMain();
+    await readyApplication();
+    const window = electron.BrowserWindowMock.instances[0];
+    if (!window) {
+      throw new Error("missing application window");
+    }
+
+    window.windowHandlers.get("close")?.({ preventDefault: vi.fn() });
+
+    await vi.waitFor(() => expect(window.close).toHaveBeenCalledOnce());
+    expect(window.webContents.send).not.toHaveBeenCalledWith(
+      "session:request-close",
+      expect.anything(),
+    );
+  });
+
   it("AC-R4-06: asks the renderer before closing and writes the allowed session", async () => {
     await loadMain();
     await readyApplication();
+    await invoke("file:open-requests-ready", {});
     const window = electron.BrowserWindowMock.instances[0];
     if (!window) {
       throw new Error("missing application window");
@@ -942,6 +995,7 @@ describe("main process", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await loadMain();
     await readyApplication();
+    await invoke("file:open-requests-ready", {});
     const window = electron.BrowserWindowMock.instances[0];
     if (!window) {
       throw new Error("missing application window");
@@ -963,6 +1017,7 @@ describe("main process", () => {
     await withPlatform("darwin", async () => {
       await loadMain();
       await readyApplication();
+      await invoke("file:open-requests-ready", {});
       const window = electron.BrowserWindowMock.instances[0];
       if (!window) {
         throw new Error("missing application window");
@@ -989,6 +1044,7 @@ describe("main process", () => {
     await withPlatform("darwin", async () => {
       await loadMain();
       await readyApplication();
+      await invoke("file:open-requests-ready", {});
       const window = electron.BrowserWindowMock.instances[0];
       if (!window) {
         throw new Error("missing application window");

@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
 - The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
 - The File menu has Export HTML… and Export PDF…: the preview becomes one self-contained HTML file (light or dark styles, images keep their relative paths), or a multi-page PDF where you choose the page size, margins and whether the background prints. Typing stays responsive while a large export runs; cancelling the file chooser changes nothing.
+- Help > Check for Updates tells you what it found: a new version with its release notes, that you are up to date, or why the check failed. A new version opens the download page only after you agree. The app also checks once a day at startup, and you can turn that off from the update dialog.
 
 ### Changed
 

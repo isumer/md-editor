@@ -5,6 +5,18 @@ import { describe, expect, it, vi } from "vitest";
 import { OpenRequests } from "../../src/main/app/startup";
 
 describe("open requests", () => {
+  it("reports when the renderer can answer lifecycle requests", async () => {
+    const requests = new OpenRequests({
+      deliver: async () => undefined,
+      isFile: async () => true,
+    });
+    expect(requests.isRendererReady()).toBe(false);
+
+    await requests.setRendererReady();
+
+    expect(requests.isRendererReady()).toBe(true);
+  });
+
   it("AC-R9-03: delivers requests received before renderer readiness in order", async () => {
     const delivered: string[] = [];
     const requests = new OpenRequests({
