@@ -20,7 +20,10 @@ afterEach(async () => {
     fs.rm(directory, { recursive: true, force: true })));
 });
 
-function serviceFor(root: string | null) {
+function serviceFor(
+  root: string | null,
+  changeSink: ConstructorParameters<typeof WorkspaceService>[2] = () => undefined,
+) {
   const documents = {
     openPath: vi.fn(async (_windowId: number, filePath: string) => ({
       canonicalPath: filePath,
@@ -30,11 +33,126 @@ function serviceFor(root: string | null) {
   } as unknown as DocumentGrantService;
   const service = new WorkspaceService({
     chooseFolderPath: vi.fn(async () => root),
-  }, documents);
+  }, documents, changeSink);
   return { documents, service };
 }
 
 describe("workspace service", () => {
+  it("AC-R11-07: creates, renames and deletes a Markdown file inside the root", async () => {
+    const root = await temporaryDirectory();
+    const { service } = serviceFor(root);
+    await service.chooseRoot(1);
+
+    await service.createFile(1, "draft.md");
+    await expect(fs.readFile(path.join(root, "draft.md"), "utf8")).resolves.toBe("");
+    await service.renameFile(1, "draft.md", "notes.md");
+    await expect(fs.stat(path.join(root, "draft.md"))).rejects.toMatchObject({ code: "ENOENT" });
+    await service.deleteFile(1, "notes.md");
+    await expect(fs.stat(path.join(root, "notes.md"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("AC-R11-07: file actions refuse unsafe paths and escaping symlinks", async () => {
+    const root = await temporaryDirectory();
+    const outside = await temporaryDirectory();
+    await fs.writeFile(path.join(outside, "outside.md"), "outside");
+    await fs.symlink(path.join(outside, "outside.md"), path.join(root, "link.md"));
+    const { service } = serviceFor(root);
+    await service.chooseRoot(1);
+
+    for (const unsafe of ["../outside.md", "/tmp/outside.md", "CON.md", "a.md:stream"]) {
+      await expect(service.createFile(1, unsafe)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+    await expect(service.deleteFile(1, "link.md")).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(fs.readFile(path.join(outside, "outside.md"), "utf8")).resolves.toBe("outside");
+  });
+
+  it("AC-R11-08: a name conflict keeps both files unchanged", async () => {
+    const root = await temporaryDirectory();
+    await fs.writeFile(path.join(root, "first.md"), "first");
+    await fs.writeFile(path.join(root, "second.md"), "second");
+    const { service } = serviceFor(root);
+    await service.chooseRoot(1);
+
+    await expect(service.renameFile(1, "first.md", "second.md")).rejects.toMatchObject({
+      code: "CONFLICT",
+      params: { file: "first.md" },
+    });
+    await expect(fs.readFile(path.join(root, "first.md"), "utf8")).resolves.toBe("first");
+    await expect(fs.readFile(path.join(root, "second.md"), "utf8")).resolves.toBe("second");
+  });
+
+  it("AC-R11-07: file actions refuse missing roots, non-Markdown names and folders", async () => {
+    const root = await temporaryDirectory();
+    await fs.mkdir(path.join(root, "folder.md"));
+    const { service } = serviceFor(root);
+
+    await expect(service.createFile(1, "new.md")).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await service.chooseRoot(1);
+    await expect(service.createFile(1, "notes.txt")).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(service.deleteFile(1, "folder.md")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("AC-R11-08: creating an existing file reports a conflict and keeps its text", async () => {
+    const root = await temporaryDirectory();
+    await fs.writeFile(path.join(root, "existing.md"), "existing");
+    const outside = await temporaryDirectory();
+    await fs.symlink(outside, path.join(root, "outside"));
+    const { service } = serviceFor(root);
+    await service.chooseRoot(1);
+
+    await expect(service.createFile(1, "existing.md")).rejects.toMatchObject({
+      code: "CONFLICT",
+      params: { file: "existing.md" },
+    });
+    await expect(service.createFile(1, "outside/new.md")).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(fs.readFile(path.join(root, "existing.md"), "utf8")).resolves.toBe("existing");
+  });
+
+  it("AC-R11-05: classifies watched file, folder, ignored and deleted changes", async () => {
+    const root = await temporaryDirectory();
+    await fs.writeFile(path.join(root, "note.md"), "note");
+    await fs.writeFile(path.join(root, "data.txt"), "data");
+    await fs.mkdir(path.join(root, "folder"));
+    const sink = vi.fn();
+    const { service } = serviceFor(root, sink);
+    await service.chooseRoot(1);
+    const inspect = service as unknown as {
+      inspectChange(windowId: number, root: string, event: string, file: string): Promise<void>;
+    };
+    const canonicalRoot = await fs.realpath(root);
+
+    await inspect.inspectChange(1, `${canonicalRoot}-stale`, "rename", "note.md");
+    await inspect.inspectChange(1, canonicalRoot, "change", "note.md");
+    await inspect.inspectChange(1, canonicalRoot, "rename", "folder");
+    await inspect.inspectChange(1, canonicalRoot, "rename", "data.txt");
+    await inspect.inspectChange(1, canonicalRoot, "rename", "missing.md");
+
+    expect(sink).toHaveBeenCalledWith(1, {
+      canonicalPath: path.join(canonicalRoot, "note.md"),
+      kind: "changed",
+      path: "note.md",
+    });
+    expect(sink).toHaveBeenCalledWith(1, {
+      canonicalPath: path.join(canonicalRoot, "folder"),
+      entryKind: "folder",
+      kind: "created",
+      path: "folder",
+    });
+    expect(sink).toHaveBeenCalledWith(1, {
+      canonicalPath: path.join(canonicalRoot, "missing.md"),
+      kind: "deleted",
+      path: "missing.md",
+    });
+  });
+
   it("AC-R11-01: lists visible folders and Markdown files only", async () => {
     const root = await temporaryDirectory();
     await Promise.all([

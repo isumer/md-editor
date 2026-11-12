@@ -46,6 +46,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   electron.invoke.mockResolvedValue({ ok: true, value: null });
   dropListeners.clear();
+  Reflect.deleteProperty(globalThis, "document");
   (globalThis as unknown as {
     addEventListener: (type: string, listener: (event: DropEvent) => void) => void;
   }).addEventListener = (type, listener) => {
@@ -67,6 +68,49 @@ async function loadPreload() {
 }
 
 describe("preload bridge", () => {
+  it("AC-R11-06: captures CmdOrCtrl+B until the renderer owns the shortcut", async () => {
+    const dataset: Record<string, string | undefined> = {};
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { documentElement: { dataset } },
+    });
+    await loadPreload();
+    const listener = dropListeners.get("keydown");
+    const shortcut = {
+      ctrlKey: true,
+      key: "b",
+      metaKey: false,
+      preventDefault: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
+    };
+
+    listener?.(shortcut as unknown as DropEvent);
+    expect(dataset["sidebarTogglePending"]).toBe("true");
+    expect(shortcut.preventDefault).toHaveBeenCalledOnce();
+    expect(shortcut.stopImmediatePropagation).toHaveBeenCalledOnce();
+
+    listener?.(shortcut as unknown as DropEvent);
+    expect(dataset["sidebarTogglePending"]).toBe("false");
+    dataset["sidebarShortcutReady"] = "true";
+    listener?.(shortcut as unknown as DropEvent);
+    expect(shortcut.preventDefault).toHaveBeenCalledTimes(2);
+  });
+
+  it("AC-R11-06: ignores early keys without a shortcut target or modifier", async () => {
+    await loadPreload();
+    const listener = dropListeners.get("keydown");
+    const event = {
+      ctrlKey: false,
+      key: "b",
+      metaKey: false,
+      preventDefault: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
+    };
+
+    listener?.(event as unknown as DropEvent);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
   it("AC-R5-01 AC-R5-02 AC-SEC-01 AC-SEC-11: exposes only the fixed named asynchronous API", async () => {
     const { api, portListener } = await loadPreload();
     expect(electron.exposeInMainWorld).toHaveBeenCalledTimes(1);
@@ -78,6 +122,8 @@ describe("preload bridge", () => {
         "chooseWorkspaceRoot",
         "clearDraft",
         "contributeMenu",
+        "createWorkspaceFile",
+        "deleteWorkspaceFile",
         "detachDocument",
         "draftDocument",
         "listDrafts",
@@ -87,12 +133,14 @@ describe("preload bridge", () => {
         "onMenuCommand",
         "onOpenRequest",
         "onSessionCloseRequest",
+        "onWorkspaceChange",
         "openExternal",
         "openFile",
         "openWorkspaceFile",
         "readDocument",
         "readyForOpenRequests",
         "releaseDocument",
+        "renameWorkspaceFile",
         "respondSessionClose",
         "saveDocument",
         "saveSettings",
@@ -118,6 +166,9 @@ describe("preload bridge", () => {
     await api.chooseWorkspaceRoot();
     await api.listWorkspaceChildren({ path: "notes" });
     await api.openWorkspaceFile({ path: "notes/daily.md" });
+    await api.createWorkspaceFile({ path: "draft.md" });
+    await api.renameWorkspaceFile({ path: "draft.md", newPath: "done.md" });
+    await api.deleteWorkspaceFile({ path: "done.md" });
     expect(electron.invoke.mock.calls).toEqual([
       ["file:open", {}],
       ["file:choose-save-target", { grant: "grant-a" }],
@@ -135,6 +186,9 @@ describe("preload bridge", () => {
       ["workspace:choose-root", {}],
       ["workspace:list-children", { path: "notes" }],
       ["workspace:open-file", { path: "notes/daily.md" }],
+      ["workspace:create-file", { path: "draft.md" }],
+      ["workspace:rename-file", { path: "draft.md", newPath: "done.md" }],
+      ["workspace:delete-file", { path: "done.md" }],
     ]);
 
     const port = new FakePort();
@@ -702,6 +756,34 @@ describe("preload bridge", () => {
     expect(electron.removeListener).toHaveBeenCalledWith(
       "session:request-close",
       closeCall?.[1],
+    );
+
+    const workspaceListener = vi.fn();
+    const unsubscribeWorkspace = api.onWorkspaceChange(workspaceListener);
+    const workspaceCall = electron.on.mock.calls.find(
+      ([channel]) => channel === "workspace:change",
+    );
+    const created = {
+      canonicalPath: "/notes/new.md",
+      entryKind: "file",
+      kind: "created",
+      path: "new.md",
+    };
+    workspaceCall?.[1]({}, created);
+    workspaceCall?.[1]({}, { canonicalPath: "/notes/a.md", kind: "changed", path: "a.md" });
+    workspaceCall?.[1]({}, { canonicalPath: "/notes/a.md", kind: "deleted", path: "a.md" });
+    workspaceCall?.[1]({}, null);
+    workspaceCall?.[1]({}, { kind: "created", path: "bad.md" });
+    workspaceCall?.[1]({}, { canonicalPath: "/notes/a.md", kind: "invalid", path: "a.md" });
+    expect(workspaceListener.mock.calls).toEqual([
+      [created],
+      [{ canonicalPath: "/notes/a.md", kind: "changed", path: "a.md" }],
+      [{ canonicalPath: "/notes/a.md", kind: "deleted", path: "a.md" }],
+    ]);
+    unsubscribeWorkspace();
+    expect(electron.removeListener).toHaveBeenCalledWith(
+      "workspace:change",
+      workspaceCall?.[1],
     );
   });
 });

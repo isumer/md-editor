@@ -171,6 +171,7 @@ installedFeatures = installFeatures({
   hasDocument: (documentId) => registry.get(documentId) !== undefined,
   isActive: (document) => activeDocument === document,
   openDocument: (reference) => lifecycle.openReference(reference),
+  removeDocument,
   showStatus,
 });
 

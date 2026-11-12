@@ -51,12 +51,15 @@ async function invoke(
 function service() {
   return {
     chooseRoot: vi.fn(async () => ({ name: "notes" })),
+    createFile: vi.fn(async () => undefined),
+    deleteFile: vi.fn(async () => undefined),
     listChildren: vi.fn(async () => [{ name: "daily.md", kind: "file" as const }]),
     openFile: vi.fn(async () => ({
       canonicalPath: "/notes/daily.md",
       grant: "grant",
       name: "daily.md",
     })),
+    renameFile: vi.fn(async () => undefined),
   };
 }
 
@@ -77,10 +80,20 @@ describe("workspace IPC handlers", () => {
       .resolves.toEqual({ ok: true, value: [{ name: "daily.md", kind: "file" }] });
     await expect(invoke(window.window, "workspace:open-file", { path: "notes/daily.md" }))
       .resolves.toMatchObject({ ok: true, value: { name: "daily.md" } });
+    await expect(invoke(window.window, "workspace:create-file", { path: "draft.md" }))
+      .resolves.toEqual({ ok: true, value: undefined });
+    await expect(invoke(window.window, "workspace:rename-file", {
+      path: "draft.md", newPath: "done.md",
+    })).resolves.toEqual({ ok: true, value: undefined });
+    await expect(invoke(window.window, "workspace:delete-file", { path: "done.md" }))
+      .resolves.toEqual({ ok: true, value: undefined });
 
     expect(workspace.chooseRoot).toHaveBeenCalledWith(window.window.id);
     expect(workspace.listChildren).toHaveBeenCalledWith(window.window.id, "notes");
     expect(workspace.openFile).toHaveBeenCalledWith(window.window.id, "notes/daily.md");
+    expect(workspace.createFile).toHaveBeenCalledWith(window.window.id, "draft.md");
+    expect(workspace.renameFile).toHaveBeenCalledWith(window.window.id, "draft.md", "done.md");
+    expect(workspace.deleteFile).toHaveBeenCalledWith(window.window.id, "done.md");
     unregisterTrustedWindow(window.window as never);
   });
 

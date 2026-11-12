@@ -3,6 +3,10 @@ import {
   type WorkspaceNode,
   type WorkspaceRow,
 } from "../../../shared/workspace/treeRows";
+import {
+  applyWorkspaceChange,
+  type WorkspaceChange,
+} from "../../../shared/workspace/treeUpdates";
 
 export interface ChildrenRequest {
   readonly id: number;
@@ -138,6 +142,10 @@ export class WorkspaceTreeStore {
 
   public rows(): readonly WorkspaceRow[] {
     return visibleRows(this.rootChildren, this.expanded, this.filter);
+  }
+
+  public applyChange(change: WorkspaceChange): void {
+    this.rootChildren = applyWorkspaceChange(this.rootChildren, change);
   }
 
   public isExpanded(path: string): boolean {

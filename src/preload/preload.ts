@@ -45,7 +45,10 @@ import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
+  RenameWorkspaceFileRequest,
   WORKSPACE_CHANNELS as SharedWorkspaceChannels,
+  WorkspaceChangeMessage,
+  WorkspaceFileActionResponse,
   WorkspacePathRequest,
 } from "../shared/ipc/workspace";
 
@@ -77,9 +80,13 @@ const SETTINGS_CHANNELS = {
   write: "settings:write",
 } as const satisfies typeof SharedSettingsChannels;
 const WORKSPACE_CHANNELS = {
+  change: "workspace:change",
   chooseRoot: "workspace:choose-root",
+  createFile: "workspace:create-file",
+  deleteFile: "workspace:delete-file",
   listChildren: "workspace:list-children",
   openFile: "workspace:open-file",
+  renameFile: "workspace:rename-file",
 } as const satisfies typeof SharedWorkspaceChannels;
 
 interface RendererPort {
@@ -320,6 +327,36 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  createWorkspaceFile(request: WorkspacePathRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  deleteWorkspaceFile(request: WorkspacePathRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  renameWorkspaceFile(request: RenameWorkspaceFileRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  onWorkspaceChange(listener: (change: WorkspaceChangeMessage) => void): () => void;
+}
+
+function workspaceChange(value: unknown): WorkspaceChangeMessage | null {
+  const record = typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : null;
+  if (!record || typeof record["kind"] !== "string") return null;
+  const keys = record["kind"] === "created"
+    ? ["canonicalPath", "entryKind", "kind", "path"]
+    : ["canonicalPath", "kind", "path"];
+  const data = exactData(record, keys);
+  if (!data || typeof data["canonicalPath"] !== "string" ||
+    typeof data["path"] !== "string") return null;
+  if (data["kind"] === "created" &&
+    (data["entryKind"] === "folder" || data["entryKind"] === "file")) {
+    return data as unknown as WorkspaceChangeMessage;
+  }
+  return data["kind"] === "changed" || data["kind"] === "deleted"
+    ? data as unknown as WorkspaceChangeMessage
+    : null;
 }
 
 const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
@@ -332,7 +369,19 @@ interface TrustedDropEvent {
   preventDefault(): void;
 }
 
-interface DropTarget {
+interface EarlyShortcutEvent {
+  readonly ctrlKey: boolean;
+  readonly key: string;
+  readonly metaKey: boolean;
+  preventDefault(): void;
+  stopImmediatePropagation(): void;
+}
+
+interface PreloadTarget {
+  readonly document?: {
+    readonly documentElement?: { readonly dataset: Record<string, string | undefined> };
+  };
+  addEventListener(type: "keydown", listener: (event: EarlyShortcutEvent) => void): void;
   addEventListener(type: "drop", listener: (event: TrustedDropEvent) => void): void;
 }
 
@@ -485,11 +534,41 @@ const api: Api = {
     WORKSPACE_CHANNELS.openFile,
     request,
   ) as Promise<Result<OpenWorkspaceFileResponse>>,
+  createWorkspaceFile: (request) => ipcRenderer.invoke(
+    WORKSPACE_CHANNELS.createFile,
+    request,
+  ) as Promise<Result<WorkspaceFileActionResponse>>,
+  deleteWorkspaceFile: (request) => ipcRenderer.invoke(
+    WORKSPACE_CHANNELS.deleteFile,
+    request,
+  ) as Promise<Result<WorkspaceFileActionResponse>>,
+  renameWorkspaceFile: (request) => ipcRenderer.invoke(
+    WORKSPACE_CHANNELS.renameFile,
+    request,
+  ) as Promise<Result<WorkspaceFileActionResponse>>,
+  onWorkspaceChange: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      const change = workspaceChange(value);
+      if (change) listener(change);
+    };
+    ipcRenderer.on(WORKSPACE_CHANNELS.change, handler);
+    return () => ipcRenderer.removeListener(WORKSPACE_CHANNELS.change, handler);
+  },
 };
 
-const dropTarget = globalThis as unknown as Partial<DropTarget>;
-if (typeof dropTarget.addEventListener === "function") {
-  dropTarget.addEventListener("drop", (event) => {
+const preloadTarget = globalThis as unknown as Partial<PreloadTarget>;
+if (typeof preloadTarget.addEventListener === "function") {
+  preloadTarget.addEventListener("keydown", (event) => {
+    const dataset = preloadTarget.document?.documentElement?.dataset;
+    if (!dataset || (!event.metaKey && !event.ctrlKey) ||
+      event.key.toLowerCase() !== "b" || dataset["sidebarShortcutReady"] === "true") {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    dataset["sidebarTogglePending"] = String(dataset["sidebarTogglePending"] !== "true");
+  });
+  preloadTarget.addEventListener("drop", (event) => {
     void openDroppedFiles(event).catch(() => undefined);
   });
 }

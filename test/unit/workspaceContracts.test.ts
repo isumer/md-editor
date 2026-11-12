@@ -13,14 +13,20 @@ function acceptsPath(value: unknown): boolean {
 }
 
 describe("workspace IPC contracts", () => {
-  it("AC-R11-01: names every workspace channel once", () => {
+  it("AC-R11-01 AC-R11-05 AC-R11-07: names every workspace channel once", () => {
     expect(WORKSPACE_CHANNELS).toEqual({
+      change: "workspace:change",
       chooseRoot: "workspace:choose-root",
+      createFile: "workspace:create-file",
+      deleteFile: "workspace:delete-file",
       listChildren: "workspace:list-children",
       openFile: "workspace:open-file",
+      renameFile: "workspace:rename-file",
     });
     expect(workspaceContracts.listChildren.channel).toBe(WORKSPACE_CHANNELS.listChildren);
     expect(workspaceContracts.openFile.channel).toBe(WORKSPACE_CHANNELS.openFile);
+    expect(workspaceContracts.renameFile.validate({ path: "a.md", newPath: "b.md" }))
+      .toBe(true);
   });
 
   it("AC-R11-01: accepts only an empty object for choosing a root", () => {
