@@ -386,6 +386,7 @@ documentCommands = new DocumentCommands({
     valueOrStatus(result);
   },
   open: () => lifecycle.open(),
+  merge: () => installedFeatures.runCommand("file.mergeOpen"),
   save: (saveAs) => lifecycle.saveActive(saveAs),
 });
 

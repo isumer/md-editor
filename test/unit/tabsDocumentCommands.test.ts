@@ -39,9 +39,11 @@ describe("document commands", () => {
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
+    const merge = vi.fn();
     const onResult = vi.fn();
     const commands = new DocumentCommands({
       compare,
+      merge,
       editor,
       onError: vi.fn(),
       onResult,
@@ -61,18 +63,25 @@ describe("document commands", () => {
           title: "Compare Open Files",
           accelerator: "CmdOrCtrl+Shift+C",
         },
+        {
+          id: "file-merge-open",
+          title: "Merge Open Files",
+          accelerator: "CmdOrCtrl+Shift+M",
+        },
       ],
     });
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
     menuListener?.("file-compare-open");
+    menuListener?.("file-merge-open");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
+    expect(merge).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
@@ -106,6 +115,7 @@ describe("document commands", () => {
       "file-save",
       "file-save-as",
       "file-compare-open",
+      "file-merge-open",
     ]);
   });
 
@@ -120,6 +130,7 @@ describe("document commands", () => {
     new DocumentCommands({
       compare: vi.fn(),
       editor,
+      merge: vi.fn(),
       onError,
       onResult: vi.fn(),
       open: vi.fn(async () => undefined),
