@@ -79,6 +79,38 @@ test("AC-R4-10: registered tab commands move and clone tabs to the other view", 
   }
 });
 
+test("AC-R4-10: moving the active view two tab activates its remaining tab", {
+  tag: "@AC-R4-10",
+  annotation: { type: "AC-R4-10" },
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, beta);
+    await tabIn(page, "tabs", "beta.md").click({ button: "right" });
+    await page.getByRole("button", { name: "Move to Other View" }).click();
+    await cloneAlpha(page);
+    await tabIn(page, "tabs-two", "beta.md").click();
+    await expect(tabIn(page, "tabs-two", "beta.md")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await tabIn(page, "tabs-two", "beta.md").click({ button: "right" });
+
+    await page.getByRole("button", { name: "Move to Other View" }).click();
+
+    await expect(tabIn(page, "tabs-two", "alpha.md")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(editor(page, 2)).toContainText("# Alpha");
+    await expect(editor(page, 2)).not.toContainText("# Beta");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AC-R4-11: a clone updates in the same frame and keeps its cursor and scroll", {
   tag: "@AC-R4-11",
   annotation: { type: "AC-R4-11" },
@@ -167,6 +199,32 @@ test("AC-R4-12: view two undoes a view one edit and view one redoes it", {
   }
 });
 
+test("AC-R4-12: switching view one tabs keeps history created in view two", {
+  tag: "@AC-R4-12",
+  annotation: { type: "AC-R4-12" },
+}, async () => {
+  const { directory, alpha, beta } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await openWithMenu(application, beta);
+    await tabIn(page, "tabs", "alpha.md").click();
+    await cloneAlpha(page);
+    await editor(page, 2).click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("VIEW-TWO-HISTORY");
+    await tabIn(page, "tabs", "beta.md").click();
+    await tabIn(page, "tabs", "alpha.md").click();
+
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
+
+    await expect(editor(page, 1)).not.toContainText("VIEW-TWO-HISTORY");
+    await expect(editor(page, 2)).not.toContainText("VIEW-TWO-HISTORY");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("view two saves its document without changing view one", async () => {
   const { directory, alpha, beta } = await copyFixtures();
   const alphaBefore = await fs.readFile(alpha, "utf8");
@@ -224,7 +282,8 @@ test("the workspace sidebar keeps its own column beside the editor", async () =>
     const editorBox = await editor(page, 1).boundingBox();
     expect(sidebarBox).not.toBeNull();
     expect(editorBox).not.toBeNull();
-    expect(sidebarBox!.x + sidebarBox!.width).toBeLessThanOrEqual(editorBox!.x + 1);
+    if (!sidebarBox || !editorBox) throw new Error("The workspace columns are not visible.");
+    expect(sidebarBox.x + sidebarBox.width).toBeLessThanOrEqual(editorBox.x + 1);
   } finally {
     await closeEditor(application, page);
     await fs.rm(directory, { recursive: true, force: true });

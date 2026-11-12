@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- The bounded diff implementation keeps its shared state together. */
 export interface LineDiffOptions {
   readonly ignoreTrailingWhitespace?: boolean;
   readonly ignoreCase?: boolean;

@@ -81,7 +81,7 @@ export class TabStrip {
     element.addEventListener("click", () => this.options.select(document));
     element.addEventListener("mousedown", (event) => {
       if (event.button === 1) {
-        event.preventDefault();
+        event.stopPropagation();
         this.options.close(document);
       }
     });
@@ -105,7 +105,8 @@ export class TabStrip {
       const button = window.document.createElement("button");
       button.type = "button";
       button.textContent = formatMessage(titleKey, {});
-      button.addEventListener("click", () => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
         menu.remove();
         const target = this.options.commandTarget?.(document);
         if (target !== undefined) {

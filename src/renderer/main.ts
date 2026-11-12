@@ -412,7 +412,9 @@ function activateDocument(document: DocumentRecord): void {
     return;
   }
   if (activeDocument) {
-    activeDocument.state = editor.state;
+    if (stateViews.get(activeDocument.id) === 1) {
+      activeDocument.state = editor.state;
+    }
     saveEditorViewState(activeDocument, 1, editor);
   }
   activeDocument = document;
@@ -455,9 +457,16 @@ function changeDocumentView(
 ): void {
   if (action === "clone") documentViews.clone(document.id, from);
   else documentViews.move(document.id, from);
-  viewTwoHost.hidden = documentViews.documents(2).length === 0;
+  const secondaryIds = documentViews.documents(2);
+  viewTwoHost.hidden = secondaryIds.length === 0;
   workspace.classList.toggle("has-document-view-two", !viewTwoHost.hidden);
-  if (documentViews.documents(2).includes(document.id)) activateSecondaryDocument(document);
+  if (!secondaryIds.includes(secondaryDocument?.id ?? "")) {
+    secondaryDocument = null;
+    const nextId = secondaryIds[0];
+    const next = nextId === undefined ? undefined : registry.get(nextId);
+    if (next) activateSecondaryDocument(next);
+  }
+  if (secondaryIds.includes(document.id)) activateSecondaryDocument(document);
   if (!documentViews.documents(1).includes(activeDocument?.id ?? "")) {
     const nextId = documentViews.documents(1)[0];
     const next = nextId === undefined ? undefined : registry.get(nextId);
