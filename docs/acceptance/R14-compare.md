@@ -15,7 +15,7 @@ When the compare is shown with Highlight: words
 Then only that word is highlighted inside the line; Highlight: characters, lines and none behave likewise on fixtures
 
 ### AC-R14-03 — The unified mode shows the same changes
-status: planned
+status: implemented
 Given a side-by-side compare
 When the user toggles unified mode
 Then the same changes are shown in one column with the same change count
@@ -51,7 +51,7 @@ When the matching ignore option is on
 Then those lines are not reported as changes, and with it off they are
 
 ### AC-R14-09 — Unchanged regions collapse
-status: planned
+status: implemented
 Given two 1,000-line files with one change at line 500
 When the compare is shown
 Then the unchanged regions are collapsed with an expand control, and expanding shows the lines aligned
@@ -63,7 +63,7 @@ When they are compared
 Then the first diff is shown within 2 s and no long task over 50 ms blocks the window while the diff runs
 
 ### AC-R14-11 — A diff that runs too long falls back and says so
-status: planned
+status: implemented
 Given a pair whose word-level diff exceeds the time limit
 When it is compared
 Then a coarser line diff is shown with a notice, and the window never freezes

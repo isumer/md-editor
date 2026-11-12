@@ -74,4 +74,68 @@ describe("compare view", () => {
     expect(view.root.hidden).toBe(false);
     expect(view.root.querySelectorAll(".compare-row").length).toBe(1);
   });
+
+  it("AC-R14-03: unified mode keeps every change in one column", () => {
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move: vi.fn() });
+    const state = createCompareState("same\nold\ndeleted", "same\nnew", "words");
+    view.show("left.txt", "right.txt", state);
+    const changeCount = view.root.querySelectorAll(".compare-overview-marker").length;
+
+    view.root.querySelector<HTMLButtonElement>(".compare-mode")?.click();
+
+    expect(view.root.classList.contains("compare-unified")).toBe(true);
+    expect(view.root.querySelectorAll(".compare-heading")).toHaveLength(1);
+    expect(view.root.querySelectorAll(".compare-overview-marker")).toHaveLength(changeCount);
+    expect(view.root.querySelector('[data-change-index="0"]')?.children).toHaveLength(2);
+    expect(view.root.textContent).toContain("deleted");
+
+    view.root.querySelector<HTMLButtonElement>(".compare-mode")?.click();
+    expect(view.root.classList.contains("compare-unified")).toBe(false);
+  });
+
+  it("ignores a mode request before a compare and tolerates a removed control", () => {
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move: vi.fn() });
+    const mode = view.root.querySelector<HTMLButtonElement>(".compare-mode");
+    expect(mode).not.toBeNull();
+    mode?.click();
+    expect(view.root.classList.contains("compare-unified")).toBe(false);
+    view.show("left.txt", "right.txt", createCompareState("left", "right", "words"));
+    mode?.remove();
+
+    mode?.click();
+
+    expect(view.root.classList.contains("compare-unified")).toBe(true);
+  });
+
+  it("AC-R14-09: collapses long unchanged regions and expands them aligned", () => {
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move: vi.fn() });
+    const left = Array.from({ length: 1_000 }, (_, index) => `line ${String(index + 1)}`);
+    const right = [...left];
+    right[499] = "changed";
+    view.show("left.txt", "right.txt", createCompareState(
+      left.join("\n"),
+      right.join("\n"),
+      "words",
+    ));
+
+    const expand = view.root.querySelector<HTMLButtonElement>(".compare-expand");
+    expect(expand).not.toBeNull();
+    expect(view.root.querySelectorAll(".compare-row").length).toBeLessThan(20);
+    expand?.click();
+
+    expect(view.root.querySelectorAll(".compare-expand")).toHaveLength(1);
+    expect(view.root.querySelectorAll(".compare-row").length).toBeGreaterThan(500);
+    expect(view.root.querySelectorAll(".compare-row .compare-cell").length % 2).toBe(0);
+  });
+
+  it("AC-R14-11: shows a fallback notice for a limited diff", () => {
+    const view = new CompareView({ close: vi.fn(), highlight: vi.fn(), move: vi.fn() });
+    const left = Array.from({ length: 200 }, (_, index) => `left${String(index)}`).join(" ");
+    const right = Array.from({ length: 200 }, (_, index) => `right${String(index)}`).join(" ");
+
+    view.show("left.txt", "right.txt", createCompareState(left, right, "words"));
+
+    expect(view.root.querySelector("[role=status]")?.textContent)
+      .toBe("The detailed diff took too long. SolidMD shows line changes instead.");
+  });
 });

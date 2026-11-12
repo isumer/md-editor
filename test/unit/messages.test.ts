@@ -64,6 +64,11 @@ describe("English messages", () => {
       "compare.highlight.none": "None",
       "compare.previous": "Previous difference",
       "compare.next": "Next difference",
+      "compare.unified": "Unified view",
+      "compare.sideBySide": "Side-by-side view",
+      "compare.expand": "Show {count} unchanged lines",
+      "compare.limited":
+        "The detailed diff took too long. SolidMD shows line changes instead.",
       "compare.close": "Close compare",
       "compare.difference": "Difference {number}",
       "draft.recovered": "Recovered unsaved text for “{file}”.",

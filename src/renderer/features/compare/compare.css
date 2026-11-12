@@ -3,7 +3,7 @@
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
   background: #ffffff;
 }
@@ -48,6 +48,22 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.compare-unified .compare-headings,
+.compare-unified .compare-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.compare-limit-notice {
+  margin: 0;
+  padding: 6px 12px;
+  color: #663c00;
+  background: #fff8c5;
+}
+
+.compare-limit-notice[hidden] {
+  display: none;
+}
+
 .compare-heading {
   padding: 6px 12px;
   border-bottom: 1px solid #d0d7de;
@@ -59,6 +75,11 @@
 .compare-heading:first-child,
 .compare-cell:first-child {
   border-right: 1px solid #d0d7de;
+}
+
+.compare-unified .compare-heading:first-child,
+.compare-unified .compare-cell:first-child {
+  border-right: 0;
 }
 
 .compare-rows {
@@ -114,6 +135,21 @@
 .compare-selected {
   outline: 2px solid #0969da;
   outline-offset: -2px;
+}
+
+.compare-collapsed {
+  display: block;
+  padding: 4px 48px;
+  text-align: center;
+  background: #f6f8fa;
+}
+
+.compare-expand {
+  padding: 2px 8px;
+  border: 0;
+  color: #0969da;
+  background: transparent;
+  cursor: pointer;
 }
 
 .compare-overview {

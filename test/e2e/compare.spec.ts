@@ -1,3 +1,5 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
@@ -78,5 +80,48 @@ test("compare keeps the workspace sidebar in the left column", async () => {
     expect(compareBox.y).toBe(sidebarBox.y);
   } finally {
     await closeEditor(application, page);
+  }
+});
+
+test("unified compare preserves changes, collapses context, and reports fallback", {
+  tag: ["@AC-R14-03", "@AC-R14-09", "@AC-R14-11"],
+  annotation: [
+    { type: "AC-R14-03" },
+    { type: "AC-R14-09" },
+    { type: "AC-R14-11" },
+  ],
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-compare-"));
+  const left = Array.from({ length: 1_000 }, (_, index) => `line ${String(index + 1)}`);
+  const right = [...left];
+  left[499] = Array.from({ length: 200 }, (_, index) => `left${String(index)}`).join(" ");
+  right[499] = Array.from({ length: 200 }, (_, index) => `right${String(index)}`).join(" ");
+  const leftFile = path.join(temporaryDirectory, "left-long.txt");
+  const rightFile = path.join(temporaryDirectory, "right-long.txt");
+  await Promise.all([
+    fs.writeFile(leftFile, left.join("\n")),
+    fs.writeFile(rightFile, right.join("\n")),
+  ]);
+  const { application, page } = await launchEditor(leftFile);
+  try {
+    await stubOpenDialog(application, rightFile);
+    await clickMenuItem(application, "file-open");
+    await expect(page.getByRole("tab", { name: /right-long\.txt/ })).toBeVisible();
+    await clickMenuItem(application, "file-compare-open");
+
+    const compare = page.getByTestId("compare-view");
+    await expect(compare.getByRole("status")).toContainText("shows line changes instead");
+    await expect(compare.locator(".compare-expand")).toHaveCount(2);
+    const markers = await compare.locator(".compare-overview-marker").count();
+    await compare.locator(".compare-mode").click();
+
+    await expect(compare).toHaveClass(/compare-unified/);
+    await expect(compare.locator(".compare-overview-marker")).toHaveCount(markers);
+    await compare.locator(".compare-expand").first().click();
+    await expect(compare.locator(".compare-line-number").filter({ hasText: "250" }))
+      .toBeVisible();
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 });
