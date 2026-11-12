@@ -50,6 +50,7 @@ import {
   sendChanges,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
+import { DocumentCommands } from "./tabs/documentCommands";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
@@ -64,8 +65,6 @@ function markStartup(name: string): void {
 }
 
 markStartup("renderer-script-start");
-
-type DocumentCommands = import("./tabs/documentCommands").DocumentCommands;
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -92,7 +91,6 @@ let editor: EditorView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let installedFeatures: DeferredInstalledFeatures;
-let secondaryFeaturesStarted = false;
 let secondaryFeaturesScheduled = false;
 
 function currentFeatureExtensions(): Extension {
@@ -409,24 +407,23 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
-function loadSecondaryFeatures(): void {
-  if (secondaryFeaturesStarted) return;
-  secondaryFeaturesStarted = true;
-  void import("./tabs/documentCommands").then((commandsModule) => {
-    documentCommands = new commandsModule.DocumentCommands({
+
+documentCommands = new DocumentCommands({
+  editor,
+  onError: showUnexpectedError,
+  onResult: (result) => {
+    valueOrStatus(result);
+  },
+  open: () => lifecycle.open(),
+  save: (saveAs) => lifecycle.saveActive(saveAs),
+  loadSecondary: () => import("./tabs/documentCommandsSecondary").then(
+    ({ createSecondaryDocumentCommands }) => createSecondaryDocumentCommands({
       compare: () => {
         void openCompare().catch(showUnexpectedError);
       },
-      editor,
-      onError: showUnexpectedError,
-      onResult: (result) => {
-        valueOrStatus(result);
-      },
-      open: () => lifecycle.open(),
-      save: (saveAs) => lifecycle.saveActive(saveAs),
-    });
-  }).catch(showUnexpectedError);
-}
+    }),
+  ),
+});
 
 async function openCompare(): Promise<void> {
   const { compareFeature } = await import("./features/compare/wiring");
@@ -443,7 +440,7 @@ function scheduleSecondaryFeatures(): void {
   if (secondaryFeaturesScheduled) return;
   secondaryFeaturesScheduled = true;
   requestAnimationFrame(() => {
-    window.setTimeout(loadSecondaryFeatures, 0);
+    window.setTimeout(() => documentCommands?.startSecondaryFeatures(), 0);
   });
 }
 
@@ -513,7 +510,7 @@ async function initialize(): Promise<void> {
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
   }
-  window.setTimeout(loadSecondaryFeatures, 1_000);
+  window.setTimeout(() => documentCommands?.startSecondaryFeatures(), 1_000);
 }
 
 void initialize().catch(showUnexpectedError);

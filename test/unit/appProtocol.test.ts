@@ -27,6 +27,7 @@ vi.mock("electron", () => ({
 }));
 
 import {
+  APP_SCHEME_PRIVILEGES,
   registerAppProtocol,
   registerAppScheme,
   resolveAppRequest,
@@ -134,8 +135,13 @@ describe("app protocol registration", () => {
         secure: true,
         supportFetchAPI: true,
         allowServiceWorkers: false,
+        codeCache: true,
       },
     }]);
+  });
+
+  it("AC-PERF-03: enables the V8 code cache for the renderer bundle", () => {
+    expect(APP_SCHEME_PRIVILEGES.privileges?.codeCache).toBe(true);
   });
 
   it("AC-SEC-14: returns an empty 404 without fetching a rejected path", async () => {
