@@ -134,6 +134,26 @@ function collectCluster(
   return { changes: result, index: next, end: clusterEnd };
 }
 
+function collectOverlappingClusters(
+  sides: readonly [readonly SideChange[], readonly SideChange[]],
+  indexes: readonly [number, number],
+  range: { readonly start: number; readonly end: number },
+): readonly [ReturnType<typeof collectCluster>, ReturnType<typeof collectCluster>] {
+  let clusterEnd = range.end;
+  while (true) {
+    const leftCluster = collectCluster(sides[0], indexes[0], range.start, clusterEnd);
+    const rightCluster = collectCluster(
+      sides[1],
+      indexes[1],
+      range.start,
+      Math.max(clusterEnd, leftCluster.end),
+    );
+    const nextEnd = Math.max(leftCluster.end, rightCluster.end);
+    if (nextEnd === clusterEnd) return [leftCluster, rightCluster];
+    clusterEnd = nextEnd;
+  }
+}
+
 function segmentText(
   base: readonly string[],
   start: number,
@@ -198,12 +218,10 @@ function mergeChanges(
     if (leftChange === undefined || rightChange === undefined ||
       !overlaps(leftChange, rightChange)) break;
     const start = Math.min(leftChange.start, rightChange.start);
-    let end = Math.max(leftChange.end, rightChange.end);
-    let leftCluster = collectCluster(left, leftIndex, start, end);
-    let rightCluster = collectCluster(right, rightIndex, start, leftCluster.end);
-    end = Math.max(leftCluster.end, rightCluster.end);
-    leftCluster = collectCluster(left, leftIndex, start, end);
-    rightCluster = collectCluster(right, rightIndex, start, leftCluster.end);
+    const end = Math.max(leftChange.end, rightChange.end);
+    const [leftCluster, rightCluster] = collectOverlappingClusters(
+      [left, right], [leftIndex, rightIndex], { start, end },
+    );
     chunks.push(conflictingChunk(base, offsets, leftCluster.changes, rightCluster.changes));
     leftIndex = leftCluster.index;
     rightIndex = rightCluster.index;

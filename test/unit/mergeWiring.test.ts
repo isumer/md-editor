@@ -183,4 +183,34 @@ describe("merge wiring", () => {
     expect(testHarness.editor.state.doc.toString()).toBe("changed base\n");
     testHarness.editor.destroy();
   });
+
+  it("AC-R15-03: keeps a merge result after a selection-only change", async () => {
+    const delayed = workerFactory();
+    delayed.postMessage = vi.fn();
+    const feature = createMergeFeature(() => delayed);
+    const testHarness = harness([
+      record("left", "left\n"),
+      record("right", "right\n"),
+      record("base", "base\n"),
+    ]);
+    const hooks = feature.create(testHarness.context);
+    hooks.commands?.["file.mergeOpen"]?.();
+    testHarness.editor.dispatch({ selection: { anchor: 1 } });
+    const request = vi.mocked(delayed.postMessage).mock.calls[0]?.[0];
+    if (request === undefined) throw new Error("The worker request was not sent");
+
+    delayed.onmessage?.({
+      data: {
+        id: request.id,
+        ok: true,
+        result: createThreeWayMerge(request.base, request.left, request.right),
+      },
+    } as MessageEvent);
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="merge-view"]')).not.toBeNull();
+    });
+    expect(testHarness.editor.state.selection.main.head).toBe(1);
+    testHarness.editor.destroy();
+  });
 });

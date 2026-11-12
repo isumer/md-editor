@@ -123,6 +123,40 @@ describe("three-way merge", () => {
     expect(result.chunks[0]?.kind).toBe("conflict");
   });
 
+  it("AC-R15-01: keeps a long alternating overlap chain in one conflict", () => {
+    const base = Array.from(
+      { length: 20 },
+      (_value, index) => `${String(index)}\n`,
+    ).join("");
+    const lines = base.split(/(?<=\n)/);
+    const left = [...lines];
+    const right = [...lines];
+    const leftChanges = [
+      [0, 3, "L1"],
+      [6, 9, "L2"],
+      [10, 13, "L3"],
+      [14, 17, "L4"],
+    ] as const;
+    for (const [start, end, label] of leftChanges) {
+      const replacements = Array.from({ length: end - start }, () => `${label}\n`);
+      left.splice(start, end - start, ...replacements);
+    }
+    const rightChanges = [
+      [2, 7, "R1"],
+      [8, 11, "R2"],
+      [12, 15, "R3"],
+    ] as const;
+    for (const [start, end, label] of rightChanges) {
+      const replacements = Array.from({ length: end - start }, () => `${label}\n`);
+      right.splice(start, end - start, ...replacements);
+    }
+
+    const result = createThreeWayMerge(base, left.join(""), right.join(""));
+
+    expect(result.chunks).toHaveLength(1);
+    expect(result.chunks[0]?.kind).toBe("conflict");
+  });
+
   it("treats an insertion at a modified range boundary as a conflict", () => {
     const result = createThreeWayMerge(
       "one\ntwo\n",

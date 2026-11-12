@@ -22,7 +22,6 @@ interface ThreeWayInput {
   readonly left: string;
   readonly right: string;
   readonly source: string;
-  readonly state: DocumentRecord["state"];
 }
 
 function markerState(result: MergeWorkerResult) {
@@ -41,9 +40,12 @@ function installThreeWay(
   input: ThreeWayInput,
 ): void {
   worker.request({ base: input.source, left: input.left, right: input.right }, (result) => {
-    if (!context.isActive(input.base) || input.base.state !== input.state ||
-      context.editor.state !== input.state) return;
-    const spec = initializeThreeWayMerge(input.state, input.source, markerState(result));
+    if (!context.isActive(input.base)) return;
+    const spec = initializeThreeWayMerge(
+      context.editor.state,
+      input.source,
+      markerState(result),
+    );
     if (spec === null) return;
     view.install(input.base.id);
     context.editor.dispatch(spec);
@@ -70,7 +72,6 @@ function openThreeWay(
   const source = base.state.doc.toString();
   installThreeWay(context, view, worker, {
     base,
-    state: base.state,
     left: left.state.doc.toString(),
     right: right.state.doc.toString(),
     source,
