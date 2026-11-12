@@ -1,6 +1,7 @@
 export const mergeMessages = {
   "menu.mergeOpen": "Merge Open Files",
-  "merge.needThree": "Open three files. Select the base file, then start merge.",
+  "merge.needTwo": "Open two files. Select the left file, then start merge.",
+  "merge.workerFailed": "The merge worker stopped unexpectedly.",
   "merge.left": "Left",
   "merge.result": "Result",
   "merge.right": "Right",

@@ -6,7 +6,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentRecord } from "../../src/renderer/core/document";
 import type { FeatureContext } from "../../src/renderer/editor/featureWiring";
-import { mergeFeature } from "../../src/renderer/features/merge/wiring";
+import { createThreeWayMerge } from "../../src/renderer/features/merge/threeWayMerge";
+import { createMergeFeature } from "../../src/renderer/features/merge/wiring";
+import type { MergeWorkerPort } from "../../src/renderer/features/merge/workerClient";
+
+function workerFactory(): MergeWorkerPort {
+  const port: MergeWorkerPort = {
+    onerror: null,
+    onmessage: null,
+    postMessage(request) {
+      port.onmessage?.({
+        data: {
+          id: request.id,
+          ok: true,
+          result: createThreeWayMerge(request.base, request.left, request.right),
+        },
+      } as MessageEvent);
+    },
+    terminate: vi.fn(),
+  };
+  return port;
+}
+
+const mergeFeature = createMergeFeature(workerFactory);
 
 interface Harness {
   readonly context: FeatureContext;
@@ -52,16 +74,36 @@ function harness(documents: readonly DocumentRecord[]): Harness {
 afterEach(() => document.body.replaceChildren());
 
 describe("merge wiring", () => {
-  it("AC-R15-03: merge command requires three open files", () => {
+  it("AC-R15-03: merge command requires two open files", () => {
     const testHarness = harness([record("base", "base\n")]);
     const hooks = mergeFeature.create(testHarness.context);
 
     hooks.commands?.["file.mergeOpen"]?.();
 
     expect(testHarness.status).toHaveBeenCalledWith(
-      "Open three files. Select the base file, then start merge.",
+      "Open two files. Select the left file, then start merge.",
     );
     expect(document.querySelector('[data-testid="merge-view"]')).toBeNull();
+    testHarness.editor.destroy();
+  });
+
+  it("AC-R15-03: two open files start the centre from the active left file", async () => {
+    const testHarness = harness([
+      record("right", "right\n"),
+      record("left", "left\n"),
+    ]);
+    const hooks = mergeFeature.create(testHarness.context);
+
+    hooks.commands?.["file.mergeOpen"]?.();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="merge-view"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[data-testid="merge-left"]')?.textContent)
+      .toContain("left");
+    expect(document.querySelector('[data-testid="merge-right"]')?.textContent)
+      .toContain("right");
+    expect(testHarness.editor.state.doc.toString()).toBe("left\n");
     testHarness.editor.destroy();
   });
 
@@ -86,6 +128,34 @@ describe("merge wiring", () => {
     hooks.documentStateChanged?.("base", testHarness.editor.state);
     hooks.documentActivated?.(record("plain", "plain\n"));
     hooks.documentRemoved?.("base");
+    testHarness.editor.destroy();
+  });
+
+  it("discards a merge result after the active document changes", () => {
+    const delayed = workerFactory();
+    delayed.postMessage = vi.fn();
+    const feature = createMergeFeature(() => delayed);
+    const testHarness = harness([
+      record("left", "left\n"),
+      record("right", "right\n"),
+      record("base", "base\n"),
+    ]);
+    const hooks = feature.create(testHarness.context);
+    hooks.commands?.["file.mergeOpen"]?.();
+    testHarness.editor.dispatch({ changes: { from: 0, insert: "changed " } });
+    const request = vi.mocked(delayed.postMessage).mock.calls[0]?.[0];
+    if (request === undefined) throw new Error("The worker request was not sent");
+
+    delayed.onmessage?.({
+      data: {
+        id: request.id,
+        ok: true,
+        result: createThreeWayMerge(request.base, request.left, request.right),
+      },
+    } as MessageEvent);
+
+    expect(document.querySelector('[data-testid="merge-view"]')).toBeNull();
+    expect(testHarness.editor.state.doc.toString()).toBe("changed base\n");
     testHarness.editor.destroy();
   });
 });

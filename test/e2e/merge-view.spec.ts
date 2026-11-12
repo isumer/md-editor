@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 import {
   clickMenuItem,
   closeEditor,
+  DOCUMENT_END,
   launchEditor,
   PRIMARY_MODIFIER,
   readTextOrNull,
@@ -69,6 +70,44 @@ test("a conflict-marker file resolves each conflict and saves the result", {
   } finally {
     await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("two files start an editable left-centred merge with read-only sides", {
+  tag: "@AC-R15-03",
+  annotation: { type: "AC-R15-03" },
+}, async () => {
+  const fixtureDirectory = path.join(repositoryRoot, "test/fixtures/merge");
+  const leftPath = path.join(fixtureDirectory, "left.txt");
+  const rightPath = path.join(fixtureDirectory, "right.txt");
+  const { application, page } = await launchEditor(leftPath);
+
+  try {
+    await stubOpenDialog(application, rightPath);
+    await clickMenuItem(application, "file-open");
+    await page.getByRole("tab", { name: /left\.txt/ }).click();
+    await clickMenuItem(application, "file-merge-open");
+
+    const editor = page.getByTestId("editor").locator(".cm-content");
+    await expect(page.getByTestId("merge-view")).toBeVisible();
+    await expect(editor).toContainText("release runner");
+    await expect(page.getByTestId("merge-left").locator("pre")).toContainText(
+      "release runner",
+    );
+    await expect(page.getByTestId("merge-right").locator("pre")).toContainText(
+      "shared runner",
+    );
+    await expect(page.getByTestId("merge-left").locator("[contenteditable=true]"))
+      .toHaveCount(0);
+    await expect(page.getByTestId("merge-right").locator("[contenteditable=true]"))
+      .toHaveCount(0);
+
+    await editor.click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("\nEditable merge result");
+    await expect(editor).toContainText("Editable merge result");
+  } finally {
+    await closeEditor(application, page);
   }
 });
 
