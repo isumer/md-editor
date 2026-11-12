@@ -106,8 +106,10 @@ jobs:
           Expand-Archive $portableZip.FullName $portableRoot
           $portableExe = Get-ChildItem $portableRoot -Filter "$productName.exe" | Select-Object -First 1
           if (-not (Test-Path (Join-Path $portableRoot "portable"))) { throw "Portable marker is missing" }
-          $normalProfile = Join-Path $env:APPDATA $productName
-          Remove-Item $normalProfile -Recurse -Force -ErrorAction SilentlyContinue
+          $portableAppData = Join-Path $env:RUNNER_TEMP "solidmd-portable-appdata"
+          New-Item -ItemType Directory -Path $portableAppData | Out-Null
+          $env:APPDATA = $portableAppData
+          $normalProfile = Join-Path $portableAppData $productName
           $portable = Start-Process $portableExe.FullName -ArgumentList "test/fixtures/sample.md" -PassThru
           $deadline = [DateTime]::UtcNow.AddSeconds(15)
           do {
