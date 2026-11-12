@@ -42,13 +42,16 @@ It is not a proven cause.
 
 ### 2. Stalled session write
 
-The broker bounds session persistence at 5,000 ms.
+The broker gives session persistence a nominal 5,000 ms timeout.
 The artifact cannot separate this write from the close ask.
-A late acknowledgement can leave insufficient time for this bounded write.
+A late acknowledgement can leave insufficient time before this write timeout expires.
 The artifact contains no write timing marks.
 A final allow reply just before 15,000 ms can use another 5,000 ms to persist.
-The broker can therefore take almost 20,000 ms to settle without a user prompt.
-That exceeds both the 15,000 ms test budget and the observed 11,300 ms remainder.
+With a responsive main event loop, the broker can therefore take almost
+20,000 ms to settle without a user prompt. That exceeds both the 15,000 ms
+test budget and the observed 11,300 ms remainder. These timers are not a hard
+wall-clock bound. If the main event loop cannot run their callbacks, the real
+settle time is unbounded.
 
 ### 3. Window close or quit resume
 
@@ -103,7 +106,7 @@ Several full-suite runs must pass on macOS and Windows before closing this flake
 Two close-request tests failed when the default was mutated to 4,000 ms.
 At 4,001 ms, the request had resolved and the snapshot was ignored.
 All 10 close-request tests passed after reverting to the 15,000 ms timeout.
-The stalled-write probe recorded the 15,000 ms ask and 5,000 ms write bounds.
+The stalled-write probe recorded the 15,000 ms ask and 5,000 ms write timeouts.
 `npm run typecheck` passed.
 `npm run check:deps` passed for 153 modules and 333 dependencies.
 `npm run test:unit` passed 1,185 tests in 116 files.
