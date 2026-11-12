@@ -97,4 +97,5 @@ describe("acceptance report", () => {
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
   });
+
 });
