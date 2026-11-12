@@ -107,7 +107,8 @@ export class DocumentCommands {
   private runMenu(menuItemId: MenuCommandMessage): void {
     const item = menuItems.find((candidate) => candidate.id === menuItemId);
     if (item === undefined) return;
-    void this.commands.run(item.commandId, this.commandContext, undefined, "menu");
+    void this.commands.run(item.commandId, this.commandContext, undefined, "menu")
+      .catch(this.options.onError);
   }
 
   private async publish(): Promise<void> {

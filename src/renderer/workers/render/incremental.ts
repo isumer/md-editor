@@ -73,7 +73,7 @@ interface ChangedRange {
 // Only the first screen is sent in the initial replace. The rest arrives in
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
-const FILL_BATCH_SIZE = 8;
+const FILL_BATCH_SIZE = 128;
 export const RENDER_BATCH_BYTE_LIMIT = 256 * 1024;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
 const UTF8_ENCODER = new TextEncoder();

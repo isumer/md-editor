@@ -34,6 +34,7 @@ export interface FeatureRegistration {
   readonly editorExtensions: readonly Extension[];
   create(context: FeatureContext): FeatureHooks;
   rewriteHtml?(html: string, context: FeatureRewriteContext): string;
+  rewriteFragment?(fragment: DocumentFragment, context: FeatureRewriteContext): void;
 }
 
 export interface InstalledFeatures {

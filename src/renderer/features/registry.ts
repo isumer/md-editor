@@ -23,6 +23,15 @@ export function rewriteFeatureHtml(
   );
 }
 
+export function rewriteFeatureFragment(
+  fragment: DocumentFragment,
+  context: FeatureRewriteContext,
+): void {
+  for (const registration of registrations) {
+    registration.rewriteFragment?.(fragment, context);
+  }
+}
+
 function callHooks(
   hooks: readonly FeatureHooks[],
   call: (hook: FeatureHooks) => void,

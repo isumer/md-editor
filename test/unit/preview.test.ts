@@ -361,7 +361,7 @@ describe("preview render flow", () => {
       id: 2,
       docId: "doc",
       epoch: 1,
-      version: 2,
+      version: 1,
       ok: true,
       mode: "append",
       blocks: [{ id: "b12", startLine: 12, endLine: 13, html: "<p>12</p>" }],
@@ -375,6 +375,51 @@ describe("preview render flow", () => {
         "b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9",
         "b10", "b11", "b12",
       ]);
+    vi.useRealTimers();
+  });
+
+  it("AC-PERF-02: a newer edit cancels a deferred stale append", () => {
+    vi.useFakeTimers();
+    let currentTime = 0;
+    const { worker, preview } = wiring({
+      version: { docId: "doc", epoch: 1, version: 2 },
+      now: () => currentTime,
+      rewriteHtml: (html) => {
+        currentTime += 4;
+        return html;
+      },
+    });
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "b1", startLine: 0, endLine: 1, html: "<p>old</p>" },
+        { id: "b2", startLine: 2, endLine: 3, html: "<p>deferred</p>" },
+      ],
+      complete: false,
+    });
+
+    send(worker, {
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+      ok: true,
+      mode: "patch",
+      blocks: [{
+        block: { id: "b1", startLine: 0, endLine: 1, html: "<p>edited</p>" },
+        after: null,
+      }],
+      removed: [],
+      complete: false,
+    });
+
+    expect(preview.textContent).toBe("edited");
+    expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
   });
 
@@ -676,6 +721,8 @@ describe("preview render flow", () => {
     });
 
     const sections = [...preview.querySelectorAll(".preview-section")];
+    expect(preview.firstElementChild?.classList.contains("preview-document-eager"))
+      .toBe(true);
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
       .toEqual([100, 1]);
@@ -896,6 +943,41 @@ describe("preview render flow", () => {
     expect(blocks(preview)[2]?.textContent).toBe("three edited");
     expect(blocks(preview)[0]?.textContent).toBe("one");
     expect(blocks(preview)[1]?.textContent).toBe("two");
+  });
+
+  it("AC-PERF-08: a text-only patch keeps the rendered element", () => {
+    const { worker, preview } = wiring({
+      version: { docId: "doc", epoch: 1, version: 2 },
+    });
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<h1>one</h1>" }],
+      complete: true,
+    });
+    const heading = preview.querySelector("h1");
+
+    send(worker, {
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 2,
+      ok: true,
+      mode: "patch",
+      blocks: [{
+        block: { id: "b1", startLine: 0, endLine: 1, html: "<h1>two</h1>" },
+        after: null,
+      }],
+      removed: [],
+      complete: true,
+    });
+
+    expect(preview.querySelector("h1")).toBe(heading);
+    expect(heading?.textContent).toBe("two");
   });
 
   it("AC-R1-09: inserts a new block after its anchor and removes deleted blocks", () => {
