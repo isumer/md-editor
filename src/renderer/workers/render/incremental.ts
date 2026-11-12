@@ -77,6 +77,10 @@ const FILL_BATCH_SIZE = 8;
 const PROGRESSIVE_CHUNKS_PER_BLOCK = 16;
 export const RENDER_BATCH_BYTE_LIMIT = 256 * 1024;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
+// A fill task runs to its time budget so a keystroke's render request waits at
+// most one short task: eight blocks can cost over half the 50 ms keystroke
+// budget on a slow machine, and the worker cannot preempt a running task.
+const FILL_TASK_BUDGET_MS = 2;
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_SCRATCH = new Uint8Array(RENDER_BATCH_BYTE_LIMIT + 1);
 // Segment lookups are linear; compacting an edit-heavy session keeps the list
@@ -187,6 +191,7 @@ export class IncrementalRenderState {
     version: number,
     document: Text,
     private readonly renderText: ChunkRenderer,
+    private readonly now: () => number = () => performance.now(),
   ) {
     this.version = version;
     this.document = document;
@@ -291,11 +296,14 @@ export class IncrementalRenderState {
   }
 
   fill(): RenderBatch {
-    const blocks = this.nextBatch(FILL_BATCH_SIZE);
+    const blocks = this.nextBatch(
+      FILL_BATCH_SIZE,
+      this.now() + FILL_TASK_BUDGET_MS,
+    );
     return { blocks, complete: this.complete };
   }
 
-  private nextBatch(countLimit: number): RenderBlock[] {
+  private nextBatch(countLimit: number, deadline?: number): RenderBlock[] {
     this.ensureChunks(this.cursor + countLimit);
     const blocks: RenderBlock[] = [];
     const end = Math.min(this.chunks.length, this.cursor + countLimit);
@@ -303,6 +311,10 @@ export class IncrementalRenderState {
     // Everything before the cursor has been sent. This batch starts on the
     // first chunk that has never been rendered.
     while (this.cursor < end) {
+      // Always send one block so a slow stretch cannot starve the fill pass.
+      if (blocks.length > 0 && deadline !== undefined && this.now() >= deadline) {
+        break;
+      }
       const chunk = this.chunks[this.cursor] as RenderChunk;
       const prepared = this.pendingBlock
         ? this.pendingBlock

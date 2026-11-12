@@ -23,9 +23,9 @@ interface BufferedResync {
 interface CachedRender {
   state: IncrementalRenderState;
   request: RenderRequest | null;
+  fillDeferredByEdit: boolean;
   fillToken: number;
   fillTimer: ReturnType<typeof setTimeout> | undefined;
-  refillAfterEdit: boolean;
 }
 
 type PostResponse = (response: RenderResponse) => void;
@@ -35,7 +35,7 @@ type RenderText = (source: string, env?: RenderEnvironment) => string;
 // loop between batches instead of flooding the main thread with appends. The
 // preview acknowledges each applied batch, so at most one batch is in flight.
 const FILL_DELAY_MS = 1;
-const EDIT_REFILL_DELAY_MS = 250;
+const EDIT_FILL_DELAY_MS = 250;
 
 function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
   return ChangeSet.fromJSON(changes).apply(document);
@@ -162,7 +162,7 @@ export class RenderWorkerHandler {
       message.toVersion,
       message.changes,
     );
-    cache.refillAfterEdit = true;
+    cache.fillDeferredByEdit = true;
   }
 
   private render(request: RenderRequest): void {
@@ -178,15 +178,15 @@ export class RenderWorkerHandler {
     const cache = this.cachedRender(request, document);
     cache.request = request;
     try {
-      const refillAfterEdit = cache.refillAfterEdit;
+      const fillDeferredByEdit = cache.fillDeferredByEdit;
       this.cancelFill(cache);
       const result = this.resultFor(cache.state, request);
-      cache.refillAfterEdit = false;
+      cache.fillDeferredByEdit = false;
       this.postResponse(result);
       this.scheduleFill(
         cache,
-        result.ok && result.mode === "patch" && refillAfterEdit
-          ? EDIT_REFILL_DELAY_MS
+        result.ok && result.mode === "patch" && fillDeferredByEdit
+          ? EDIT_FILL_DELAY_MS
           : FILL_DELAY_MS,
       );
     } catch (error) {
@@ -224,9 +224,9 @@ export class RenderWorkerHandler {
         this.renderText,
       ),
       request: null,
+      fillDeferredByEdit: false,
       fillToken: 0,
       fillTimer: undefined,
-      refillAfterEdit: false,
     };
     this.renders.set(request.docId, cache);
     return cache;

@@ -379,6 +379,7 @@ describe("progressive large-document rendering", () => {
       0,
       textFrom(text),
       () => "😀".repeat(20 * 1024),
+      () => 0,
     );
 
     const initial = state.initial();
@@ -428,12 +429,46 @@ describe("progressive large-document rendering", () => {
         renders += 1;
         return "😀".repeat(20 * 1024);
       },
+      () => 0,
     );
 
     const initial = state.initial();
     const fill = state.fill();
 
     expect(renders).toBe(initial.blocks.length + fill.blocks.length + 1);
+  });
+
+  it("AC-PERF-02: a fill batch stops at its time budget so a keystroke render cuts in", () => {
+    const text = Array.from(
+      { length: 30 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let clock = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => {
+        clock += 1;
+        return "p";
+      },
+      () => clock,
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.complete).toBe(false);
+    expect(fill.blocks.length).toBeGreaterThan(0);
+    expect(fill.blocks.length).toBeLessThan(8);
+
+    let complete = fill.complete;
+    for (let round = 0; round < 20 && !complete; round += 1) {
+      const next = state.fill();
+      complete = next.complete;
+    }
+    expect(complete).toBe(true);
   });
 
   it("AC-PERF-11: a reference change discards an over-budget lookahead", () => {
@@ -822,6 +857,36 @@ describe("render worker cache lifecycle", () => {
       callbacks[1]?.();
       expect(scope.results().some((result) =>
         result.ok && result.mode === "append")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("AC-PERF-02: waits for an editing pause before resuming background fill", () => {
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (_callback: () => void, delay: number) => {
+      delays.push(delay);
+      return 0;
+    });
+    vi.stubGlobal("clearTimeout", () => undefined);
+    try {
+      const scope = new FakeScope();
+      const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+      const document = Array.from(
+        { length: 120 },
+        (_, index) => `paragraph ${String(index)} ${"x".repeat(20_000)}`,
+      ).join("\n\n");
+      const before = textFrom(document);
+      const { changes } = changeJson(before, 0, "edited ");
+      handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0,
+        text: document });
+      handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+      handler.handle({ op: "change", docId: "doc", epoch: 1, fromVersion: 0,
+        toVersion: 1, changes });
+
+      handler.handle({ op: "render", id: 2, docId: "doc", epoch: 1, version: 1 });
+
+      expect(delays).toEqual([1, 250]);
     } finally {
       vi.unstubAllGlobals();
     }
