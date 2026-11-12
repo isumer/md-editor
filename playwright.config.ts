@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const junitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE ?? "reports/e2e-junit.xml";
+
 export default defineConfig({
   testDir: "test/e2e",
   timeout: 15_000,
@@ -12,7 +14,7 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ["list"],
-    ["junit", { outputFile: "reports/e2e-junit.xml" }],
+    ["junit", { outputFile: junitOutputFile }],
     ["html", { outputFolder: "playwright-report", open: "never" }],
   ],
   use: {
