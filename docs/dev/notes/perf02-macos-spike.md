@@ -4,116 +4,122 @@ Date: 2026-11-12.
 
 ## Result
 
-AC-PERF-02 now measures the shipped path again. It opens the 50 KB file
-through argv and installs the probe before that document applies.
+The diagnostic now captures the live render worker.
+It patches `Worker.prototype.postMessage` after the first window exists.
+The patch wraps the existing worker handler on its next render request.
 
-The macOS cause is narrowed but not named. Named CI attribution data is the
-next step. This branch adds it; it does not guess a product fix.
+Each measured keystroke must capture its render request and matching response.
+Apply intervals are captured synchronously because the application clears those
+marks before a `PerformanceObserver` can read them. Measures and task entries
+are collected by the observer, off the measured call path.
+Later fill marks cannot replace the interval inside a measurement.
 
-The budget stays 50 ms. The test keeps 30 samples and five warm-up
-keystrokes. No retry, no skip, and no platform exemption exists.
+Probe installation errors now fail the test.
+Missing requests, responses, measures, or apply intervals also fail the test.
+The diagnostic does not classify missing data as unattributed time.
 
-## Measurement-path fix
+The 50 ms budget stays unchanged.
+The test keeps 30 samples and five warm-up keystrokes.
+No retry, skip, or platform exemption exists.
 
-The earlier version launched empty, reloaded the page, and opened the file
-through the menu. That is not the shipped path. The reload also reset the
-probe and the code-cache state.
+## Named diagnostic defects
 
-The test now calls `launchEditor(large50, { onPage })`. `launchEditor`
-passes the file as argv. `onPage` runs after the first window exists and
-before the argv document applies, so the probe exists before the render
-worker starts. `installKeystrokeProbe` installs with `page.evaluate`, not
-`addInitScript`, so no reload is needed.
+The previous probe replaced `window.Worker` after module initialization.
+`RenderController` had already created its worker.
+Therefore, the probe could miss every measured request and response.
 
-The probe is diagnostic only. The measurement runs even if the install
-fails.
+The previous report waited for another animation frame.
+It then read the latest global apply marks.
+Deferred fill work could replace the measured keystroke's marks.
+
+The corrected probe associates requests, responses, and apply intervals by the
+measured time range. It does not wrap `performance.measure`.
 
 ## macOS evidence
 
-Run 43213222229 (main 7bc7eb6), AC-PERF-02 distribution: 75.8, 83.4, 16.7,
-7.3, then 3 to 13 ms. Only the first two samples after the five warm-up
-keystrokes are slow. The e2e split in PR #85 put the perf specs first in the
-job.
+The candidate branch has four push runs.
+This count reaches the brief's four-run limit.
 
-Run 43191832635: AC-PERF-03 (cold start) is also red on macOS. It is also
-first in its job.
+- Run 43150275798 used candidate 13719b4. Its macOS job passed.
+- Run 43242568507 used candidate 2eb5831. Its macOS performance step failed.
+- Run 43251073427 used candidate 9e426ae. Its macOS performance step failed.
+- Run 43261075704 used candidate 395f0b7. Its macOS job passed.
 
-From the brief. Run 43127940956: 36.3, 32.2, 56.0, 79.9, 45.5, 22.7, 89.3,
-then mostly 15 to 30 ms with one 69.3. Run 43115369990: 253.5 at sample 8.
-Run 43109111999: a single 71.5 at sample 29.
+The public API exposes these job and step results.
+It does not expose their logs without repository administration rights.
+The failure artifacts also require authentication.
 
-Ubuntu and Windows do not show it.
+Candidate 395f0b7 had the two diagnostic defects above.
+Its zero-valued attribution cannot name the macOS spike cause.
+The corrected probe has not run on macOS.
 
-## Narrowing
+This checkout cannot start another macOS run.
+The Git remote uses SSH, but this environment has no SSH client.
+Therefore, the macOS product cause remains unproven.
+Do not infer an application or runner cause from missing probe data.
 
-Steady-state typing is fast on macOS: 3 to 13 ms. The slow samples are the
-first ones after open, on the shipped argv path. Therefore the time is work
-that lands about 0.5 to 1.5 seconds after open, or a cold runner, not
-typing cost. Leftover processes of the previous application are a weak
-explanation: the AC-PERF specs now run first in the job, and AC-PERF-03 is
-red when it runs first.
+## Process evidence
 
-`closeEditor` already waits for the main process to exit
-(`waitForProcessExit` in `test/e2e/helpers.ts`).
+`reportMacProcessLoad` reports the previous application tree on macOS.
+It also reports surviving processes and the system load average.
+It stays quiet on other platforms.
 
-## Diagnostic
+The existing four runs did not provide accessible process logs.
+The corrected candidate must compare AC-PERF-02 alone and after AC-PERF-10.
+That comparison requires an authenticated macOS CI run.
 
-A sample at or above 50 ms prints one line. A green run stays quiet. The
-line splits the `preview-latency` measure into `scheduler` (key to worker
-post), `worker` (post to worker response), `rendererApply`
-(`preview-apply-start` to `preview-apply-end`), and `unattributed`. It
-prints overlapping long tasks and long-animation-frame data. Each LoAF
-script carries `sourceFunctionName` and `sourceURL`.
+## Test proof
 
-`reportMacProcessLoad` prints the surviving process tree of the previous
-application and the macOS load average at test start. It is quiet elsewhere.
+Three non-performance end-to-end tests guard the diagnostic.
 
-## Narrowed suspects (unproven)
+- A missing installation produces a diagnostic failure.
+- Removing live worker capture loses the request or response and fails.
+- Later fill marks cannot replace the stored apply interval.
 
-1. The lazy fill chain. The worker batches blocks 1 ms apart
-   (`FILL_DELAY_MS`, `src/renderer/workers/render/handler.ts:263`). Each
-   batch round-trips through the renderer on an rAF plus timeout chain
-   (`requestNextFill`, `src/renderer/features/preview/preview.ts:339`).
-   Fill occupies the worker and the scheduler after open, during the first
-   samples.
-2. Deferred feature work. `documentCreated` runs in a
-   `window.setTimeout(..., 0)` after open
-   (`src/renderer/main.ts:278`). The merge hook scans the whole source
-   (`src/renderer/features/merge/wiring.ts:41`).
-3. First-use compile and code cache of the renderer bundle. A cold runner
-   shows this first. AC-PERF-03 failing cold on the same legs supports a
-   cold-runner contribution.
+The first focused run exposed an incomplete apply interval.
+A later fill start occurred before the latency measure recorded.
+The probe now keeps completed intervals separately.
+Both affected tests passed after this correction.
 
-## Local diagnostic data (Raspberry Pi, informational)
+The Ubuntu verify exposed an observation race after the preview DOM updated.
+The matching latency measure is published at the end of the render callback.
+The diagnostic now polls for that completed record without sleeps, retries,
+or relaxed assertions.
 
-Budget enforcement is on CI desktop runners, not on this machine. One run
-of the fixed test on this host: p50 20.7 ms, p95 67.0 ms, distribution
-25.0, 62.7, 84.8, 17.0, 67.0, 13.1, 28.3, 17.7, 18.1, 15.4, 23.4, 39.3,
-22.0, 20.7, 32.9, 20.3, 15.6, 56.7, 12.6, 40.7, 24.6, 13.7, 27.0, 31.0,
-17.0, 14.5, 11.6, 14.8, 12.2, 30.3 ms.
+A second Ubuntu reproduction exposed queued warm-up observer records arriving
+after the measurement probe was reset. Reset now drains pending observer records
+before clearing the probe arrays, so old measures cannot lose their apply data
+or be counted among the 30 samples.
 
-The slow-sample lines printed correctly. Each showed `worker` 20.8 to 40.5
-ms and `unattributed` up to 38.7 ms, with zero long tasks and zero LoAF
-frames. The probe caught the argv-open worker, so the install beat the open.
+The first correction also read probe state after every measured keystroke.
+Those renderer round-trips changed the cadence under measurement and allowed
+background work to interleave differently. The probe now records in-page for
+the full sample window, then validates and reports all 30 records together.
 
-## Next step, blocked here
+## Size exceptions
 
-The cause must be named from the macOS CI leg with this diagnostic. This
-checkout cannot push: its git worktree admin directory is missing, so every
-git command fails. One or two push runs of this branch on macOS, grepped for
-"AC-PERF-02 slow sample", name the work. If the named work is inside the
-renderer, fix it per the brief: move it off the keystroke path, or finish it
-before the document is reported editable. If `unattributed` dominates and
-no LoAF script names the work, the time is outside the renderer; report it
-and stop. Do not change the budget.
+`test/e2e/preview-perf.spec.ts` has 940 lines.
+The task permits changes only to the existing task-owned files.
+Splitting the probe would add an unapproved file.
+
+`installKeystrokeProbe` exceeds 50 lines.
+`page.evaluate` serializes one closed browser function.
+The one-line source comment records this constraint.
 
 ## Validation
 
 - `npm run typecheck` passed.
-- `npm run check:deps` passed: 154 modules, 339 dependencies.
-- `npm run test:unit` passed 1,219 tests in 118 files.
-- `npm run check:coverage` passed every ratchet (statements 99.05, branches
-  97.27, functions 99.08, lines 99.21 percent).
-- The AC-PERF-02 e2e spec ran once locally, numbers above (informational on
-  this host).
-- The full e2e suite and `npm run verify` are left to the pipeline and CI.
+- `npm run check:deps` passed for 162 modules and 360 dependencies.
+- `npm run test:unit` passed 1,265 tests in 122 files.
+- `npm run check:coverage` passed every ratchet.
+- Statements measured 99.05 percent.
+- Branches measured 97.30 percent.
+- Functions measured 99.15 percent.
+- Lines measured 99.24 percent.
+- `npm run build` passed.
+- The three focused non-AC-PERF diagnostic tests passed after the correction.
+- The focused AC-PERF-02 run captured and validated all 30 diagnostic records.
+- `npm run verify` passed typecheck, dependency checks, and all 1,265 unit tests.
+- Its end-to-end run captured all 30 AC-PERF-02 diagnostic records, then measured
+  p95 at 66.6 ms on this host and correctly failed the unchanged 50 ms budget.
+- A focused AC-PERF-02 run measured p95 at 83.7 ms on this host.

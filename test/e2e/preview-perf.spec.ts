@@ -101,10 +101,22 @@ interface LongAnimationScript {
 }
 
 interface KeystrokeProbe {
+  installed: boolean;
+  flush(): void;
   renders: { id: number; start: number }[];
   responses: { id: number; start: number }[];
+  measures: { start: number; duration: number }[];
+  applies: { start: number; end: number }[];
   longtasks: { start: number; duration: number }[];
   frames: LongAnimationFrame[];
+}
+
+interface KeystrokeTiming {
+  id: number;
+  start: number;
+  duration: number;
+  applyStart: number | null;
+  applyEnd: number | null;
 }
 
 interface MacProcess {
@@ -184,39 +196,71 @@ async function reportMacProcessLoad(): Promise<void> {
   );
 }
 
-// Runs on the live page through launchEditor's onPage hook, before the argv
-// document applies, so no reload is needed on the shipped open path.
+// Keep the browser patch together because page.evaluate serializes one closed function.
 async function installKeystrokeProbe(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const probe: KeystrokeProbe = { renders: [], responses: [], longtasks: [], frames: [] };
+    const probe: KeystrokeProbe = {
+      installed: false,
+      flush: () => undefined,
+      renders: [],
+      responses: [],
+      measures: [],
+      applies: [],
+      longtasks: [],
+      frames: [],
+    };
     (window as unknown as { __keystrokeProbe?: KeystrokeProbe }).__keystrokeProbe = probe;
-    const NativeWorker = window.Worker;
-    window.Worker = new Proxy(NativeWorker, {
-      construct(Target, argumentsList) {
-        const worker = Reflect.construct(Target, argumentsList) as Worker;
-        const nativePostMessage = worker.postMessage;
-        worker.postMessage = new Proxy(nativePostMessage, {
-          apply(postMessage, receiver, messageArguments) {
-            const message = messageArguments[0] as { id?: unknown; op?: unknown } | undefined;
-            if (message?.op === "render" && typeof message.id === "number") {
-              probe.renders.push({ id: message.id, start: performance.now() });
-            }
-            return Reflect.apply(postMessage, receiver, messageArguments) as void;
-          },
-        });
-        worker.addEventListener("message", (event: MessageEvent<unknown>) => {
-          const message = event.data as { id?: unknown; op?: unknown } | null;
-          if (message !== null && typeof message === "object" &&
-            message.op !== "pong" && typeof message.id === "number") {
-            probe.responses.push({ id: message.id, start: performance.now() });
-          }
-        });
-        return worker;
+    const instrumentedWorkers = new WeakSet<Worker>();
+    let applyStart: number | null = null;
+    const nativeMark = performance.mark;
+    const nativePostMessage = Worker.prototype.postMessage;
+
+    Object.defineProperty(performance, "mark", {
+      configurable: true,
+      value: function(
+        name: string,
+        options?: PerformanceMarkOptions,
+      ): PerformanceMark {
+        const mark = nativeMark.call(performance, name, options);
+        if (name === "preview-apply-start") {
+          applyStart = mark.startTime;
+        } else if (name === "preview-apply-end" && applyStart !== null) {
+          probe.applies.push({ start: applyStart, end: mark.startTime });
+          applyStart = null;
+        }
+        return mark;
       },
     });
-    new PerformanceObserver((list) => {
+    Object.defineProperty(Worker.prototype, "postMessage", {
+      configurable: true,
+      writable: true,
+      value: function(this: Worker, ...argumentsList: unknown[]): void {
+        const message = argumentsList[0] as { id?: unknown; op?: unknown } | undefined;
+        if (message?.op === "render" && typeof message.id === "number") {
+          if (!instrumentedWorkers.has(this)) {
+            const handler = this.onmessage;
+            if (handler !== null) {
+              this.onmessage = (event: MessageEvent<unknown>): void => {
+                const response = event.data as { id?: unknown; op?: unknown } | null;
+                if (response !== null && typeof response === "object" &&
+                  response.op !== "pong" && typeof response.id === "number") {
+                  probe.responses.push({ id: response.id, start: performance.now() });
+                }
+                handler.call(this, event);
+              };
+            }
+            instrumentedWorkers.add(this);
+          }
+          probe.renders.push({ id: message.id, start: performance.now() });
+        }
+        Reflect.apply(nativePostMessage, this, argumentsList);
+      },
+    });
+    const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        if (entry.entryType === "longtask") {
+        if (entry.entryType === "measure" && entry.name === "preview-latency") {
+          probe.measures.push({ start: entry.startTime, duration: entry.duration });
+        } else if (entry.entryType === "longtask") {
           probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
         } else if (entry.entryType === "long-animation-frame") {
           const frame = entry as PerformanceEntry & {
@@ -241,7 +285,12 @@ async function installKeystrokeProbe(page: Page): Promise<void> {
           });
         }
       }
-    }).observe({ entryTypes: ["longtask", "long-animation-frame"] });
+    });
+    observer.observe({ entryTypes: ["measure", "longtask", "long-animation-frame"] });
+    probe.flush = () => {
+      observer.takeRecords();
+    };
+    probe.installed = true;
   });
 }
 
@@ -430,15 +479,15 @@ async function measureKeystrokes(
     await expect(heading).toContainText(suffix, { timeout: 10_000 });
   }
   await page.evaluate((name) => performance.clearMeasures(name), measureName);
+  if (diagnoseSlowSamples) {
+    await resetKeystrokeProbe(page);
+  }
 
   const samples: number[] = [];
   for (let index = 0; index < SAMPLES; index += 1) {
     const character = String.fromCharCode(97 + (index % 26));
     suffix += character;
     await page.evaluate((name) => performance.clearMeasures(name), measureName);
-    if (diagnoseSlowSamples) {
-      await resetKeystrokeProbe(page);
-    }
     await page.keyboard.type(character);
     await expect(heading).toContainText(suffix, { timeout: 10_000 });
     const durations = await page.evaluate((name) =>
@@ -447,9 +496,15 @@ async function measureKeystrokes(
     expect(durations.length).toBeGreaterThanOrEqual(1);
     const duration = durations.at(-1) ?? 0;
     samples.push(duration);
-    if (diagnoseSlowSamples && duration >= 50) {
-      await reportSlowKeystroke(page, index + 1);
-    }
+  }
+  if (diagnoseSlowSamples) {
+    const timings = await waitForKeystrokeTimings(page, samples.length);
+    timings.forEach((timing, index) => {
+      expect(timing.duration).toBeCloseTo(samples[index] ?? -1, 5);
+      if (timing.duration >= 50) {
+        reportSlowKeystroke(timing, index + 1);
+      }
+    });
   }
   return samples;
 }
@@ -459,70 +514,177 @@ async function resetKeystrokeProbe(page: Page): Promise<void> {
     const probe = (window as unknown as { __keystrokeProbe?: KeystrokeProbe })
       .__keystrokeProbe;
     if (probe !== undefined) {
+      probe.flush();
       probe.renders.length = 0;
       probe.responses.length = 0;
+      probe.measures.length = 0;
+      probe.applies.length = 0;
       probe.longtasks.length = 0;
       probe.frames.length = 0;
     }
   });
 }
 
-async function reportSlowKeystroke(page: Page, sample: number): Promise<void> {
-  await page.evaluate(() => new Promise<void>((resolve) => {
-    requestAnimationFrame(() => resolve());
-  }));
-  const timing = await page.evaluate(() => {
+interface SlowKeystrokeTiming extends KeystrokeTiming {
+  renderStart: number;
+  responseStart: number;
+  longtasks: { start: number; duration: number }[];
+  frames: LongAnimationFrame[];
+}
+
+async function readKeystrokeTimings(page: Page): Promise<SlowKeystrokeTiming[]> {
+  return page.evaluate(() => {
     const probe = (window as unknown as { __keystrokeProbe?: KeystrokeProbe })
       .__keystrokeProbe;
-    const entry = performance.getEntriesByName("preview-latency", "measure").at(-1);
-    const applyStart = performance.getEntriesByName("preview-apply-start", "mark").at(-1);
-    const applyEnd = performance.getEntriesByName("preview-apply-end", "mark").at(-1);
-    const measure = entry === undefined
-      ? undefined
-      : { start: entry.startTime, duration: entry.duration };
-    return { probe, measure, applyStart: applyStart?.startTime, applyEnd: applyEnd?.startTime };
+    if (probe?.installed !== true) {
+      throw new Error("AC-PERF-02 keystroke probe installation failed");
+    }
+    if (probe.measures.length === 0) {
+      throw new Error("AC-PERF-02 keystroke probe missed the latency measure");
+    }
+    return probe.measures.map((measure) => {
+      const end = measure.start + measure.duration;
+      const render = probe.renders.find((entry) =>
+        entry.start >= measure.start && entry.start <= end);
+      if (render === undefined) {
+        throw new Error("AC-PERF-02 keystroke probe missed the render request");
+      }
+      const response = probe.responses.find((entry) => entry.id === render.id);
+      if (response === undefined) {
+        throw new Error("AC-PERF-02 keystroke probe missed the matching response");
+      }
+      const apply = probe.applies.find((entry) =>
+        entry.start >= measure.start && entry.end <= end);
+      if (apply === undefined) {
+        throw new Error(
+          `AC-PERF-02 keystroke probe missed the measured apply interval: ` +
+          `measure=${String(measure.start)}..${String(end)}`,
+        );
+      }
+      return {
+        id: render.id,
+        ...measure,
+        applyStart: apply.start,
+        applyEnd: apply.end,
+        renderStart: render.start,
+        responseStart: response.start,
+        longtasks: probe.longtasks.filter((entry) =>
+          entry.start < end && entry.start + entry.duration > measure.start),
+        frames: probe.frames.filter((entry) =>
+          entry.start < end && entry.start + entry.duration > measure.start),
+      };
+    });
   });
-  if (timing.measure === undefined) {
-    return;
+}
+
+async function readKeystrokeTiming(page: Page): Promise<SlowKeystrokeTiming> {
+  const timing = (await readKeystrokeTimings(page)).at(-1);
+  if (timing === undefined) {
+    throw new Error("AC-PERF-02 keystroke probe missed the latency measure");
   }
-  const render = timing.probe?.renders.at(-1);
-  const response = timing.probe?.responses.find((entry) => entry.id === render?.id);
-  const start = timing.measure.start;
-  const end = start + timing.measure.duration;
-  const scheduler = render === undefined ? 0 : render.start - start;
-  const worker = render === undefined || response === undefined ? 0 : response.start - render.start;
-  const apply = timing.applyStart === undefined || timing.applyEnd === undefined
-    ? 0
-    : timing.applyEnd - timing.applyStart;
-  const longtasks = timing.probe?.longtasks.filter((entry) =>
-    entry.start < end && entry.start + entry.duration > start) ?? [];
-  const frames = timing.probe?.frames.filter((entry) =>
-    entry.start < end && entry.start + entry.duration > start) ?? [];
+  return timing;
+}
+
+async function waitForKeystrokeTimings(
+  page: Page,
+  count: number,
+): Promise<SlowKeystrokeTiming[]> {
+  await expect.poll(async () => {
+    try {
+      return (await readKeystrokeTimings(page)).length;
+    } catch (error: unknown) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }, { timeout: 10_000 }).toBe(count);
+  return readKeystrokeTimings(page);
+}
+
+function reportSlowKeystroke(timing: SlowKeystrokeTiming, sample: number): void {
+  const scheduler = timing.renderStart - timing.start;
+  const worker = timing.responseStart - timing.renderStart;
+  const apply = (timing.applyEnd ?? 0) - (timing.applyStart ?? 0);
   const known = scheduler + worker + apply;
   console.log(
-    `AC-PERF-02 slow sample ${String(sample)}: total=${timing.measure.duration.toFixed(1)}ms ` +
+    `AC-PERF-02 slow sample ${String(sample)}: request=${String(timing.id)} ` +
+    `total=${timing.duration.toFixed(1)}ms ` +
     `scheduler=${scheduler.toFixed(1)}ms worker=${worker.toFixed(1)}ms ` +
-    `rendererApply=${apply.toFixed(1)}ms unattributed=${Math.max(0, timing.measure.duration - known).toFixed(1)}ms ` +
-    `longtasks=[${distribution(longtasks.map((entry) => entry.duration))}] ` +
-    `loaf=[${frameDiagnostics({ start, duration: timing.measure.duration }, frames)}]`,
+    `rendererApply=${apply.toFixed(1)}ms unattributed=${Math.max(0, timing.duration - known).toFixed(1)}ms ` +
+    `longtasks=[${distribution(timing.longtasks.map((entry) => entry.duration))}] ` +
+    `loaf=[${frameDiagnostics(timing, timing.frames)}]`,
   );
 }
+
+async function captureSingleKeystroke(page: Page): Promise<SlowKeystrokeTiming> {
+  const heading = page.getByTestId("preview").locator("h1").first();
+  await placeCaretInFirstLine(page);
+  const before = await heading.textContent();
+  if (before === null) {
+    throw new Error("AC-PERF-02 preview heading is missing");
+  }
+  await page.evaluate(() => performance.clearMeasures("preview-latency"));
+  await resetKeystrokeProbe(page);
+  await page.keyboard.type("z");
+  await expect(heading).toHaveText(`${before}z`, { timeout: 10_000 });
+  return (await waitForKeystrokeTimings(page, 1))[0] ?? readKeystrokeTiming(page);
+}
+
+test("keystroke diagnostic rejects a missing probe installation", async () => {
+  const { application, page } = await launchEditor();
+  try {
+    await expect(readKeystrokeTiming(page)).rejects.toThrow(
+      "keystroke probe installation failed",
+    );
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+test("keystroke diagnostic captures the live render worker", async () => {
+  const { application, page } = await launchEditor(large50);
+  try {
+    await installKeystrokeProbe(page);
+    const timing = await captureSingleKeystroke(page);
+    expect(timing.id).toBeGreaterThan(0);
+    expect(timing.responseStart).toBeGreaterThanOrEqual(timing.renderStart);
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
+test("keystroke diagnostic keeps apply timing after later fill marks", async () => {
+  const { application, page } = await launchEditor(large50);
+  try {
+    await installKeystrokeProbe(page);
+    const measured = await captureSingleKeystroke(page);
+    await page.evaluate(() => {
+      performance.mark("preview-apply-start");
+      performance.mark("preview-apply-end");
+    });
+    const afterFill = await readKeystrokeTiming(page);
+    expect(afterFill.applyStart).toBe(measured.applyStart);
+    expect(afterFill.applyEnd).toBe(measured.applyEnd);
+  } finally {
+    await closeEditor(application, page);
+  }
+});
 
 test("AC-PERF-02: 50 KB document keystroke latency p95 stays under 50 ms", {
   tag: "@AC-PERF-02",
   annotation: { type: "AC-PERF-02" },
 }, async () => {
   await reportMacProcessLoad();
-  let probeInstalled: Promise<void> = Promise.resolve();
+  let probeInstalled: Promise<void> | undefined;
   const { application, page } = await launchEditor(large50, {
-    // The probe must exist before the argv open creates the render worker.
+    // The prototype patch captures measured renders from the existing worker.
     onPage: ({ page: startupPage }) => {
       probeInstalled = installKeystrokeProbe(startupPage);
     },
   });
   try {
-    // Diagnostics only; the measurement works without the probe.
-    await probeInstalled.catch(() => undefined);
+    if (probeInstalled === undefined) {
+      throw new Error("AC-PERF-02 keystroke probe hook did not run");
+    }
+    await probeInstalled;
     await openPreview(page, await fs.readFile(large50, "utf8").then((text) =>
       text.split("\n")[0] ?? ""));
     const samples = await measureKeystrokes(page, "preview-latency", true);
