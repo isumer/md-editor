@@ -1,7 +1,7 @@
 import type { DocumentReference } from "../../../shared/ipc/file";
 import type { ServiceError } from "../../../shared/ipc/result";
 import type { WorkspaceChangeMessage } from "../../../shared/ipc/workspace";
-import type { DocumentRecord } from "../../core/document";
+import { isDocumentDirty, type DocumentRecord } from "../../core/document";
 import { formatMessage } from "../../core/messages";
 import type { FeatureRegistration } from "../../editor/featureWiring";
 import {
@@ -203,7 +203,7 @@ export class WorkspaceSidebar {
     if (change.kind !== "deleted") return;
     const open = this.options.documents().find((document) =>
       document.canonicalPath === change.canonicalPath);
-    if (open && !open.dirty) this.options.removeDocument(open);
+    if (open && !isDocumentDirty(open)) this.options.removeDocument(open);
   }
 
   private openActions(event: MouseEvent): void {

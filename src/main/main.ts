@@ -133,6 +133,8 @@ function createApplicationWindow(): void {
         if (!allow) {
           applicationEvents.cancelQuit();
         }
+        // Let the close-result IPC reply reach the renderer before destroying it.
+        await new Promise<void>((resolve) => setImmediate(resolve));
         return allow;
       },
     },

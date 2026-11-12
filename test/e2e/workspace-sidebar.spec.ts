@@ -220,16 +220,18 @@ test("the workspace tree follows disk changes and preserves a dirty deleted file
       .toHaveAttribute("title", "Changed on disk", { timeout: 1_000 });
 
     await page.getByRole("button", { name: "clean.md" }).click();
-    await expect(page.getByTestId("tab")).toHaveCount(1);
+    await expect(page.locator('[data-testid="tab"][data-name="clean.md"]')).toBeVisible();
     await fs.unlink(cleanPath);
     await expect(page.getByTestId("tab")).toHaveCount(0, { timeout: 1_000 });
 
     await page.getByRole("button", { name: "dirty.md" }).click();
+    await expect(page.locator('[data-testid="tab"][data-name="dirty.md"]')).toBeVisible();
     await page.getByTestId("editor").locator(".cm-content").press("End");
     await page.keyboard.type("unsaved");
+    await expect(page.getByTestId("tab-dirty")).toBeVisible();
     await fs.unlink(dirtyPath);
     await expect(page.getByTestId("tab")).toHaveCount(1, { timeout: 1_000 });
-    await expect(page.getByTestId("tab-dirty")).toHaveCount(1);
+    await expect(page.getByTestId("tab-dirty")).toBeVisible();
   } finally {
     await closeEditor(application, page);
     await fs.rm(root, { recursive: true, force: true });
@@ -241,6 +243,9 @@ test("CmdOrCtrl+B persists the closed sidebar across a restart", {
   annotation: { type: "AC-R11-06" },
 }, async () => {
   const first = await launchEditor();
+  await expect.poll(() => first.page.evaluate(() =>
+    document.documentElement.dataset["sidebarShortcutReady"],
+  )).toBe("true");
   await first.page.keyboard.press(`${PRIMARY_MODIFIER}+b`);
   await expect(first.page.getByRole("complementary", { name: "Workspace" })).toBeHidden();
   const durations = await first.page.evaluate((useMeta) => {

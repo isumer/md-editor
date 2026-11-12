@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { EditorState, Text } from "@codemirror/state";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formatMessage } from "../../src/renderer/core/messages";
@@ -141,7 +142,15 @@ describe("workspace sidebar", () => {
     const context = fixture();
     api.listWorkspaceChildren.mockResolvedValueOnce(ok([{ name: "daily.md", kind: "file" }]));
     await chooseRoot(context);
-    const clean = { canonicalPath: "/notes/daily.md", dirty: false };
+    const clean = {
+      bom: false,
+      canonicalPath: "/notes/daily.md",
+      dirty: false,
+      encoding: "utf-8",
+      eol: "lf",
+      saved: { bom: false, encoding: "utf-8", eol: "lf", text: Text.of(["daily"]) },
+      state: EditorState.create({ doc: "daily" }),
+    };
     context.documents.mockReturnValue([clean as never]);
     const listener = api.onWorkspaceChange.mock.calls.at(-1)?.[0];
 
@@ -157,7 +166,12 @@ describe("workspace sidebar", () => {
 
     expect(context.removeDocument).toHaveBeenCalledWith(clean);
     expect(rows(context.elements.tree).map((row) => row.text)).toEqual(["new.md"]);
-    const dirty = { canonicalPath: "/notes/new.md", dirty: true };
+    const dirty = {
+      ...clean,
+      canonicalPath: "/notes/new.md",
+      dirty: false,
+      state: EditorState.create({ doc: "edited" }),
+    };
     context.documents.mockReturnValue([dirty as never]);
     listener?.({ canonicalPath: "/notes/new.md", kind: "deleted", path: "new.md" });
     expect(context.removeDocument).not.toHaveBeenCalledWith(dirty);
@@ -199,6 +213,18 @@ describe("workspace sidebar", () => {
     await vi.waitFor(() => expect(api.deleteWorkspaceFile).toHaveBeenCalledWith({
       path: "daily.md",
     }));
+  });
+
+  it("AC-R11-07: a context menu from a non-element target offers root actions", async () => {
+    const context = fixture();
+    await chooseRoot(context);
+    const text = document.createTextNode("workspace");
+    context.elements.tree.append(text);
+
+    text.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+
+    expect([...document.querySelectorAll(".workspace-actions button")]
+      .map((button) => button.textContent)).toEqual(["New File"]);
   });
 
   it("AC-R11-08: failed and canceled tree actions keep the rendered entry", async () => {
