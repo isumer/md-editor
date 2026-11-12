@@ -127,6 +127,14 @@ async function readJUnitFile(filePath) {
   }
 }
 
+function testsForMissingCriteria(primary, supplemental) {
+  const primaryIds = new Set(primary.flatMap((test) => test.ids));
+  return supplemental.flatMap((test) => {
+    const ids = test.ids.filter((id) => !primaryIds.has(id));
+    return ids.length === 0 ? [] : [{ ...test, ids }];
+  });
+}
+
 export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
   const acceptanceDirectory = path.join(repositoryRoot, "docs", "acceptance");
   const names = (await readdir(acceptanceDirectory))
@@ -137,11 +145,16 @@ export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
     content: await readFile(path.join(acceptanceDirectory, name), "utf8"),
   })));
   const criteria = parseCriterionFiles(criterionFiles);
-  const junitPaths = [
+  const [e2eTests, perfTests, unitTests] = await Promise.all([
     path.join(repositoryRoot, "reports", "e2e-junit.xml"),
+    path.join(repositoryRoot, "reports", "perf-e2e-junit.xml"),
     path.join(repositoryRoot, "reports", "unit-junit.xml"),
+  ].map(readJUnitFile));
+  const tests = [
+    ...e2eTests,
+    ...testsForMissingCriteria(e2eTests, perfTests),
+    ...unitTests,
   ];
-  const tests = (await Promise.all(junitPaths.map(readJUnitFile))).flat();
   const report = buildAcceptanceReport(criteria, tests, process.platform);
 
   console.log(report.markdown);

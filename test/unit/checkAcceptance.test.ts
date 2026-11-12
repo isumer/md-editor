@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -20,6 +25,17 @@ Given a fixture
 When it runs
 Then it passes
 `;
+
+async function runQuietly(root: string) {
+  const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    return await runAcceptanceCheck(root);
+  } finally {
+    log.mockRestore();
+    error.mockRestore();
+  }
+}
 
 describe("acceptance report", () => {
   it("maps passing JUnit tests to criteria from Markdown fixtures", () => {
@@ -96,6 +112,57 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("includes passing tests from the split performance report", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
+    try {
+      await mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await mkdir(path.join(root, "reports"));
+      await writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+      );
+      await writeFile(
+        path.join(root, "reports", "perf-e2e-junit.xml"),
+        '<testcase name="AC-PERF-02: keystrokes stay responsive" />',
+      );
+
+      const report = await runQuietly(root);
+
+      expect(report.ok).toBe(true);
+      expect(report.missing).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let a stale performance report mask a current failure", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
+    try {
+      await mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await mkdir(path.join(root, "reports"));
+      await writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+      );
+      const testCase = 'name="AC-PERF-02: keystrokes stay responsive"';
+      await writeFile(
+        path.join(root, "reports", "e2e-junit.xml"),
+        `<testcase ${testCase}><failure message="slow" /></testcase>`,
+      );
+      await writeFile(
+        path.join(root, "reports", "perf-e2e-junit.xml"),
+        `<testcase ${testCase} />`,
+      );
+
+      const report = await runQuietly(root);
+
+      expect(report.ok).toBe(false);
+      expect(report.missing).toEqual(["AC-PERF-02"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
 });
