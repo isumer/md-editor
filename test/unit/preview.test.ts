@@ -589,6 +589,62 @@ describe("preview render flow", () => {
     mark.mockRestore();
   });
 
+  it("AC-PERF-11: clears each previous first-preview phase mark", () => {
+    const clearMarks = vi.spyOn(performance, "clearMarks");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      complete: true,
+    });
+
+    expect(clearMarks.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+      "preview-sanitize-start",
+      "preview-sanitize-end",
+      "preview-rewrite-start",
+      "preview-rewrite-end",
+      "preview-dom-start",
+      "preview-dom-end",
+    ]);
+    clearMarks.mockRestore();
+  });
+
+  it("AC-PERF-11: an empty replace does not mark a later patch as first preview", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "replace", blocks: [], complete: true,
+    });
+    send(worker, {
+      id: 2, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "patch",
+      blocks: [{
+        block: { id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        after: null,
+      }],
+      removed: [],
+      complete: true,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+      "preview-apply-start",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
   it("AC-PERF-10: samples one append timing in every 64 batches", () => {
     const clearMeasures = vi.spyOn(performance, "clearMeasures");
     const measure = vi.spyOn(performance, "measure");

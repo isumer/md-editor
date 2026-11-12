@@ -49,6 +49,14 @@ const PAGE_BLOCK_LIMIT = 20;
 const SECTION_PAGE_LIMIT = 5;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
+const PREVIEW_PHASE_MARKS = [
+  "preview-sanitize-start",
+  "preview-sanitize-end",
+  "preview-rewrite-start",
+  "preview-rewrite-end",
+  "preview-dom-start",
+  "preview-dom-end",
+] as const;
 let appendMeasureCount = 0;
 let measureNextPreviewBlock = false;
 // Worker fills have at most eight blocks; only the larger initial batch is
@@ -173,7 +181,8 @@ function replaceBlocks(
   wiring.preview.replaceChildren();
   resetLayout(layout);
   // Record only the first block. Per-block marks would add work to large fills.
-  measureNextPreviewBlock = true;
+  for (const mark of PREVIEW_PHASE_MARKS) performance.clearMarks(mark);
+  measureNextPreviewBlock = blocks.length > 0;
   return appendBlocks(blocks, version, shifts, wiring, elements, layout, budget);
 }
 
