@@ -6,6 +6,7 @@ import {
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, redo, undo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import {
   bracketMatching,
   defaultHighlightStyle,
@@ -18,6 +19,7 @@ import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
   EditorState,
+  Compartment,
   type ChangeSet,
   type Extension,
   type Text,
@@ -58,7 +60,6 @@ const editorSetup = [
   dropCursor(),
   EditorState.allowMultipleSelections.of(true),
   indentOnInput(),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   bracketMatching(),
   closeBrackets(),
   autocompletion(),
@@ -86,6 +87,24 @@ function plainTextRunEnd(text: string, start: number): number {
     end += 1;
   }
   return end;
+}
+
+// The highlight palette follows the theme, so dark text never sits on a dark surface.
+const highlightCompartment = new Compartment();
+let darkHighlight = false;
+
+function highlightExtension(): Extension {
+  return darkHighlight
+    ? [EditorView.darkTheme.of(true), syntaxHighlighting(oneDarkHighlightStyle)]
+    : syntaxHighlighting(defaultHighlightStyle, { fallback: true });
+}
+
+export function setEditorDarkTheme(view: EditorView, dark: boolean): void {
+  if (darkHighlight === dark) {
+    return;
+  }
+  darkHighlight = dark;
+  view.dispatch({ effects: highlightCompartment.reconfigure(highlightExtension()) });
 }
 
 // Plain word runs contain no Markdown delimiters, so parse them in one step.
@@ -150,6 +169,7 @@ export function createEditorState(
     doc: document,
     extensions: [
       editorSetup,
+      highlightCompartment.of(highlightExtension()),
       extension,
       ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
