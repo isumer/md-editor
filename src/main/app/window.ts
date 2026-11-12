@@ -84,6 +84,11 @@ export function createWindow(
       webSecurity: true,
     },
   });
+  performance.mark("browser-window-constructed");
+  for (const event of ["did-start-loading", "dom-ready", "did-finish-load"] as const) {
+    window.webContents.once(event as "dom-ready", () => performance.mark(`wc-${event}`));
+  }
+  window.once("ready-to-show", () => performance.mark("ready-to-show"));
   registerTrustedWindow(window, APP_ENTRY_URL);
   wireWindowSecurity(
     window,

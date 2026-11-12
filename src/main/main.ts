@@ -1,3 +1,4 @@
+import "./bootMark";
 import path from "node:path";
 
 import {

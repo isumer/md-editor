@@ -144,14 +144,31 @@ test("an argv file is editable within the cold-start budget", {
   annotation: { type: "AC-PERF-03" },
 }, async () => {
   const startedAt = performance.now();
+  const startedEpoch = Date.now();
   const { application, page } = await launchEditor(fixturePath);
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
     await expect(editor).toContainText("Sample document");
+    const textSeenEpoch = Date.now();
     await editor.click();
     await page.keyboard.press("Control+End");
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
+    const elapsedMs = performance.now() - startedAt;
+    const typedEpoch = Date.now();
+    const mainTimeline = await application.evaluate(() => ({
+      origin: performance.timeOrigin,
+      uptimeMs: process.uptime() * 1000,
+      now: performance.now(),
+      marks: performance.getEntriesByType("mark").map(({ name, startTime }) => [name, Math.round(startTime)]),
+    }));
+    const rendererTimeline = await page.evaluate(() => ({
+      origin: performance.timeOrigin,
+      marks: performance.getEntriesByType("mark").map(({ name, startTime }) => [name, Math.round(startTime)]),
+    }));
+    console.log(`DIAG AC-PERF-03 elapsed=${Math.round(elapsedMs)} startEpoch=${startedEpoch} textSeen=+${textSeenEpoch - startedEpoch} typed=+${typedEpoch - startedEpoch}`);
+    console.log(`DIAG main origin=+${Math.round(mainTimeline.origin - startedEpoch)} processStart=+${Math.round(mainTimeline.origin + mainTimeline.now - mainTimeline.uptimeMs - startedEpoch)} marks=${JSON.stringify(mainTimeline.marks)}`);
+    console.log(`DIAG renderer origin=+${Math.round(rendererTimeline.origin - startedEpoch)} marks=${JSON.stringify(rendererTimeline.marks)}`);
 
     const marks = await startupMarks(application, page);
     console.log(`AC-PERF-03 marks: ${JSON.stringify(marks)}`);

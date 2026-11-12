@@ -134,6 +134,7 @@ export async function launchEditor(
   // other tests; a second launch for session restore passes the same path.
   const profileDirectory = userDataDir ?? await createUserDataDirectory();
   let application: ElectronApplication;
+  const launchStartedAt = Date.now();
   try {
     application = await electron.launch({
       args: [
@@ -149,7 +150,9 @@ export async function launchEditor(
     throw error;
   }
   try {
+    const launchedAt = Date.now();
     const page = await application.firstWindow();
+    const firstWindowAt = Date.now();
     const configuredCpuThrottle = process.env["MDEDITOR_CPU_THROTTLE"];
     if (configuredCpuThrottle !== undefined) {
       await applyCpuThrottle(page, configuredCpuThrottle);
@@ -163,6 +166,7 @@ export async function launchEditor(
         options.titleTimeoutMs ?? ARGV_TITLE_TIMEOUT_MS,
       );
     }
+    console.log(`DIAG launch epoch: start=${launchStartedAt} launched=${launchedAt} firstWindow=${firstWindowAt} argvApplied=${Date.now()}`);
     return { application, page, userDataDir: profileDirectory };
   } catch (error) {
     try {

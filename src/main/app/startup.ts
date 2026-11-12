@@ -291,13 +291,16 @@ export async function initializeApplication(
   );
   await app.whenReady();
   applicationReady();
+  performance.mark("app-ready-done");
   // The renderer loads in its own process, so the window starts first and the
   // menu is built while it loads. OpenRequests runs its operations in order,
   // so argv files still reach the renderer before its ready call is handled.
   // The menu is installed in this same task, before any renderer contribution
   // can arrive.
   startIoWorker();
+  performance.mark("io-worker-started");
   createApplicationWindow();
   createMenu(checkForUpdates);
+  performance.mark("menu-created");
   await startupRequests;
 }
