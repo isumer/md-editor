@@ -63,12 +63,15 @@ describe("SettingsStore (io-worker)", () => {
     expect(result).toEqual({ theme: "dark", fontSize: 16 });
   });
 
-  it("throws on invalid JSON", async () => {
+  it("AC-R08-02: returns an empty object for a truncated file", async () => {
     const filePath = path.join(testDirectory, "settings.json");
-    await fs.writeFile(filePath, "invalid json", "utf8");
+    const corrupt = '{"theme": "dark", "font';
+    await fs.writeFile(filePath, corrupt, "utf8");
 
     const store = new SettingsStore();
-    await expect(store.read(filePath)).rejects.toThrow();
+
+    await expect(store.read(filePath)).resolves.toEqual({});
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe(corrupt);
   });
 
   it("writes settings atomically", async () => {

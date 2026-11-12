@@ -1,8 +1,10 @@
-/* eslint-disable max-lines -- Application composition stays in one entry module. */
-import { Text, type EditorState } from "@codemirror/state";
+import { Text } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
-import type { Result } from "../shared/ipc/result";
+import {
+  applyFontSizeChange,
+  createAppearanceController,
+} from "./appearance";
 import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
@@ -10,7 +12,6 @@ import {
   createDocumentState,
   documentTitle,
   isDocumentDirty,
-  messageParams,
   type DocumentRecord,
 } from "./core/document";
 import { DocumentRegistry } from "./core/documentRegistry";
@@ -25,14 +26,6 @@ import {
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
 import {
-  applyBackgrounds,
-  resetToThemeDefaults,
-  resolveSystemTheme,
-  watchSystemTheme,
-  type ResolvedTheme,
-} from "./features/background/background";
-import { beginStartup } from "./features/background/startup";
-import {
   featureEditorExtensions,
   installFeatures,
   rewriteFeatureHtml,
@@ -43,61 +36,48 @@ import {
   clearDraft,
   detachDocument,
   loadSettings,
-  onOpenRequest,
-  onSessionCloseRequest,
   readyForOpenRequests,
+  saveSettings,
   sendChanges,
 } from "./platform/api";
+import { rendererElements } from "./platform/dom";
+import { startRenderer, wireWindow } from "./startup";
+import { createStatusSurface } from "./status";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
 import "./styles.css";
+import "./features/theme/theme.css";
+import "./features/preview/preview.css";
 
-function requiredElement<T extends HTMLElement>(selector: string): T {
-  const element = document.querySelector<T>(selector);
-  if (!element) {
-    throw new Error(`Missing required element: ${selector}`);
-  }
-  return element;
-}
-
-const editorHost = requiredElement<HTMLElement>("#editor");
-const workspace = requiredElement<HTMLElement>("#workspace");
-const preview = requiredElement<HTMLElement>("#preview");
-const previewError = requiredElement<HTMLElement>("#preview-error");
-const status = requiredElement<HTMLElement>("#status");
-const tabsHost = requiredElement<HTMLElement>("#tabs");
-const closePrompt = requiredElement<HTMLElement>("#close-prompt");
-const closePromptMessage = requiredElement<HTMLElement>("#close-prompt-message");
+const {
+  editorHost,
+  workspace,
+  preview,
+  previewError,
+  status,
+  tabsHost,
+  closePrompt,
+  closePromptMessage,
+} = rendererElements();
 const documentState = createDocumentState();
 const registry = new DocumentRegistry();
 let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
-let statusFromPreview = false;
 let editor: EditorView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let installedFeatures: InstalledFeatures;
 
-function showStatus(message = ""): void {
-  statusFromPreview = false;
-  status.textContent = message;
-}
-
-// A successful render clears only the preview's own error, never a file failure.
-function showPreviewStatus(message = ""): void {
-  if (message || statusFromPreview) {
-    status.textContent = message;
-    statusFromPreview = message !== "";
-  }
-}
-
-function showPreviewError(message = ""): void {
-  previewError.textContent = message;
-  previewError.hidden = message === "";
-}
+const {
+  show: showStatus,
+  showPreview: showPreviewStatus,
+  showPreviewError,
+  valueOrStatus,
+  unexpected: showUnexpectedError,
+} = createStatusSurface(status, previewError);
 
 function updateTitle(): void {
   document.title = documentTitle(documentState);
@@ -162,6 +142,10 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
+const settingsController = createAppearanceController({
+  load: loadSettings,
+  save: saveSettings,
+});
 installedFeatures = installFeatures({
   documents: () => registry.all(),
   editorHost,
@@ -303,24 +287,6 @@ function removePristineUntitled(): void {
   }
 }
 
-function valueOrStatus<T>(
-  result: Result<T>,
-  fileName: string | null = null,
-): T | undefined {
-  if (!result.ok) {
-    showStatus(formatMessage(
-      result.error.messageKey,
-      messageParams(result.error.params, fileName),
-    ));
-    return undefined;
-  }
-  return result.value;
-}
-
-function showUnexpectedError(error: unknown): void {
-  showStatus(error instanceof Error ? error.message : String(error));
-}
-
 function removeDocument(document: DocumentRecord): void {
   if (!registry.get(document.id)) {
     return;
@@ -378,9 +344,21 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
+
+function changeFontSize(delta: number): void {
+  applyFontSizeChange(
+    settingsController,
+    delta,
+    showStatus,
+    showUnexpectedError,
+  );
+}
+
 documentCommands = new DocumentCommands({
   compare: () => installedFeatures.runCommand("file.compareOpen"),
+  decreaseFontSize: () => changeFontSize(-1),
   editor,
+  increaseFontSize: () => changeFontSize(1),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
@@ -389,72 +367,26 @@ documentCommands = new DocumentCommands({
   save: (saveAs) => lifecycle.saveActive(saveAs),
 });
 
-onOpenRequest((request) => lifecycle.handleOpenRequest(request));
-onSessionCloseRequest((request) => {
-  void lifecycle.handleSessionClose(request).catch(showUnexpectedError);
-});
+wireWindow(lifecycle, showUnexpectedError);
 
-window.addEventListener("dragover", (event) => {
-  event.preventDefault();
-});
-window.addEventListener("drop", (event) => {
-  event.preventDefault();
-});
-
-async function loadBackgroundSettings(): Promise<void> {
-  const settingsResult = await loadSettings();
-  const applyTheme = (theme: ResolvedTheme): void => {
-    if (settingsResult.ok) {
-      applyBackgrounds(
-        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
-        theme,
-      );
-    } else {
-      resetToThemeDefaults(theme);
-    }
-  };
-  applyTheme(resolveSystemTheme());
-  watchSystemTheme(applyTheme);
-}
-
-async function initialize(): Promise<void> {
-  for (const action of ["cancel", "discard", "save"] as const) {
-    const button = closePrompt.querySelector<HTMLButtonElement>(
-      `[data-action="${action}"]`,
-    );
-    if (button) {
-      button.textContent = formatMessage(`close.${action}`, {});
-    }
-  }
-  renderController.start();
-  installedFeatures.start();
-  const readyRequest = beginStartup({
-    openInitialDocument: () => {
-      const untitled = createUntitled();
-      activateDocument(untitled);
-      updateTitle();
-    },
-    requestOpenRequests: readyForOpenRequests,
-    loadSettings: loadBackgroundSettings,
-    showError: showUnexpectedError,
-  });
-  try {
-    const ready = valueOrStatus(await readyRequest);
-    if (ready) {
-      windowId = ready.windowId;
-      documentState.productName = ready.productName;
-      updateTitle();
-      const recovered = await lifecycle.recover();
-      if (!recovered) {
-        await lifecycle.restoreSession();
-      }
-      if (ready.notice) {
-        showStatus(ready.notice);
-      }
-    }
-  } catch (error) {
-    showStatus(error instanceof Error ? error.message : String(error));
-  }
-}
-
-void initialize().catch(showUnexpectedError);
+void startRenderer({
+  closePrompt,
+  settings: settingsController,
+  render: renderController,
+  features: installedFeatures,
+  lifecycle,
+  openInitialDocument: () => {
+    const untitled = createUntitled();
+    activateDocument(untitled);
+    updateTitle();
+  },
+  requestOpenRequests: readyForOpenRequests,
+  unwrap: valueOrStatus,
+  onReady: (ready) => {
+    windowId = ready.windowId;
+    documentState.productName = ready.productName;
+    updateTitle();
+  },
+  showStatus,
+  showError: showUnexpectedError,
+}).catch(showUnexpectedError);

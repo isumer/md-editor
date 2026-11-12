@@ -1,42 +1,3 @@
-:root {
-  color: #1f2328;
-  background: #ffffff;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --editor-background: #ffffff;
-  --preview-background: #ffffff;
-  --editor-text-color: #1f2328;
-  --preview-text-color: #1f2328;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color: #e6edf3;
-    background: #0d1117;
-    --editor-background: #0d1117;
-    --preview-background: #0d1117;
-    --editor-text-color: #e6edf3;
-    --preview-text-color: #e6edf3;
-  }
-}
-
-:root[data-theme="light"] {
-  color: #1f2328;
-  background: #ffffff;
-  --editor-background: #ffffff;
-  --preview-background: #ffffff;
-  --editor-text-color: #1f2328;
-  --preview-text-color: #1f2328;
-}
-
-:root[data-theme="dark"] {
-  color: #e6edf3;
-  background: #0d1117;
-  --editor-background: #0d1117;
-  --preview-background: #0d1117;
-  --editor-text-color: #e6edf3;
-  --preview-text-color: #e6edf3;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -258,53 +219,11 @@ body {
 #editor .cm-editor {
   background: var(--custom-background, var(--editor-background));
   color: var(--custom-text-color, var(--editor-text-color));
+  font-size: var(--editor-font-size, 14px);
 }
 
 #editor .cm-editor.cm-focused {
   outline: none;
-}
-
-#preview {
-  padding: 24px 32px;
-  overflow: auto;
-  line-height: 1.55;
-  background: var(--custom-background, var(--preview-background));
-  color: var(--custom-text-color, var(--preview-text-color));
-}
-
-#preview > :first-child,
-.preview-block > :first-child {
-  margin-top: 0;
-}
-
-/* Off-screen regions skip layout and paint but keep their space. Blocks are
-   grouped into pages and pages into sections: content-visibility checks scale
-   with the number of contained elements, so one wrapper per block makes
-   scrolling worse as the document grows. A section holds 5 pages of 20
-   blocks, so its estimate is 12,000px and a page's is 2,400px. */
-.preview-page {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 2400px;
-}
-
-.preview-section {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 12000px;
-}
-
-#preview pre {
-  overflow: auto;
-  padding: 12px;
-  border-radius: 6px;
-  background: #f6f8fa;
-}
-
-#preview code {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-
-#preview input[type="checkbox"] {
-  margin-right: 0.45em;
 }
 
 #status {

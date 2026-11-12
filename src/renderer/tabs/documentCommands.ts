@@ -44,6 +44,8 @@ export interface DocumentCommandsOptions {
   compare(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
+  increaseFontSize?(): void;
+  decreaseFontSize?(): void;
 }
 
 export class DocumentCommands {
@@ -101,6 +103,16 @@ export class DocumentCommands {
       id: "redo",
       titleKey: "menu.redo",
       run: () => dispatchRedo(this.options.editor),
+    });
+    this.commands.register({
+      id: "view.increaseFontSize",
+      titleKey: "menu.increaseFontSize",
+      run: () => this.options.increaseFontSize?.(),
+    });
+    this.commands.register({
+      id: "view.decreaseFontSize",
+      titleKey: "menu.decreaseFontSize",
+      run: () => this.options.decreaseFontSize?.(),
     });
   }
 
