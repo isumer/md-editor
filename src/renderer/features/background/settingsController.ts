@@ -51,6 +51,12 @@ class Controller implements BackgroundSettingsController {
   constructor(private readonly dependencies: BackgroundSettingsDependencies) {}
 
   async start(): Promise<void> {
+    const result = await this.dependencies.load();
+    if (result.ok) {
+      this.settings = copySettings(result.value);
+    } else {
+      this.dependencies.reportError(result.error);
+    }
     this.dialog = installBackgroundSettingsDialog({
       changeBackground: (pane, value) => this.changeBackground(pane, value),
       changeTheme: (theme) => this.changeTheme(theme),
@@ -59,12 +65,6 @@ class Controller implements BackgroundSettingsController {
     this.stopThemeWatch = watchSystemTheme(() => {
       if (this.settings.theme === "system") this.apply();
     });
-    const result = await this.dependencies.load();
-    if (result.ok) {
-      this.settings = copySettings(result.value);
-    } else {
-      this.dependencies.reportError(result.error);
-    }
     this.apply();
   }
 

@@ -135,6 +135,27 @@ describe("background settings", () => {
     ));
   });
 
+  it("does not expose settings controls before stored settings load", async () => {
+    let resolveLoad: ((settings: SettingsReadResponse) => void) | undefined;
+    const pendingLoad = new Promise<SettingsReadResponse>((resolve) => {
+      resolveLoad = resolve;
+    });
+    controller = createBackgroundSettingsController({
+      load: async () => ({ ok: true, value: await pendingLoad }),
+      save: vi.fn(async () => ({ ok: true as const, value: undefined })),
+      reportError: vi.fn(),
+    });
+
+    const started = controller.start();
+    expect(document.querySelector("#background-settings-open")).toBeNull();
+
+    if (resolveLoad === undefined) throw new Error("settings load did not start");
+    resolveLoad(settings("dark", "#123456", "#abcdef"));
+    await started;
+    expect(required<HTMLInputElement>("#editor-background-input").value)
+      .toBe("#123456");
+  });
+
   it("reports load and save failures while system theme changes stay usable", async () => {
     const failure = {
       code: "UNKNOWN" as const,
