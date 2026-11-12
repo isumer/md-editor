@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
+- The workspace sidebar can create, rename and delete Markdown files from a right-click menu. It also follows changes on disk: a new file appears, a changed file is marked, and a deleted file closes its tab when it has no unsaved changes but stays open when it does.
+- Press CmdOrCtrl+B to hide or show the workspace sidebar. The app remembers the setting after a restart.
 - The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
 - Help > Check for Updates tells you what it found: a new version with its release notes, that you are up to date, or why the check failed. A new version opens the download page only after you agree. The app also checks once a day at startup, and you can turn that off from the update dialog.
 
@@ -55,6 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Reading and saving happen in a process that accepts only files the app has registered for that window, so a file the page names itself is refused.
 
 - The app window can now write only to files you chose through a dialog, the command line, or your system's "open with"; requests that name any other path are refused.
+- Workspace file actions stay inside the chosen folder: paths that use `..`, absolute or UNC paths, symlinks that leave the folder, Windows device names and alternate data streams are refused.
 - Requests to the app's services are checked for exact shape and size (documents up to 256 MiB), and are accepted only from the app's own window.
 - The page sees a fixed, named set of app functions and nothing else.
 

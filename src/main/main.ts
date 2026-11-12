@@ -76,7 +76,7 @@ const ioWorker = createIoWorkerSupervisor(
 );
 const fileDialogs = new FileDialogs();
 const fileService = new DocumentGrantService(grants, fileDialogs, ioWorker);
-const workspaceService = new WorkspaceService(fileDialogs, fileService);
+const workspaceService = new WorkspaceService(fileDialogs, fileService, grants, ioWorker);
 const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
 let sessionStore: SessionStore | null = null;
@@ -161,7 +161,10 @@ function createApplicationWindow(): void {
       logProcessEvent,
       openExternalBackstop: (url) => openExternalBackstop(url, logProcessEvent),
       attachIoPort,
-      closeWindow: async (windowId) => fileService.closeWindow(windowId),
+      closeWindow: async (windowId) => {
+        workspaceService.closeWindow(windowId);
+        await fileService.closeWindow(windowId);
+      },
       requestClose: async (window) => {
         if (!openRequests.isRendererReady()) {
           return true;
@@ -170,6 +173,8 @@ function createApplicationWindow(): void {
         if (!allow) {
           applicationEvents.cancelQuit();
         }
+        // Let the close-result IPC reply reach the renderer before destroying it.
+        await new Promise<void>((resolve) => setImmediate(resolve));
         return allow;
       },
     },

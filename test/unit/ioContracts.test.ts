@@ -11,6 +11,7 @@ import {
   isIoControlRequest,
   isRegisterGrantReply,
   isResolveAssetReply,
+  isResolveWorkspaceFileReply,
   isSessionReadReply,
   isSessionWriteReply,
   isStoredSession,
@@ -264,6 +265,7 @@ describe("io-worker control contracts", () => {
       handle: "grant",
       path: "/tmp/note.md",
       mustExist: true,
+      kind: "document",
     })).toBe(true);
     expect(isIoControlRequest({
       type: "revokeGrant",
@@ -272,6 +274,13 @@ describe("io-worker control contracts", () => {
     })).toBe(true);
     expect(isIoControlRequest({ type: "revokeWindow", windowId: 7 })).toBe(true);
     expect(isIoControlRequest({ type: "attachPort", windowId: 7 })).toBe(true);
+    expect(isIoControlRequest({
+      type: "resolveWorkspaceFile",
+      id: "workspace",
+      windowId: 7,
+      grant: "root",
+      relativePath: "notes/daily.md",
+    })).toBe(true);
   });
 
   it("AC-SEC-07: rejects invalid and hostile control messages", () => {
@@ -282,6 +291,7 @@ describe("io-worker control contracts", () => {
       handle: "grant",
       path: "/tmp/note.md",
       mustExist: true,
+      kind: "document",
       extra: true,
     })).toBe(false);
     expect(isIoControlRequest({
@@ -291,6 +301,7 @@ describe("io-worker control contracts", () => {
       handle: "grant",
       path: "/tmp/note.md",
       mustExist: true,
+      kind: "document",
     })).toBe(false);
     expect(isIoControlRequest(withOwnProto({ type: "revokeWindow", windowId: 7 })))
       .toBe(false);
@@ -366,6 +377,17 @@ describe("io-worker control contracts", () => {
       result: { ok: true, value: { canonicalPath: "/documents/pic.png", name: "pic.png" } },
     })).toBe(false);
     expect(isResolveAssetReply(withOwnProto(reply))).toBe(false);
+  });
+
+  it("AC-R11-04: validates resolved workspace file replies", () => {
+    expect(isResolveWorkspaceFileReply({
+      id: "workspace",
+      result: { ok: true, value: { path: "/notes/daily.md" } },
+    })).toBe(true);
+    expect(isResolveWorkspaceFileReply({
+      id: "workspace",
+      result: { ok: true, value: { path: "" } },
+    })).toBe(false);
   });
 
   it("AC-SEC-07: validates register replies before main accepts them", () => {

@@ -34,6 +34,9 @@ import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
+  RenameWorkspaceFileRequest,
+  WorkspaceChangeMessage,
+  WorkspaceFileActionResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
 
@@ -66,6 +69,12 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  createWorkspaceFile(request: WorkspacePathRequest): Promise<Result<WorkspaceFileActionResponse>>;
+  deleteWorkspaceFile(request: WorkspacePathRequest): Promise<Result<WorkspaceFileActionResponse>>;
+  renameWorkspaceFile(request: RenameWorkspaceFileRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  onWorkspaceChange(listener: (change: WorkspaceChangeMessage) => void): () => void;
 }
 
 declare global {

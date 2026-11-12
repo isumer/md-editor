@@ -5,7 +5,7 @@ import {
   type Result,
 } from "../../shared/ipc/result";
 
-export type GrantKind = "document";
+export type GrantKind = "document" | "root";
 
 export interface GrantEntry {
   handle: string;
@@ -62,6 +62,12 @@ export class GrantTable {
     if (grants?.size === 0) {
       this.windows.delete(windowId);
     }
+  }
+
+  revokeRoot(windowId: number, handle: string): void {
+    const grants = this.windows.get(windowId);
+    if (grants?.get(handle)?.kind === "root") grants.delete(handle);
+    if (grants?.size === 0) this.windows.delete(windowId);
   }
 
   revokeWindow(windowId: number): void {

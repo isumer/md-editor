@@ -111,6 +111,10 @@ body {
   grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
 }
 
+#workspace.sidebar-closed {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 #workspace-sidebar {
   min-width: 0;
   overflow: auto;
@@ -171,6 +175,38 @@ body {
   margin: 8px;
   color: #57606a;
   font-size: 12px;
+}
+
+.workspace-actions {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 4px 12px #0002;
+}
+
+.workspace-actions button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.workspace-prompt {
+  position: fixed;
+  z-index: 30;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  transform: translate(-50%, -50%);
 }
 
 #preview-error {

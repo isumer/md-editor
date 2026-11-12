@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
+import { execFile as execFileCallback } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { expect, test } from "@playwright/test";
 
@@ -8,10 +10,25 @@ import {
   closeEditor,
   launchEditor,
   repositoryRoot,
+  PRIMARY_MODIFIER,
   stubOpenDialog,
 } from "./helpers";
 
 const workspaceFixture = path.join(repositoryRoot, "test/fixtures/workspace");
+const execFile = promisify(execFileCallback);
+
+async function denyDirectoryWrites(directory: string): Promise<() => Promise<void>> {
+  if (process.platform === "win32") {
+    const user = process.env["USERNAME"];
+    if (!user) throw new Error("USERNAME is required for the permission test");
+    await execFile("icacls", [directory, "/deny", `${user}:(OI)(CI)(W,D)`]);
+    return async () => {
+      await execFile("icacls", [directory, "/remove:d", user]);
+    };
+  }
+  await fs.chmod(directory, 0o555);
+  return async () => fs.chmod(directory, 0o700);
+}
 
 async function writeNumberedFiles(
   directory: string,
@@ -197,5 +214,209 @@ test("clicking a workspace file opens and reuses its tab", {
   } finally {
     await closeEditor(application, page);
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test("the workspace tree follows disk changes and preserves a dirty deleted file", {
+  tag: "@AC-R11-05",
+  annotation: { type: "AC-R11-05" },
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-watch-"));
+  const cleanPath = path.join(root, "clean.md");
+  const dirtyPath = path.join(root, "dirty.md");
+  await fs.writeFile(cleanPath, "# Clean\n");
+  await fs.writeFile(dirtyPath, "# Dirty\n");
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, root);
+    await fs.writeFile(path.join(root, "created.md"), "# Created\n");
+    await expect(page.getByRole("button", { name: "created.md" })).toBeVisible({ timeout: 1_000 });
+    await fs.writeFile(dirtyPath, "# Changed\n");
+    await expect(page.getByRole("button", { name: "dirty.md" }))
+      .toHaveAttribute("title", "Changed on disk", { timeout: 1_000 });
+
+    await page.getByRole("button", { name: "clean.md" }).click();
+    await expect(page.locator('[data-testid="tab"][data-name="clean.md"]')).toBeVisible();
+    await fs.unlink(cleanPath);
+    await expect(page.getByTestId("tab")).toHaveCount(0, { timeout: 1_000 });
+
+    await page.getByRole("button", { name: "dirty.md" }).click();
+    await expect(page.locator('[data-testid="tab"][data-name="dirty.md"]')).toBeVisible();
+    await page.getByTestId("editor").locator(".cm-content").press("End");
+    await page.keyboard.type("unsaved");
+    await expect(page.getByTestId("tab-dirty")).toBeVisible();
+    await fs.unlink(dirtyPath);
+    await expect(page.getByTestId("tab")).toHaveCount(1, { timeout: 1_000 });
+    await expect(page.getByTestId("tab-dirty")).toBeVisible();
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("CmdOrCtrl+B persists the closed sidebar across a restart", {
+  tag: "@AC-R11-06",
+  annotation: { type: "AC-R11-06" },
+}, async () => {
+  const first = await launchEditor();
+  await expect.poll(() => first.page.evaluate(() =>
+    document.documentElement.dataset["sidebarShortcutReady"],
+  )).toBe("true");
+  await first.page.keyboard.press(`${PRIMARY_MODIFIER}+b`);
+  await expect(first.page.getByRole("complementary", { name: "Workspace" })).toBeHidden();
+  const samples = await first.page.evaluate((useMeta) => {
+    const sidebar = document.querySelector<HTMLElement>("#workspace-sidebar");
+    const durations: number[] = [];
+    let toggles = 0;
+    for (let index = 0; index < 30; index += 1) {
+      const before = sidebar?.hidden;
+      const started = performance.now();
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        code: "KeyB",
+        key: "b",
+        ctrlKey: !useMeta,
+        metaKey: useMeta,
+      }));
+      durations.push(sidebar ? performance.now() - started : Number.POSITIVE_INFINITY);
+      if (sidebar && sidebar.hidden !== before) toggles += 1;
+    }
+    return { durations, toggles };
+  }, process.platform === "darwin");
+  console.log(`AC-R11-06 toggle p95 ${percentile95(samples.durations).toFixed(1)} ms`);
+  expect(samples.durations).toHaveLength(30);
+  expect(samples.toggles).toBe(30);
+  expect(percentile95(samples.durations)).toBeLessThan(50);
+  await expect(first.page.getByRole("complementary", { name: "Workspace" })).toBeHidden();
+  await expect.poll(async () => fs.readFile(
+    path.join(first.userDataDir, "settings.json"),
+    "utf8",
+  ).catch(() => "")).toContain('"workspaceSidebarOpen": false');
+  await first.application.close();
+
+  const second = await launchEditor(undefined, first.userDataDir);
+  try {
+    await expect(second.page.getByRole("complementary", { name: "Workspace" })).toBeHidden();
+  } finally {
+    await closeEditor(second.application, second.page);
+  }
+});
+
+test("workspace file actions stay inside the root and keep state after failure", {
+  tag: ["@AC-R11-07", "@AC-R11-08"],
+  annotation: [{ type: "AC-R11-07" }, { type: "AC-R11-08" }],
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-actions-"));
+  await fs.writeFile(path.join(root, "existing.md"), "existing");
+  const outsideName = `outside-${path.basename(root)}.md`;
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, root);
+    const tree = page.getByTestId("workspace-tree");
+    await tree.click({ button: "right" });
+    await page.getByRole("button", { name: "New File" }).click();
+    const create = page.getByRole("dialog", { name: "New file name" });
+    await create.getByRole("textbox").fill(`../${outsideName}`);
+    await create.getByRole("button", { name: "Create" }).click();
+    await expect(page.getByTestId("status")).toContainText("request was not valid");
+    await expect(fs.stat(path.join(root, "..", outsideName))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await tree.click({ button: "right" });
+    await page.getByRole("button", { name: "New File" }).click();
+    await create.getByRole("textbox").fill("created.md");
+    await create.getByRole("button", { name: "Create" }).click();
+    await expect(tree.getByRole("button", { name: "created.md" })).toBeVisible();
+
+    await tree.getByRole("button", { name: "created.md" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Rename" }).click();
+    const rename = page.getByRole("dialog", { name: "Rename file" });
+    await rename.getByRole("textbox").fill("existing.md");
+    await rename.getByRole("button", { name: "Rename" }).click();
+    await expect(page.getByTestId("status")).toHaveText(
+      "Could not rename “created.md”: “existing.md” already exists.",
+    );
+    await expect(tree.getByRole("button", { name: "created.md" })).toBeVisible();
+    await expect(tree.getByRole("button", { name: "existing.md" })).toBeVisible();
+    await expect(fs.readFile(path.join(root, "created.md"), "utf8")).resolves.toBe("");
+    await expect(fs.readFile(path.join(root, "existing.md"), "utf8")).resolves.toBe("existing");
+
+    await tree.getByRole("button", { name: "created.md" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("dialog", { name: "Delete created.md?" })
+      .getByRole("button", { name: "Delete" }).click();
+    await expect(tree.getByRole("button", { name: "created.md" })).toHaveCount(0);
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a missing file failure names the entry and keeps disk and tree state", {
+  tag: "@AC-R11-08",
+  annotation: { type: "AC-R11-08" },
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-missing-"));
+  const missing = path.join(root, "missing.md");
+  await fs.writeFile(missing, "missing");
+  await fs.writeFile(path.join(root, "kept.md"), "kept");
+  const { application, page } = await launchEditor();
+  try {
+    await openWorkspace(application, page, root);
+    const tree = page.getByTestId("workspace-tree");
+    await tree.getByRole("button", { name: "missing.md" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Delete" }).click();
+    const dialog = page.getByRole("dialog", { name: "Delete missing.md?" });
+    await fs.unlink(missing);
+    await expect(tree.getByRole("button", { name: "missing.md" })).toHaveCount(0);
+    const treeBefore = await tree.getByTestId("workspace-row").allTextContents();
+
+    await dialog.getByRole("button", { name: "Delete" }).click();
+
+    await expect(page.getByTestId("status")).toHaveText(
+      "Could not access “missing.md”: it was not found.",
+    );
+    await expect(tree.getByTestId("workspace-row")).toHaveText(treeBefore);
+    await expect(fs.stat(missing)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(path.join(root, "kept.md"), "utf8")).resolves.toBe("kept");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a permission failure names the entry and keeps disk and tree state", {
+  tag: "@AC-R11-08",
+  annotation: { type: "AC-R11-08" },
+}, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-denied-"));
+  const source = path.join(root, "protected.md");
+  const target = path.join(root, "renamed.md");
+  await fs.writeFile(source, "protected");
+  const { application, page } = await launchEditor();
+  let restore = async (): Promise<void> => undefined;
+  try {
+    await openWorkspace(application, page, root);
+    const tree = page.getByTestId("workspace-tree");
+    await tree.getByRole("button", { name: "protected.md" }).click({ button: "right" });
+    await page.getByRole("button", { name: "Rename" }).click();
+    const dialog = page.getByRole("dialog", { name: "Rename file" });
+    await dialog.getByRole("textbox").fill("renamed.md");
+    restore = await denyDirectoryWrites(root);
+
+    await dialog.getByRole("button", { name: "Rename" }).click();
+
+    await expect(page.getByTestId("status")).toHaveText(
+      "Could not access “protected.md”: permission was denied.",
+    );
+    await expect(tree.getByRole("button", { name: "protected.md" })).toBeVisible();
+    await expect(tree.getByRole("button", { name: "renamed.md" })).toHaveCount(0);
+    await expect(fs.readFile(source, "utf8")).resolves.toBe("protected");
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await restore();
+    await closeEditor(application, page);
+    await fs.rm(root, { recursive: true, force: true });
   }
 });

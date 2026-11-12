@@ -1,44 +1,31 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import type { DocumentReference } from "../../shared/ipc/file";
-import { serviceError } from "../../shared/ipc/result";
-import type {
-  WorkspaceEntry,
-  WorkspaceRoot,
-} from "../../shared/ipc/workspace";
+import type { RegisteredGrant } from "../../shared/ipc/ioControl";
+import { serviceError, type Result } from "../../shared/ipc/result";
+import type { WorkspaceRoot } from "../../shared/ipc/workspace";
+import { checkWorkspacePath } from "../../shared/workspace/workspacePath";
+import type { GrantTable } from "../grants/grantTable";
 import type { DocumentGrantService } from "./documentGrants";
 
 interface WorkspaceDialogs {
   chooseFolderPath(windowId: number): Promise<string | null>;
 }
 
+interface WorkspaceControl {
+  registerGrant(
+    windowId: number,
+    handle: string,
+    filePath: string,
+    mustExist: boolean,
+    kind: "document" | "root",
+  ): Promise<Result<RegisteredGrant>>;
+  revokeGrant(windowId: number, handle: string): Promise<void>;
+}
+
 function isInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function validRelativePath(relativePath: string): boolean {
-  return relativePath === "" || (!path.isAbsolute(relativePath) &&
-    relativePath.split("/").every((segment) =>
-      segment !== "" && segment !== "." && segment !== ".." && !segment.includes("\\")));
-}
-
-function visibleEntry(entry: { isDirectory(): boolean; isFile(): boolean; name: string }): boolean {
-  if (entry.name.startsWith(".")) {
-    return false;
-  }
-  if (entry.isDirectory()) {
-    return entry.name !== "node_modules";
-  }
-  return entry.isFile() && entry.name.toLowerCase().endsWith(".md");
-}
-
-function compareEntries(left: WorkspaceEntry, right: WorkspaceEntry): number {
-  if (left.kind !== right.kind) {
-    return left.kind === "folder" ? -1 : 1;
-  }
-  return left.name.toLowerCase().localeCompare(right.name.toLowerCase(), "en");
 }
 
 export class WorkspaceService {
@@ -47,55 +34,46 @@ export class WorkspaceService {
   constructor(
     private readonly dialogs: WorkspaceDialogs,
     private readonly documents: DocumentGrantService,
+    private readonly grants: GrantTable,
+    private readonly control: WorkspaceControl,
   ) {}
 
   async chooseRoot(windowId: number): Promise<WorkspaceRoot | null> {
     const selected = await this.dialogs.chooseFolderPath(windowId);
-    if (selected === null) {
-      return null;
-    }
-    const root = await fs.realpath(selected);
-    if (!(await fs.stat(root)).isDirectory()) {
-      throw serviceError("IS_DIRECTORY", "file.isDirectory", { file: path.basename(root) });
-    }
-    this.roots.set(windowId, root);
-    return { name: path.basename(root) || root };
-  }
-
-  async listChildren(windowId: number, relativePath: string): Promise<readonly WorkspaceEntry[]> {
-    const directory = await this.resolve(windowId, relativePath);
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    return entries
-      .filter(visibleEntry)
-      .map((entry): WorkspaceEntry => ({
-        name: entry.name,
-        kind: entry.isDirectory() ? "folder" : "file",
-      }))
-      .sort(compareEntries);
+    if (selected === null) return null;
+    const current = this.roots.get(windowId);
+    const handle = this.grants.createHandle(windowId);
+    const result = await this.control.registerGrant(windowId, handle, selected, true, "root");
+    if (!result.ok) throw result.error;
+    this.grants.register(windowId, handle, result.value.canonicalPath, "root");
+    this.roots.set(windowId, handle);
+    if (current) await this.releaseRootGrant(windowId, current);
+    return { grant: handle, name: result.value.name };
   }
 
   async openFile(windowId: number, relativePath: string): Promise<DocumentReference> {
-    const filePath = await this.resolve(windowId, relativePath);
-    const stat = await fs.stat(filePath);
-    if (!stat.isFile() || !filePath.toLowerCase().endsWith(".md")) {
-      throw serviceError("NOT_FOUND", "file.notFound", { file: path.basename(filePath) });
+    const grant = this.roots.get(windowId);
+    if (!grant) throw serviceError("BAD_REQUEST", "request.invalid");
+    const checked = checkWorkspacePath(relativePath);
+    const root = this.grants.resolve(windowId, grant);
+    if (!checked.ok || !root.ok || !relativePath.toLowerCase().endsWith(".md")) {
+      throw serviceError("BAD_REQUEST", "request.invalid");
     }
-    return this.documents.openPath(windowId, filePath);
+    const opened = await this.documents.openPath(
+      windowId,
+      path.resolve(root.value, ...checked.segments),
+    );
+    if (isInside(root.value, opened.canonicalPath)) return opened;
+    await this.documents.release(windowId, opened.grant);
+    throw serviceError("BAD_REQUEST", "request.invalid");
   }
 
-  private async resolve(windowId: number, relativePath: string): Promise<string> {
-    const root = this.roots.get(windowId);
-    if (root === undefined || !validRelativePath(relativePath)) {
-      throw serviceError("BAD_REQUEST", "request.invalid");
-    }
-    const candidate = path.resolve(root, ...relativePath.split("/").filter(Boolean));
-    if (!isInside(root, candidate)) {
-      throw serviceError("BAD_REQUEST", "request.invalid");
-    }
-    const canonical = await fs.realpath(candidate);
-    if (!isInside(root, canonical)) {
-      throw serviceError("BAD_REQUEST", "request.invalid");
-    }
-    return canonical;
+  closeWindow(windowId: number): void {
+    this.roots.delete(windowId);
+  }
+
+  private async releaseRootGrant(windowId: number, handle: string): Promise<void> {
+    this.grants.revokeRoot(windowId, handle);
+    await this.control.revokeGrant(windowId, handle);
   }
 }

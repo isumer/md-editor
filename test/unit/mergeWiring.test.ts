@@ -65,6 +65,7 @@ function harness(documents: readonly DocumentRecord[]): Harness {
       isActive: (item) => item === active,
       openDocument: async () => undefined,
       preview,
+      removeDocument: vi.fn(),
       showStatus: status,
       workspace,
     },

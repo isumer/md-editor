@@ -24,6 +24,7 @@ export interface RegisterGrantRequest {
   handle: string;
   path: string;
   mustExist: boolean;
+  kind: "document" | "root";
 }
 
 export interface RevokeGrantRequest {
@@ -44,6 +45,14 @@ export interface AttachPortRequest {
 
 export interface ResolveAssetRequest {
   type: "resolveAsset";
+  id: string;
+  windowId: number;
+  grant: string;
+  relativePath: string;
+}
+
+export interface ResolveWorkspaceFileRequest {
+  type: "resolveWorkspaceFile";
   id: string;
   windowId: number;
   grant: string;
@@ -82,6 +91,7 @@ export type IoControlRequest =
   | RevokeWindowRequest
   | AttachPortRequest
   | ResolveAssetRequest
+  | ResolveWorkspaceFileRequest
   | ReadSessionRequest
   | WriteSessionRequest
   | ReadSettingsRequest
@@ -93,6 +103,10 @@ export interface RegisteredGrant {
 }
 
 export interface ResolvedAsset {
+  path: string;
+}
+
+export interface ResolvedWorkspaceFile {
   path: string;
 }
 
@@ -114,6 +128,13 @@ export interface ResolveAssetReply {
   id: string;
   result:
     | { ok: true; value: ResolvedAsset }
+    | { ok: false; error: ControlError };
+}
+
+export interface ResolveWorkspaceFileReply {
+  id: string;
+  result:
+    | { ok: true; value: ResolvedWorkspaceFile }
     | { ok: false; error: ControlError };
 }
 
@@ -187,13 +208,14 @@ function validHandle(value: unknown): value is string {
 function isRegister(value: unknown): value is RegisterGrantRequest {
   const request = exactData(
     value,
-    ["type", "id", "windowId", "handle", "path", "mustExist"],
+    ["type", "id", "windowId", "handle", "path", "mustExist", "kind"],
   );
   return request !== null && request["type"] === "registerGrant" &&
     validId(request["id"]) && validWindowId(request["windowId"]) &&
     validHandle(request["handle"]) && typeof request["path"] === "string" &&
     request["path"].length > 0 && request["path"].length <= MAX_CONTROL_PATH_LENGTH &&
-    typeof request["mustExist"] === "boolean";
+    typeof request["mustExist"] === "boolean" &&
+    (request["kind"] === "document" || request["kind"] === "root");
 }
 
 function isRevokeGrant(value: unknown): value is RevokeGrantRequest {
@@ -220,6 +242,18 @@ function isResolveAsset(value: unknown): value is ResolveAssetRequest {
     validId(request["id"]) && validWindowId(request["windowId"]) &&
     validHandle(request["grant"]) &&
     typeof request["relativePath"] === "string" &&
+    request["relativePath"].length > 0 &&
+    request["relativePath"].length <= MAX_ASSET_RELATIVE_PATH_LENGTH;
+}
+
+function isResolveWorkspaceFile(value: unknown): value is ResolveWorkspaceFileRequest {
+  const request = exactData(
+    value,
+    ["type", "id", "windowId", "grant", "relativePath"],
+  );
+  return request !== null && request["type"] === "resolveWorkspaceFile" &&
+    validId(request["id"]) && validWindowId(request["windowId"]) &&
+    validHandle(request["grant"]) && typeof request["relativePath"] === "string" &&
     request["relativePath"].length > 0 &&
     request["relativePath"].length <= MAX_ASSET_RELATIVE_PATH_LENGTH;
 }
@@ -337,7 +371,8 @@ function isWriteSettings(value: unknown): value is WriteSettingsRequest {
 export function isIoControlRequest(value: unknown): value is IoControlRequest {
   return isRegister(value) || isRevokeGrant(value) ||
     isWindowMessage(value, "revokeWindow") || isWindowMessage(value, "attachPort") ||
-    isResolveAsset(value) || isReadSession(value) || isWriteSession(value) ||
+    isResolveAsset(value) || isResolveWorkspaceFile(value) ||
+    isReadSession(value) || isWriteSession(value) ||
     isReadSettings(value) || isWriteSettings(value);
 }
 
@@ -410,6 +445,14 @@ export function isRegisterGrantReply(value: unknown): value is RegisterGrantRepl
 }
 
 export function isResolveAssetReply(value: unknown): value is ResolveAssetReply {
+  const reply = exactData(value, ["id", "result"]);
+  return reply !== null && validId(reply["id"]) &&
+    validResult(reply["result"], validResolvedAsset);
+}
+
+export function isResolveWorkspaceFileReply(
+  value: unknown,
+): value is ResolveWorkspaceFileReply {
   const reply = exactData(value, ["id", "result"]);
   return reply !== null && validId(reply["id"]) &&
     validResult(reply["result"], validResolvedAsset);

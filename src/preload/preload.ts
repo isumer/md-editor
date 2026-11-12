@@ -45,7 +45,10 @@ import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
+  RenameWorkspaceFileRequest,
   WORKSPACE_CHANNELS as SharedWorkspaceChannels,
+  WorkspaceChangeMessage,
+  WorkspaceFileActionResponse,
   WorkspacePathRequest,
 } from "../shared/ipc/workspace";
 
@@ -77,9 +80,13 @@ const SETTINGS_CHANNELS = {
   write: "settings:write",
 } as const satisfies typeof SharedSettingsChannels;
 const WORKSPACE_CHANNELS = {
+  change: "workspace:change",
   chooseRoot: "workspace:choose-root",
+  createFile: "workspace:create-file",
+  deleteFile: "workspace:delete-file",
   listChildren: "workspace:list-children",
   openFile: "workspace:open-file",
+  renameFile: "workspace:rename-file",
 } as const satisfies typeof SharedWorkspaceChannels;
 
 interface RendererPort {
@@ -94,7 +101,11 @@ type PortOperation =
   | ({ op: "attach" } & AttachDocumentInput)
   | ({ op: "save" } & SaveDocumentInput)
   | ({ op: "draft" } & DraftDocumentInput)
-  | { op: "drafts" };
+  | { op: "drafts" }
+  | { op: "workspaceList"; grant: string; path: string }
+  | { op: "workspaceCreate"; grant: string; path: string }
+  | { op: "workspaceDelete"; grant: string; path: string }
+  | { op: "workspaceRename"; grant: string; path: string; newPath: string };
 type PortOneWay = ChangeDocumentMessage | DetachDocumentMessage | ClearDraftMessage;
 
 interface PendingRequest {
@@ -181,7 +192,9 @@ function validDrafts(value: unknown): boolean {
 }
 
 function validSuccessValue(value: unknown, operation: PortOperation["op"]): boolean {
-  if (operation === "attach" || operation === "draft") {
+  if (operation === "attach" || operation === "draft" ||
+    operation === "workspaceCreate" || operation === "workspaceDelete" ||
+    operation === "workspaceRename") {
     return exactData(value, []) !== null;
   }
   if (operation === "drafts") {
@@ -192,6 +205,13 @@ function validSuccessValue(value: unknown, operation: PortOperation["op"]): bool
     return read !== null && typeof read["canonicalPath"] === "string" &&
       read["canonicalPath"].length > 0 && typeof read["name"] === "string" &&
       typeof read["text"] === "string";
+  }
+  if (operation === "workspaceList") {
+    return Array.isArray(value) && value.every((candidate) => {
+      const entry = exactData(candidate, ["name", "kind"]);
+      return entry !== null && typeof entry["name"] === "string" &&
+        (entry["kind"] === "folder" || entry["kind"] === "file");
+    });
   }
   const save = exactData(value, ["name", "version"]);
   return save !== null && typeof save["name"] === "string" &&
@@ -271,6 +291,14 @@ export class IoPortClient {
   }
 
   private receive(value: unknown): void {
+    const event = exactData(value, ["op", "change"]);
+    const change = event?.["op"] === "workspaceChange"
+      ? workspaceChange(event["change"])
+      : null;
+    if (change) {
+      for (const listener of workspaceChangeListeners) listener(change);
+      return;
+    }
     const reply = replyData(value);
     if (!reply) {
       return;
@@ -320,9 +348,53 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  createWorkspaceFile(request: WorkspacePathRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  deleteWorkspaceFile(request: WorkspacePathRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  renameWorkspaceFile(request: RenameWorkspaceFileRequest): Promise<
+    Result<WorkspaceFileActionResponse>
+  >;
+  onWorkspaceChange(listener: (change: WorkspaceChangeMessage) => void): () => void;
+}
+
+function workspaceChange(value: unknown): WorkspaceChangeMessage | null {
+  const record = typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : null;
+  if (!record || typeof record["kind"] !== "string") return null;
+  const keys = record["kind"] === "created"
+    ? ["canonicalPath", "entryKind", "kind", "path"]
+    : ["canonicalPath", "kind", "path"];
+  const data = exactData(record, keys);
+  if (!data || typeof data["canonicalPath"] !== "string" ||
+    typeof data["path"] !== "string") return null;
+  if (data["kind"] === "created" &&
+    (data["entryKind"] === "folder" || data["entryKind"] === "file")) {
+    return data as unknown as WorkspaceChangeMessage;
+  }
+  return data["kind"] === "changed" || data["kind"] === "deleted"
+    ? data as unknown as WorkspaceChangeMessage
+    : null;
 }
 
 const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
+const workspaceChangeListeners = new Set<(change: WorkspaceChangeMessage) => void>();
+let workspaceGrant: string | null = null;
+
+function missingWorkspaceGrant<T>(): Promise<Result<T>> {
+  return Promise.resolve({
+    ok: false,
+    error: {
+      code: "BAD_REQUEST",
+      messageKey: "request.invalid",
+      params: {},
+      retryable: false,
+    },
+  });
+}
 
 type DropFile = Parameters<typeof webUtils.getPathForFile>[0];
 
@@ -332,7 +404,22 @@ interface TrustedDropEvent {
   preventDefault(): void;
 }
 
-interface DropTarget {
+interface EarlyShortcutEvent {
+  readonly altKey: boolean;
+  readonly code: string;
+  readonly ctrlKey: boolean;
+  readonly key: string;
+  readonly metaKey: boolean;
+  readonly shiftKey: boolean;
+  preventDefault(): void;
+  stopImmediatePropagation(): void;
+}
+
+interface PreloadTarget {
+  readonly document?: {
+    readonly documentElement?: { readonly dataset: Record<string, string | undefined> };
+  };
+  addEventListener(type: "keydown", listener: (event: EarlyShortcutEvent) => void): void;
   addEventListener(type: "drop", listener: (event: TrustedDropEvent) => void): void;
 }
 
@@ -473,23 +560,54 @@ const api: Api = {
     ipcRenderer.on(SESSION_CHANNELS.requestClose, handler);
     return () => ipcRenderer.removeListener(SESSION_CHANNELS.requestClose, handler);
   },
-  chooseWorkspaceRoot: () => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.chooseRoot,
-    {},
-  ) as Promise<Result<ChooseWorkspaceRootResponse>>,
-  listWorkspaceChildren: (request) => ipcRenderer.invoke(
-    WORKSPACE_CHANNELS.listChildren,
-    request,
-  ) as Promise<Result<ListWorkspaceChildrenResponse>>,
+  chooseWorkspaceRoot: async () => {
+    const result = await ipcRenderer.invoke(
+      WORKSPACE_CHANNELS.chooseRoot,
+      {},
+    ) as Result<ChooseWorkspaceRootResponse>;
+    if (result.ok && result.value !== null) workspaceGrant = result.value.grant;
+    return result;
+  },
+  listWorkspaceChildren: (request) => workspaceGrant
+    ? ioClient.request({ op: "workspaceList", grant: workspaceGrant, path: request.path })
+    : missingWorkspaceGrant(),
   openWorkspaceFile: (request) => ipcRenderer.invoke(
     WORKSPACE_CHANNELS.openFile,
     request,
   ) as Promise<Result<OpenWorkspaceFileResponse>>,
+  createWorkspaceFile: (request) => workspaceGrant
+    ? ioClient.request({ op: "workspaceCreate", grant: workspaceGrant, path: request.path })
+    : missingWorkspaceGrant(),
+  deleteWorkspaceFile: (request) => workspaceGrant
+    ? ioClient.request({ op: "workspaceDelete", grant: workspaceGrant, path: request.path })
+    : missingWorkspaceGrant(),
+  renameWorkspaceFile: (request) => workspaceGrant
+    ? ioClient.request({
+        op: "workspaceRename",
+        grant: workspaceGrant,
+        path: request.path,
+        newPath: request.newPath,
+      })
+    : missingWorkspaceGrant(),
+  onWorkspaceChange: (listener) => {
+    workspaceChangeListeners.add(listener);
+    return () => workspaceChangeListeners.delete(listener);
+  },
 };
 
-const dropTarget = globalThis as unknown as Partial<DropTarget>;
-if (typeof dropTarget.addEventListener === "function") {
-  dropTarget.addEventListener("drop", (event) => {
+const preloadTarget = globalThis as unknown as Partial<PreloadTarget>;
+if (typeof preloadTarget.addEventListener === "function") {
+  preloadTarget.addEventListener("keydown", (event) => {
+    const dataset = preloadTarget.document?.documentElement?.dataset;
+    if (!dataset || event.code !== "KeyB" || event.metaKey === event.ctrlKey ||
+      event.altKey || event.shiftKey || dataset["sidebarShortcutReady"] === "true") {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    dataset["sidebarTogglePending"] = String(dataset["sidebarTogglePending"] !== "true");
+  });
+  preloadTarget.addEventListener("drop", (event) => {
     void openDroppedFiles(event).catch(() => undefined);
   });
 }

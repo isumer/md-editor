@@ -19,6 +19,17 @@ function recordedRequest(
 }
 
 describe("workspace tree store", () => {
+  it("AC-R11-05: applies disk changes to loaded folders", () => {
+    const store = new WorkspaceTreeStore(() => undefined);
+    const root = store.openRoot();
+    store.receiveChildren(root, [{ name: "a.md", kind: "file" }]);
+
+    store.applyChange({ kind: "created", path: "b.md", entryKind: "file" });
+    expect(store.rows().map((row) => row.name)).toEqual(["a.md", "b.md"]);
+    store.applyChange({ kind: "deleted", path: "a.md" });
+    expect(store.rows().map((row) => row.name)).toEqual(["b.md"]);
+  });
+
   it("AC-R11-01: lists only folders and markdown files with folders first", () => {
     const requests: Array<{ readonly id: number; readonly path: string }> = [];
     const store = new WorkspaceTreeStore((request) => requests.push(request));

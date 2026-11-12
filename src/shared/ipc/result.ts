@@ -27,6 +27,7 @@ export type MessageKey =
   | "file.permissionDenied"
   | "file.diskFull"
   | "file.conflict"
+  | "file.nameConflict"
   | "file.tooLarge"
   | "file.binary"
   | "file.unknown";

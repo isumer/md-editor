@@ -10,6 +10,7 @@ export interface GrantControl {
     handle: string,
     filePath: string,
     mustExist: boolean,
+    kind: "document" | "root",
   ): Promise<Result<RegisteredGrant>>;
   revokeGrant(windowId: number, handle: string): Promise<void>;
   revokeWindow(windowId: number): Promise<void>;
@@ -66,6 +67,7 @@ export class DocumentGrantService {
       handle,
       filePath,
       mustExist,
+      "document",
     );
     if (!result.ok) {
       throw result.error;

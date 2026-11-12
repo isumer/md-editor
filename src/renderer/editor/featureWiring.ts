@@ -18,6 +18,7 @@ export interface FeatureContext {
   hasDocument(documentId: string): boolean;
   isActive(document: DocumentRecord): boolean;
   openDocument(reference: DocumentReference): Promise<void>;
+  removeDocument(document: DocumentRecord): void;
   showStatus(message?: string): void;
 }
 

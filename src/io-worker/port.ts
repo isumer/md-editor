@@ -10,12 +10,20 @@ import {
   type ReadDocumentResponse,
   type SaveDocumentResponse,
 } from "../shared/ipc/io";
+import type { WorkspaceChangeMessage } from "../shared/ipc/workspace";
+import {
+  isWorkspaceIoRequest,
+  type WorkspaceIoReply,
+  type WorkspaceIoRequest,
+  type WorkspaceIoResponse,
+} from "../shared/ipc/workspaceIo";
 import {
   serviceError,
   toServiceError,
   type Result,
 } from "../shared/ipc/result";
 import type { IoFileService } from "./services/file";
+import type { IoWorkspaceService } from "./services/workspace";
 
 export interface IoWorkerPort {
   on(event: "message", listener: (event: { data: unknown }) => void): this;
@@ -53,6 +61,28 @@ async function runRequest(
   }
 }
 
+async function runWorkspaceRequest(
+  request: WorkspaceIoRequest,
+  windowId: number,
+  service: IoWorkspaceService,
+): Promise<Result<WorkspaceIoResponse>> {
+  try {
+    if (request.op === "workspaceList") {
+      return { ok: true, value: await service.listChildren(windowId, request.grant, request.path) };
+    }
+    if (request.op === "workspaceCreate") {
+      await service.createFile(windowId, request.grant, request.path);
+    } else if (request.op === "workspaceDelete") {
+      await service.deleteFile(windowId, request.grant, request.path);
+    } else {
+      await service.renameFile(windowId, request.grant, request.path, request.newPath);
+    }
+    return { ok: true, value: {} };
+  } catch (error) {
+    return { ok: false, error: toServiceError(error) };
+  }
+}
+
 function runOneWay(
   message: IoOneWayMessage,
   windowId: number,
@@ -81,11 +111,23 @@ export function attachIoPort(
   port: IoWorkerPort,
   windowId: number,
   service: IoFileService,
+  workspaces?: IoWorkspaceService,
 ): void {
   port.on("message", (event) => {
     const id = ioRequestId(event.data);
     if (isIoOneWayMessage(event.data)) {
       runOneWay(event.data, windowId, service);
+      return;
+    }
+    if (isWorkspaceIoRequest(event.data)) {
+      const request = event.data;
+      if (!workspaces) {
+        port.postMessage(badRequest(request.id));
+        return;
+      }
+      void runWorkspaceRequest(request, windowId, workspaces).then((result) => {
+        port.postMessage({ id: request.id, result } satisfies WorkspaceIoReply);
+      });
       return;
     }
     if (!isIoRequest(event.data)) {
@@ -106,19 +148,28 @@ export function attachIoPort(
 export class IoPortRegistry {
   private readonly ports = new Map<number, IoWorkerPort>();
 
-  constructor(private readonly service: IoFileService) {}
+  constructor(
+    private readonly service: IoFileService,
+    private readonly workspaces: IoWorkspaceService,
+  ) {
+    workspaces.setChangeSink((windowId, change) => this.sendWorkspaceChange(windowId, change));
+  }
 
   attach(windowId: number, port: IoWorkerPort): void {
     this.ports.get(windowId)?.close?.();
     // A reattach (renderer reload after a crash) keeps drafts for recovery.
     this.service.resetWindow(windowId);
     this.ports.set(windowId, port);
-    attachIoPort(port, windowId, this.service);
+    attachIoPort(port, windowId, this.service, this.workspaces);
   }
 
   revokeWindow(windowId: number): void {
     this.ports.get(windowId)?.close?.();
     this.ports.delete(windowId);
     this.service.revokeWindow(windowId);
+  }
+
+  private sendWorkspaceChange(windowId: number, change: WorkspaceChangeMessage): void {
+    this.ports.get(windowId)?.postMessage({ op: "workspaceChange", change });
   }
 }
