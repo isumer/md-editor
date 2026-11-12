@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { compareMenu } from "../../shared/ipc/menu/compare";
 import { composeMenuItems } from "../../shared/ipc/menu/compose";
 import { fileMenu } from "../../shared/ipc/menu/file";
+import { viewMenu } from "../../shared/ipc/menu/view";
 import {
   type MenuCommandMessage,
   type MenuContribution,
@@ -24,15 +25,27 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
 
 // The renderer composes its own item list; main composes the same list
 // from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
-export const menuItems = composeMenuItems([fileMenu, compareMenu]);
+export const menuItems = composeMenuItems([fileMenu, compareMenu, viewMenu]);
 
-export function menuContribution(): MenuContribution {
+function accelerator(
+  item: (typeof menuItems)[number],
+  platform: "darwin" | "linux" | "win32",
+): string {
+  return platform === "darwin" && "darwinAccelerator" in item
+    ? item.darwinAccelerator
+    : item.accelerator;
+}
+
+export function menuContribution(
+  platform: "darwin" | "linux" | "win32" = platformName(navigator.platform),
+): MenuContribution {
   return {
     fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
+    viewMenuTitle: formatMessage(viewMenu.menuTitleKey, {}),
     items: menuItems.map((item) => ({
       id: item.id,
       title: formatMessage(item.titleKey, {}),
-      accelerator: item.accelerator,
+      accelerator: accelerator(item, platform),
     })),
   };
 }
@@ -42,8 +55,10 @@ export interface DocumentCommandsOptions {
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   compare(): void;
+  featureCommand(commandId: string): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
+  toggleFullScreen(): Promise<void>;
 }
 
 export class DocumentCommands {
@@ -102,6 +117,15 @@ export class DocumentCommands {
       titleKey: "menu.redo",
       run: () => dispatchRedo(this.options.editor),
     });
+    for (const item of viewMenu.items) {
+      this.commands.register({
+        id: item.commandId,
+        titleKey: item.titleKey,
+        run: item.commandId === "view.toggleFullScreen"
+          ? this.options.toggleFullScreen
+          : () => this.options.featureCommand(item.commandId),
+      });
+    }
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {

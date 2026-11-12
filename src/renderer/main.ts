@@ -47,6 +47,7 @@ import {
   onSessionCloseRequest,
   readyForOpenRequests,
   sendChanges,
+  toggleFullScreen,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
@@ -381,12 +382,16 @@ lifecycle = new DocumentLifecycle({
 documentCommands = new DocumentCommands({
   compare: () => installedFeatures.runCommand("file.compareOpen"),
   editor,
+  featureCommand: (commandId) => installedFeatures.runCommand(commandId),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
   },
   open: () => lifecycle.open(),
   save: (saveAs) => lifecycle.saveActive(saveAs),
+  toggleFullScreen: async () => {
+    valueOrStatus(await toggleFullScreen());
+  },
 });
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));

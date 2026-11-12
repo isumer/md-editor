@@ -171,7 +171,11 @@ test("the renderer contributes the File action items and patches their state in 
     });
 
     // A contribution with no items leaves only the platform-owned skeleton actions.
-    await page.evaluate(() => window.api.contributeMenu({ fileMenuTitle: "File", items: [] }));
+    await page.evaluate(() => window.api.contributeMenu({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    }));
     await expect.poll(() => menuItemIds(application), { timeout: 5_000 }).toEqual([
       null,
       null,
@@ -196,6 +200,7 @@ test("the renderer contributes the File action items and patches their state in 
     // The renderer's next contribution restores the items and carries their state.
     await page.evaluate(() => window.api.contributeMenu({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [
         { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O", enabled: false },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S", enabled: true },

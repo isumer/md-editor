@@ -47,6 +47,11 @@ describe("tab modules", () => {
       "file-save",
       "file-save-as",
       "file-compare-open",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-focus-mode",
+      "view-full-screen",
     ]);
   });
 
