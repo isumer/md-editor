@@ -111,6 +111,7 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "1.4|-|-|selectAll|-|-|-|-|-",
           "2|-|-|windowMenu|-|-|-|-|-",
           "3|-|-|help|-|-|-|-|-",
+          "3.0|help-check-updates|Check for Updates|-|-|-|-|-|-",
         ],
         "macOS": [
           "0|-|MD Editor|-|-|-|-|-|-",
@@ -139,6 +140,7 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "2.4|-|-|selectAll|-|-|-|-|-",
           "3|-|-|windowMenu|-|-|-|-|-",
           "4|-|-|help|-|-|-|-|-",
+          "4.0|help-check-updates|Check for Updates|-|-|-|-|-|-",
         ],
       }
     `);

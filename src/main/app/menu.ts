@@ -9,6 +9,7 @@ import {
 } from "../../shared/ipc/menu";
 import { getMainWindow } from "./window";
 import { shellMenu } from "./menu/registry";
+import type { ShellMenuActions } from "./menu/shell";
 
 export interface MenuEntry {
   id: string;
@@ -45,8 +46,9 @@ function sendMenuCommand(command: MenuCommandMessage): void {
 export function buildSkeletonTemplate(
   platform: string,
   appName: string,
+  shellActions: ShellMenuActions = { checkForUpdates: () => undefined },
 ): MenuItemConstructorOptions[] {
-  return [...shellMenu.build(platform, appName)];
+  return [...shellMenu.build(platform, appName, shellActions)];
 }
 
 function contributedMenuItem(
@@ -73,8 +75,9 @@ export function buildContributionTemplate(
   appName: string,
   contribution: MenuContribution,
   send: (id: MenuItemId) => void,
+  shellActions: ShellMenuActions = { checkForUpdates: () => undefined },
 ): MenuItemConstructorOptions[] {
-  const template = buildSkeletonTemplate(platform, appName);
+  const template = buildSkeletonTemplate(platform, appName, shellActions);
   const items = contribution.items.map((item) => contributedMenuItem(item, send));
   if (platform === "darwin") {
     template.splice(fileMenuIndex(platform), 0, {
@@ -127,7 +130,7 @@ export function createMenuController(
   platform: string,
   appName: string,
   host: MenuHost,
-  send: (id: MenuItemId) => void,
+  actions: ShellMenuActions & { send(id: MenuItemId): void },
 ): MenuController {
   let applied: MenuContribution | null = null;
 
@@ -135,7 +138,7 @@ export function createMenuController(
     installSkeleton() {
       applied = null;
       host.setApplicationMenu(host.buildFromTemplate(
-        buildSkeletonTemplate(platform, appName),
+        buildSkeletonTemplate(platform, appName, actions),
       ));
     },
     applyContribution(contribution) {
@@ -143,7 +146,13 @@ export function createMenuController(
       applied = contribution;
       if (rebuild) {
         host.setApplicationMenu(host.buildFromTemplate(
-          buildContributionTemplate(platform, appName, contribution, send),
+          buildContributionTemplate(
+            platform,
+            appName,
+            contribution,
+            actions.send,
+            actions,
+          ),
         ));
         return "rebuilt";
       }
@@ -166,12 +175,12 @@ function electronMenuHost(): MenuHost {
 
 let menuController: MenuController | null = null;
 
-export function createMenu(): void {
+export function createMenu(checkForUpdates: () => void = () => undefined): void {
   menuController = createMenuController(
     process.platform,
     app.getName(),
     electronMenuHost(),
-    sendMenuCommand,
+    { checkForUpdates, send: sendMenuCommand },
   );
   menuController.installSkeleton();
 }
