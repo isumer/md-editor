@@ -103,7 +103,7 @@ describe("acceptance report", () => {
     expect(report.missing).toEqual(["AC-PERF-02"]);
   });
 
-  it("reads every split JUnit report before checking implemented criteria", async () => {
+  it("reads every standard split JUnit report before checking implemented criteria", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "acceptance-split-"));
     await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
     await fs.mkdir(path.join(root, "reports"), { recursive: true });
@@ -112,7 +112,7 @@ describe("acceptance report", () => {
       criteriaFixture.replace("status: planned", "status: implemented"),
     );
     await fs.writeFile(
-      path.join(root, "reports", "remaining-e2e-junit.xml"),
+      path.join(root, "reports", "e2e-junit.xml"),
       '<testcase name="first behavior @AC-R1-01" />',
     );
     await fs.writeFile(
@@ -120,8 +120,7 @@ describe("acceptance report", () => {
       '<testcase name="future behavior @AC-R1-02" />',
     );
     const previousReports = process.env["ACCEPTANCE_JUNIT_REPORTS"];
-    process.env["ACCEPTANCE_JUNIT_REPORTS"] =
-      "remaining-e2e-junit.xml,perf-e2e-junit.xml";
+    delete process.env["ACCEPTANCE_JUNIT_REPORTS"];
 
     try {
       const report = await runAcceptanceCheck(root);

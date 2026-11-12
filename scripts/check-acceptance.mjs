@@ -129,7 +129,7 @@ async function readJUnitFile(filePath) {
 
 function configuredJUnitNames(value) {
   return value === undefined
-    ? ["e2e-junit.xml", "unit-junit.xml"]
+    ? ["e2e-junit.xml", "perf-e2e-junit.xml", "unit-junit.xml"]
     : value.split(",").map((name) => name.trim()).filter((name) => name.length > 0);
 }
 
