@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
 - The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
+- A View menu switches between side by side, editor only and preview only (Ctrl+1, Ctrl+2, Ctrl+3; Cmd on macOS), and Full Screen uses the window's own full-screen state. Drag the divider to set the pane widths; double-click it to go back to half and half. The app keeps the divider position and your scroll place when you switch modes, and a wide preview keeps a 900-pixel text column.
 
 ### Changed
 

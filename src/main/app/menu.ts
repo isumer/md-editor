@@ -6,6 +6,7 @@ import {
   type MenuContribution,
   type MenuContributionItem,
   type MenuItemId,
+  type ViewMenuItemId,
 } from "../../shared/ipc/menu";
 import { getMainWindow } from "./window";
 import { shellMenu } from "./menu/registry";
@@ -20,6 +21,7 @@ export interface MenuEntry {
 export interface ApplicationMenuLike {
   readonly items: readonly MenuEntry[];
   getMenuItemById(id: string): MenuEntry | null;
+  insert?(position: number, item: unknown): void;
 }
 
 export interface MenuHost {
@@ -40,6 +42,52 @@ function sendMenuCommand(command: MenuCommandMessage): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(MENU_CHANNELS.command, command);
   }
+}
+
+function viewCommandItem(
+  id: ViewMenuItemId,
+  label: string,
+  accelerator: string,
+): MenuItemConstructorOptions {
+  return {
+    id,
+    label,
+    accelerator,
+    registerAccelerator: false,
+    click: () => sendMenuCommand(id),
+  };
+}
+
+function toggleFullScreen(): void {
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  }
+}
+
+function viewMenu(platform: string): MenuItemConstructorOptions {
+  return {
+    label: "View",
+    submenu: [
+      viewCommandItem("view-split", "Split View", "CmdOrCtrl+1"),
+      viewCommandItem("view-editor", "Editor Only", "CmdOrCtrl+2"),
+      viewCommandItem("view-preview", "Preview Only", "CmdOrCtrl+3"),
+      { type: "separator" },
+      {
+        id: "view-full-screen",
+        label: "Full Screen",
+        accelerator: platform === "darwin" ? "Ctrl+Command+F" : "F11",
+        click: toggleFullScreen,
+      },
+    ],
+  };
+}
+
+export function installViewMenu(platform: string): void {
+  const menu = Menu.getApplicationMenu() as ApplicationMenuLike | null;
+  if (menu === null || menu.getMenuItemById("view-split") !== null || !menu.insert) return;
+  const item = Menu.buildFromTemplate([viewMenu(platform)]).items[0];
+  if (item !== undefined) menu.insert(Math.max(0, menu.items.length - 2), item);
 }
 
 export function buildSkeletonTemplate(
@@ -177,5 +225,7 @@ export function createMenu(): void {
 }
 
 export function applyMenuContribution(contribution: MenuContribution): void {
-  menuController?.applyContribution(contribution);
+  if (menuController === null) return;
+  menuController.applyContribution(contribution);
+  installViewMenu(process.platform);
 }
