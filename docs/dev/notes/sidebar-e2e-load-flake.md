@@ -8,11 +8,11 @@ The artifact does not prove the stalled quit step.
 It only bounds the stall to app quit.
 No runtime timeout change is justified.
 
-The branch restored one 15,000 ms close-ask timeout.
-This restoration prevents a new dirty-data loss path.
+The merged tree keeps one 15,000 ms close-ask timeout.
+This timeout prevents a dirty-data loss path.
 A busy renderer can reach `handleSessionClose` after four seconds.
 It then sends the first keepalive after `flushDirty` completes.
-The removed 4,000 ms deadline could close the window first.
+A 4,000 ms deadline could close the window first.
 That close had no prompt and no session snapshot.
 The late reply could not persist data because the request was already deleted.
 
@@ -46,6 +46,9 @@ The broker bounds session persistence at 5,000 ms.
 The artifact cannot separate this write from the close ask.
 A late acknowledgement can leave insufficient time for this bounded write.
 The artifact contains no write timing marks.
+A final allow reply just before 15,000 ms can use another 5,000 ms to persist.
+The broker can therefore take almost 20,000 ms to settle without a user prompt.
+That exceeds both the 15,000 ms test budget and the observed 11,300 ms remainder.
 
 ### 3. Window close or quit resume
 
@@ -97,9 +100,10 @@ Several full-suite runs must pass on macOS and Windows before closing this flake
 
 ## Validation
 
-Two close-request tests failed with the 4,000 ms default.
+Two close-request tests failed when the default was mutated to 4,000 ms.
 At 4,001 ms, the request had resolved and the snapshot was ignored.
-All 10 close-request tests passed after restoring the 15,000 ms timeout.
+All 10 close-request tests passed after reverting to the 15,000 ms timeout.
+The stalled-write probe recorded the 15,000 ms ask and 5,000 ms write bounds.
 `npm run typecheck` passed.
 `npm run check:deps` passed for 153 modules and 333 dependencies.
 `npm run test:unit` passed 1,185 tests in 116 files.
