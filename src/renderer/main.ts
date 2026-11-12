@@ -3,6 +3,7 @@ import { Text, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
+import type { SessionCloseRequest } from "../shared/ipc/session";
 import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
@@ -25,12 +26,8 @@ import {
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
 import {
-  applyBackgrounds,
-  resetToThemeDefaults,
-  resolveSystemTheme,
-  watchSystemTheme,
-  type ResolvedTheme,
-} from "./features/background/background";
+  createBackgroundSettingsController,
+} from "./features/background/settingsController";
 import { beginStartup } from "./features/background/startup";
 import {
   featureEditorExtensions,
@@ -47,6 +44,7 @@ import {
   onSessionCloseRequest,
   readyForOpenRequests,
   sendChanges,
+  saveSettings,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
@@ -80,6 +78,7 @@ let editor: EditorView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
 let installedFeatures: InstalledFeatures;
+let flushBackgroundSettings: () => Promise<void> = () => Promise.resolve();
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -390,8 +389,13 @@ documentCommands = new DocumentCommands({
 });
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));
+async function handleSessionClose(request: SessionCloseRequest): Promise<void> {
+  await flushBackgroundSettings();
+  await lifecycle.handleSessionClose(request);
+}
+
 onSessionCloseRequest((request) => {
-  void lifecycle.handleSessionClose(request).catch(showUnexpectedError);
+  void handleSessionClose(request).catch(showUnexpectedError);
 });
 
 window.addEventListener("dragover", (event) => {
@@ -402,19 +406,13 @@ window.addEventListener("drop", (event) => {
 });
 
 async function loadBackgroundSettings(): Promise<void> {
-  const settingsResult = await loadSettings();
-  const applyTheme = (theme: ResolvedTheme): void => {
-    if (settingsResult.ok) {
-      applyBackgrounds(
-        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
-        theme,
-      );
-    } else {
-      resetToThemeDefaults(theme);
-    }
-  };
-  applyTheme(resolveSystemTheme());
-  watchSystemTheme(applyTheme);
+  const controller = createBackgroundSettingsController({
+    load: loadSettings,
+    save: saveSettings,
+    reportError: showUnexpectedError,
+  });
+  flushBackgroundSettings = () => controller.flush();
+  await controller.start();
 }
 
 async function initialize(): Promise<void> {
