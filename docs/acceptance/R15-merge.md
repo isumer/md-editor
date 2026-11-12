@@ -1,21 +1,21 @@
 # R15 — Three-way merge view
 
-Target release: 1.1. Not part of the 1.0 scope (owner decision, 2026-11-10); the criteria stay planned until then.
+Target release: 1.1. Not part of the 1.0 scope (owner decision, 2026-11-10).
 
 ### AC-R15-01 — The fixture set merges to the expected result
-status: planned
+status: implemented
 Given each (base, left, right, expected) fixture: clean merges, adjacent edits, the same edit on both sides, real conflicts, insert at end, deleted versus modified
 When it is merged automatically
 Then the result equals `expected` and the reported conflict count matches the fixture
 
 ### AC-R15-02 — The same edit on both sides is not a conflict
-status: planned
+status: implemented
 Given left and right make the identical change to the same base lines
 When they are merged
 Then the change is applied once and no conflict is reported
 
 ### AC-R15-03 — Three panes with an editable centre
-status: planned
+status: implemented
 Given a base and two sides
 When the merge view opens
 Then left and right are read-only, the centre starts from the base (or from left when there is no base) and is editable
@@ -27,7 +27,7 @@ When the user accepts left, then undoes and accepts both (left then right)
 Then the centre holds the left text, then the left text followed by the right text, and the counter updates
 
 ### AC-R15-05 — Apply all non-conflicting changes in one step
-status: planned
+status: implemented
 Given a merge with five non-conflicting changes and two conflicts
 When the user applies all non-conflicting changes
 Then the five are in the centre, "2 conflicts left" is shown, and one Undo removes all five
@@ -57,7 +57,7 @@ When `git difftool` runs on a changed file
 Then the app opens a file compare of the two versions
 
 ### AC-R15-10 — Navigation and counters
-status: planned
+status: implemented
 Given a merge with changes and conflicts
 When the user presses F7 and Shift+F7
 Then the selection moves between changes and conflicts, and the counter states the changes and conflicts left

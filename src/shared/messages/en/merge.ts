@@ -1,4 +1,6 @@
 export const mergeMessages = {
+  "menu.mergeOpen": "Merge Open Files",
+  "merge.needThree": "Open three files. Select the base file, then start merge.",
   "merge.left": "Left",
   "merge.result": "Result",
   "merge.right": "Right",
@@ -8,4 +10,6 @@ export const mergeMessages = {
   "merge.accept.left": "← Left",
   "merge.accept.right": "Right →",
   "merge.accept.both": "Both",
+  "merge.applyChanges": "Apply non-conflicting changes",
+  "merge.counts": "{changes} {changeLabel}, {conflicts} {conflictLabel} left",
 } as const;

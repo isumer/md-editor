@@ -47,6 +47,7 @@ import {
 } from "../../shared/merge/conflictMarkers";
 import {
   acceptChunk,
+  applyNonConflicting,
   createMergeState,
   type ChunkChoice,
   type MergeChunk,
@@ -269,6 +270,18 @@ export function initializeMarkerMerge(
   };
 }
 
+export function initializeThreeWayMerge(
+  state: EditorState,
+  source: string,
+  merge: MarkerMergeState,
+): TransactionSpec | null {
+  if (markerMergeState(state) !== null || state.doc.toString() !== source) return null;
+  return {
+    annotations: Transaction.addToHistory.of(false),
+    effects: setMarkerMerge.of(merge),
+  };
+}
+
 function selectedMarkerEdit(
   state: EditorState,
   merge: MarkerMergeState,
@@ -303,4 +316,23 @@ export function resolveMarkerConflict(
 ): TransactionSpec | null {
   const merge = markerMergeState(state);
   return merge === null ? null : selectedMarkerEdit(state, merge, index, choice);
+}
+
+export function applyMarkerChanges(state: EditorState): TransactionSpec | null {
+  const merge = markerMergeState(state);
+  if (merge === null) return null;
+  const step = applyNonConflicting(merge.merge);
+  if (step.edits.length === 0) return null;
+  const expected = merge.expected.map((text, index) =>
+    step.state.resolved[index] === true && merge.merge.resolved[index] !== true
+      ? step.state.chunks[index]?.left ?? text
+      : text);
+  return {
+    changes: step.edits,
+    effects: setMarkerMerge.of({
+      ...merge,
+      expected,
+      merge: step.state,
+    }),
+  };
 }

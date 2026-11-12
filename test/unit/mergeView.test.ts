@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createMarkerMergeState,
   initializeMarkerMerge,
+  initializeThreeWayMerge,
   markerMergeExtension,
 } from "../../src/renderer/features/merge/markerMergeState";
 import { MergeView, type MergeEditor } from "../../src/renderer/features/merge/mergeView";
+import { createThreeWayMergeState } from "../../src/renderer/features/merge/threeWayMerge";
 
 const markedText = [
   "before",
@@ -64,6 +66,20 @@ function detect(harness: Harness, id = "one", text = markedText): void {
     const spec = initializeMarkerMerge(harness.state, text, merge);
     if (spec !== null) harness.state = harness.state.update(spec).state;
   });
+}
+
+function installThreeWay(harness: Harness): void {
+  const base = "a\nbase one\nmiddle\nbase two\nz\n";
+  const merge = createThreeWayMergeState(
+    base,
+    "a\nleft one\nmiddle\nbase two\nz\nleft end\n",
+    "a\nright one\nmiddle\nright two\nz\nright end\n",
+  );
+  const state = EditorState.create({ doc: base, extensions: markerMergeExtension });
+  const spec = initializeThreeWayMerge(state, base, merge);
+  if (spec === null) throw new Error("The merge state was not installed");
+  harness.state = state.update(spec).state;
+  harness.mergeView.install("one");
 }
 
 afterEach(() => document.body.replaceChildren());
@@ -201,5 +217,86 @@ describe("merge view", () => {
     harness.mergeView.activate("plain", harness.state);
 
     expect(document.querySelector('[data-testid="merge-view"]')).toBeNull();
+  });
+
+  it("AC-R15-03: a three-way merge shows read-only sides and an editable base", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+
+    harness.mergeView.activate("one", harness.state);
+
+    expect(document.querySelector('[data-testid="merge-left"]')?.textContent)
+      .toContain("left one");
+    expect(document.querySelector('[data-testid="merge-right"]')?.textContent)
+      .toContain("right two");
+    expect(harness.state.doc.toString()).toBe("a\nbase one\nmiddle\nbase two\nz\n");
+    expect(document.querySelector('[data-testid="merge-left"] pre')).not.toBeNull();
+    expect(document.querySelector('[data-testid="merge-right"] pre')).not.toBeNull();
+  });
+
+  it("AC-R15-05: apply changes uses one transaction and leaves conflicts", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+
+    document.querySelector<HTMLButtonElement>('[data-testid="merge-apply-changes"]')?.click();
+
+    expect(harness.state.doc.toString()).toContain("right two");
+    expect(document.querySelector('[data-testid="merge-counts"]')?.textContent)
+      .toBe("0 changes, 2 conflicts left");
+    expect(harness.state.doc.toString()).not.toContain("left one");
+  });
+
+  it("AC-R15-10: F7 and Shift+F7 move between unresolved chunks", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
+    const first = harness.state.selection.main.head;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
+    const second = harness.state.selection.main.head;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7", shiftKey: true }));
+
+    expect(second).toBeGreaterThan(first);
+    expect(harness.state.selection.main.head).toBe(first);
+    expect(document.querySelector('[data-testid="merge-counts"]')?.textContent)
+      .toBe("1 change, 2 conflicts left");
+  });
+
+  it("ignores repeated and inactive merge actions", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+    const apply = document.querySelector<HTMLButtonElement>(
+      '[data-testid="merge-apply-changes"]',
+    );
+    const choice = document.querySelector<HTMLButtonElement>(
+      '[data-testid="merge-conflict-1-left"]',
+    );
+
+    apply?.click();
+    const afterApply = harness.state;
+    apply?.click();
+    choice?.click();
+    if (choice !== null) choice.disabled = false;
+    choice?.click();
+    harness.mergeView.activate("plain", EditorState.create());
+    apply?.click();
+    choice?.click();
+
+    expect(afterApply.doc.toString()).toContain("right two");
+    expect(document.querySelector('[data-testid="merge-view"]')).toBeNull();
+  });
+
+  it("ignores merge navigation after the editor loses its merge state", () => {
+    const harness = createHarness();
+    installThreeWay(harness);
+    harness.mergeView.activate("one", harness.state);
+    harness.state = EditorState.create();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "F7" }));
+
+    expect(harness.state.selection.main.head).toBe(0);
   });
 });

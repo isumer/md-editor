@@ -1,6 +1,8 @@
 export {
+  applyMarkerChanges,
   createMarkerMergeState,
   initializeMarkerMerge,
+  initializeThreeWayMerge,
   markerMergeExtension,
   markerMergeState,
   resolveMarkerConflict,
