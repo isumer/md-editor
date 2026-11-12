@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
+import { spawn, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -20,33 +19,6 @@ export const repositoryRoot = path.resolve(__dirname, "../..");
 export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
-
-// Run 43054587932 spent 15 s on first-exec assessment and page-in; prewarm before test budgets.
-function prewarmElectronBinary(): void {
-  const started = Date.now();
-  let binary: unknown;
-  try {
-    binary = createRequire(__filename)("electron/index.js");
-  } catch {
-    return;
-  }
-  if (typeof binary !== "string") {
-    return;
-  }
-  try {
-    // ELECTRON_RUN_AS_NODE would skip the Electron boot.
-    const result = spawnSync(binary, ["--version"], {
-      timeout: 60_000,
-      env: launchEnvironment(),
-    });
-    if (result.error === undefined) {
-      console.log(`electron prewarm: ${String(Date.now() - started)} ms`);
-    }
-  } catch {
-    // The real launch reports any persistent failure.
-  }
-}
-prewarmElectronBinary();
 
 export interface LaunchEditorOptions {
   // Runs after the first window exists and before the argv document is applied.
