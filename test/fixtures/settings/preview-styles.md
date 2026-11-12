@@ -9,6 +9,7 @@
 | one | 1 |
 
 ```js
+// A script comment.
 const value = 42;
 ```
 

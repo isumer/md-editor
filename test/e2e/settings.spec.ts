@@ -128,6 +128,7 @@ interface PreviewStyles {
   headerBackground: string;
   codeBackground: string;
   scriptKeywordColor: string;
+  scriptCommentColor: string;
   pythonKeywordColor: string;
 }
 
@@ -141,6 +142,7 @@ async function waitForPreviewBlocks(page: Page): Promise<void> {
       "#preview th",
       "#preview pre",
       "#preview code.language-js .hljs-keyword",
+      "#preview code.language-js .hljs-comment",
       "#preview code.language-python .hljs-keyword",
     ];
     return selectors.every((selector) => document.querySelector(selector) !== null);
@@ -157,10 +159,14 @@ async function previewStyles(page: Page): Promise<PreviewStyles> {
     const script = document.querySelector<HTMLElement>(
       "#preview code.language-js .hljs-keyword",
     );
+    const scriptComment = document.querySelector<HTMLElement>(
+      "#preview code.language-js .hljs-comment",
+    );
     const python = document.querySelector<HTMLElement>(
       "#preview code.language-python .hljs-keyword",
     );
-    if (!heading || !quote || !header || !code || !script || !python) {
+    if (!heading || !quote || !header || !code || !script || !scriptComment ||
+      !python) {
       throw new Error("preview elements are missing");
     }
     return {
@@ -171,6 +177,7 @@ async function previewStyles(page: Page): Promise<PreviewStyles> {
       headerBackground: getComputedStyle(header).backgroundColor,
       codeBackground: getComputedStyle(code).backgroundColor,
       scriptKeywordColor: getComputedStyle(script).color,
+      scriptCommentColor: getComputedStyle(scriptComment).color,
       pythonKeywordColor: getComputedStyle(python).color,
     };
   });
@@ -319,6 +326,8 @@ test("AC-R08-06: the preview uses GitHub-style rules and readable code colours",
     expect(styles.codeBackground).toBe("rgb(246, 248, 250)");
     expect(contrastRatio(rgb(styles.scriptKeywordColor), rgb(styles.codeBackground)))
       .toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb(styles.scriptCommentColor), rgb(styles.codeBackground)))
+      .toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(rgb(styles.pythonKeywordColor), rgb(styles.codeBackground)))
       .toBeGreaterThanOrEqual(4.5);
   } finally {
@@ -337,6 +346,8 @@ test("AC-R08-06: the preview uses GitHub-style rules and readable code colours",
     expect(styles.codeBackground).toBe("rgb(22, 27, 34)");
     expect(styles.headerBackground).toBe("rgb(21, 27, 35)");
     expect(contrastRatio(rgb(styles.scriptKeywordColor), rgb(styles.codeBackground)))
+      .toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb(styles.scriptCommentColor), rgb(styles.codeBackground)))
       .toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(rgb(styles.pythonKeywordColor), rgb(styles.codeBackground)))
       .toBeGreaterThanOrEqual(4.5);
