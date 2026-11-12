@@ -52,6 +52,7 @@ export class RenderController {
     this.worker = this.createWorker();
     this.proxy = this.createProxy();
     this.scheduler = new RenderScheduler((request) => this.render(request.id), {
+      maximumWaitMilliseconds: 16,
       onApplied: (latency) => {
         const end = performance.now();
         performance.measure("preview-latency", { start: end - latency, end });

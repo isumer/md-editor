@@ -15,6 +15,105 @@ import {
   stubSaveDialog,
 } from "./helpers";
 
+const STARTUP_MARKS = [
+  "app-ready",
+  "app-ready-done",
+  "browser-window-constructed",
+  "window-created",
+  "menu-created",
+  "renderer-script-start",
+  "renderer-main-start",
+  "editor-mounted",
+  "file-text-shown",
+  "editor-editable",
+  "first-edit-start",
+  "first-edit-painted",
+] as const;
+
+interface TimelineMark {
+  readonly name: string;
+  readonly startTime: number;
+}
+
+interface StartupFrame {
+  readonly blockingDuration: number;
+  readonly duration: number;
+  readonly scripts: readonly {
+    readonly duration: number;
+    readonly forcedStyleAndLayoutDuration: number;
+    readonly invoker: string;
+    readonly sourceFunctionName: string;
+    readonly sourceURL: string;
+  }[];
+  readonly startTime: number;
+}
+
+interface ProcessTimeline {
+  readonly origin: number;
+  readonly marks: readonly TimelineMark[];
+}
+
+function loafDiagnostics(
+  frames: readonly StartupFrame[],
+  origin: number,
+  startedEpoch: number,
+): readonly object[] {
+  return frames.map((frame) => ({
+    at: Math.round(origin + frame.startTime - startedEpoch),
+    blocking: Math.round(frame.blockingDuration),
+    duration: Math.round(frame.duration),
+    scripts: frame.scripts.map((script) => ({
+      duration: Math.round(script.duration),
+      forcedStyle: Math.round(script.forcedStyleAndLayoutDuration),
+      function: script.sourceFunctionName || script.invoker || "anonymous",
+      source: script.sourceURL.split("/").at(-1) ?? script.sourceURL,
+    })),
+  }));
+}
+
+async function startupDiagnostics(
+  application: ElectronApplication,
+  page: Page,
+  startedEpoch: number,
+): Promise<readonly string[]> {
+  const main = await application.evaluate((): ProcessTimeline => ({
+    origin: performance.timeOrigin,
+    marks: performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+  }));
+  const renderer = await page.evaluate((): ProcessTimeline & {
+    frames: readonly StartupFrame[];
+  } => ({
+    origin: performance.timeOrigin,
+    marks: performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+    frames: (window as typeof window & {
+      __startupLongAnimationFrames?: readonly StartupFrame[];
+    }).__startupLongAnimationFrames ?? [],
+  }));
+  const names = new Set<string>(STARTUP_MARKS);
+  const marks = [main, renderer].flatMap((processTimeline) =>
+    processTimeline.marks
+      .filter((mark) => names.has(mark.name))
+      .map((mark) => ({
+        at: Math.round(processTimeline.origin + mark.startTime - startedEpoch),
+        name: mark.name,
+      })))
+    .sort((left, right) => left.at - right.at);
+  const timeline = marks.map((mark, index) => ({
+    ...mark,
+    delta: index === 0 ? 0 : mark.at - (marks[index - 1]?.at ?? mark.at),
+  }));
+  const frames = loafDiagnostics(renderer.frames, renderer.origin, startedEpoch);
+  console.log(`AC-PERF-03 timeline: ${JSON.stringify(timeline)}`);
+  console.log(`AC-PERF-03 LoAF: ${JSON.stringify(frames)}`);
+  return marks.map((mark) => mark.name);
+}
+
 async function ioWorkerPid(application: ElectronApplication): Promise<number | null> {
   return application.evaluate(({ app }) => {
     const worker = app.getAppMetrics().find((metric) =>
@@ -110,6 +209,7 @@ test("an argv file is editable within the cold-start budget", {
   annotation: { type: "AC-PERF-03" },
 }, async () => {
   const startedAt = performance.now();
+  const startedEpoch = Date.now();
   const { application, page } = await launchEditor(fixturePath);
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
@@ -118,8 +218,13 @@ test("an argv file is editable within the cold-start budget", {
     await page.keyboard.press("Control+End");
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
+    const elapsed = performance.now() - startedAt;
+    expect(elapsed).toBeLessThan(2_000);
 
-    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    await expect.poll(() => page.evaluate(() =>
+      performance.getEntriesByName("first-edit-painted").length)).toBe(1);
+    const markNames = await startupDiagnostics(application, page, startedEpoch);
+    expect([...markNames].sort()).toEqual([...STARTUP_MARKS].sort());
   } finally {
     await closeEditor(application, page);
   }
