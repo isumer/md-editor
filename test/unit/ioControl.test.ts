@@ -81,6 +81,7 @@ describe("io-worker control boundary", () => {
       handle: "grant",
       path: targetPath,
       mustExist: true,
+      kind: "document",
     });
     await expect.poll(() => parent.replies.length).toBe(1);
 
@@ -92,6 +93,47 @@ describe("io-worker control boundary", () => {
       },
     });
     expect(grants.resolve(1, "grant")).toBe(targetPath);
+  });
+
+  it("AC-R11-04: resolves a root-relative file through the control boundary", async () => {
+    const { parent } = createHandler();
+    parent.send({
+      type: "registerGrant",
+      id: "root",
+      windowId: 1,
+      handle: "root-grant",
+      path: temporaryDirectory,
+      mustExist: true,
+      kind: "root",
+    });
+    await expect.poll(() => parent.replies.length).toBe(1);
+
+    parent.send({
+      type: "resolveWorkspaceFile",
+      id: "resolve",
+      windowId: 1,
+      grant: "root-grant",
+      relativePath: "note.md",
+    });
+    await expect.poll(() => parent.replies.length).toBe(2);
+
+    expect(parent.replies[1]).toEqual({
+      id: "resolve",
+      result: { ok: true, value: { path: targetPath } },
+    });
+    parent.send({
+      type: "resolveWorkspaceFile",
+      id: "refused",
+      windowId: 2,
+      grant: "root-grant",
+      relativePath: "note.md",
+    });
+    await expect.poll(() => parent.replies.length).toBe(3);
+    expect(parent.replies[2]).toMatchObject({
+      id: "refused",
+      result: { ok: false, error: { code: "GRANT_INVALID" } },
+    });
+    parent.send({ type: "revokeWindow", windowId: 1 });
   });
 
   it("AC-R4-08: reads and writes the session file in the io-worker", async () => {
@@ -183,6 +225,7 @@ describe("io-worker control boundary", () => {
       handle: "grant",
       path: targetPath,
       mustExist: true,
+      kind: "document",
       extra: true,
     };
 
@@ -194,6 +237,7 @@ describe("io-worker control boundary", () => {
       handle: "grant",
       path: targetPath,
       mustExist: true,
+      kind: "document",
     });
     await expect.poll(() => parent.replies.length).toBe(2);
 
@@ -237,6 +281,7 @@ describe("io-worker control boundary", () => {
       handle: "grant",
       path: missingPath,
       mustExist: true,
+      kind: "document",
     });
     await expect.poll(() => parent.replies.length).toBe(1);
 
@@ -315,6 +360,7 @@ describe("io-worker control boundary", () => {
         handle: "grant",
         path: targetPath,
         mustExist: true,
+        kind: "document",
       });
 
       await expect.poll(() => parent.replies).toEqual([{

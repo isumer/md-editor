@@ -24,7 +24,11 @@ const chooseWorkspaceRoot = vi.fn<Window["api"]["chooseWorkspaceRoot"]>(
 beforeAll(() => {
   Object.defineProperty(window, "api", {
     configurable: true,
-    value: { chooseWorkspaceRoot } as unknown as Window["api"],
+    value: {
+      chooseWorkspaceRoot,
+      loadSettings: vi.fn(async () => ({ ok: false })),
+      onWorkspaceChange: vi.fn(() => () => undefined),
+    } as unknown as Window["api"],
   });
 });
 
@@ -57,6 +61,8 @@ function createElements() {
   editorHost.id = "editor";
   const preview = document.createElement("div");
   preview.id = "preview";
+  const sidebar = document.createElement("aside");
+  sidebar.id = "workspace-sidebar";
   const sidebarIds = [
     ["workspace-empty", "p"],
     ["workspace-filter", "input"],
@@ -64,11 +70,11 @@ function createElements() {
     ["workspace-title", "h2"],
     ["workspace-tree", "div"],
   ] as const;
-  workspace.append(editorHost, preview);
+  workspace.append(sidebar, editorHost, preview);
   for (const [id, tag] of sidebarIds) {
     const element = document.createElement(tag);
     element.id = id;
-    workspace.append(element);
+    sidebar.append(element);
   }
   document.body.append(workspace);
   return { editorHost, preview, workspace };
@@ -101,6 +107,7 @@ async function createHarness(active = true, present = true, missingTree = false)
     hasDocument: (documentId) => present && documentId === document.id,
     isActive: (candidate) => active && candidate === document,
     openDocument: vi.fn(async () => undefined),
+    removeDocument: vi.fn(),
     showStatus,
   });
   return { document, documents, editor, installed, showStatus, ...elements };

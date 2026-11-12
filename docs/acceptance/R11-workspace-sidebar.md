@@ -25,25 +25,25 @@ When the user clicks a `.md` file
 Then its tab opens and is editable within 100 ms for a 100 KB file, and clicking a path that is already open focuses its existing tab
 
 ### AC-R11-05 — The tree follows changes on disk
-status: planned
+status: implemented
 Given a folder is shown in the tree
 When a `.md` file is created, changed or deleted on disk
 Then the tree shows the change within 1 s without a manual refresh, a deleted open clean file closes its tab, and a deleted dirty file stays open
 
 ### AC-R11-06 — The sidebar toggles with CmdOrCtrl+B
-status: planned
+status: implemented
 Given the sidebar is open or closed
 When the user presses CmdOrCtrl+B
 Then the sidebar toggles within 50 ms and the open or closed state survives a restart
 
 ### AC-R11-07 — Workspace file actions stay inside the root
-status: planned
+status: implemented
 Given a workspace root is chosen
 When the user creates, renames or deletes a file through the tree
 Then `..`, absolute paths, UNC paths, symlinks that leave the root, Windows device names and alternate data streams are refused, and no write happens outside the root
 
 ### AC-R11-08 — A failed file action names the failure and changes nothing
-status: planned
+status: implemented
 Given a tree entry
 When a create, rename or delete fails (missing file, permission denied, name conflict)
 Then the message names the entry and explains the reason in plain words, and the tree still shows the state before the action

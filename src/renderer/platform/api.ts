@@ -34,6 +34,9 @@ import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
+  RenameWorkspaceFileRequest,
+  WorkspaceChangeMessage,
+  WorkspaceFileActionResponse,
   WorkspacePathRequest,
 } from "../../shared/ipc/workspace";
 
@@ -151,4 +154,28 @@ export function openWorkspaceFile(
   request: WorkspacePathRequest,
 ): Promise<Result<OpenWorkspaceFileResponse>> {
   return api.openWorkspaceFile(request);
+}
+
+export function createWorkspaceFile(
+  request: WorkspacePathRequest,
+): Promise<Result<WorkspaceFileActionResponse>> {
+  return api.createWorkspaceFile(request);
+}
+
+export function deleteWorkspaceFile(
+  request: WorkspacePathRequest,
+): Promise<Result<WorkspaceFileActionResponse>> {
+  return api.deleteWorkspaceFile(request);
+}
+
+export function renameWorkspaceFile(
+  request: RenameWorkspaceFileRequest,
+): Promise<Result<WorkspaceFileActionResponse>> {
+  return api.renameWorkspaceFile(request);
+}
+
+export function onWorkspaceChange(
+  listener: (change: WorkspaceChangeMessage) => void,
+): () => void {
+  return api.onWorkspaceChange(listener);
 }

@@ -230,6 +230,39 @@ describe("io-worker supervisor", () => {
     });
   });
 
+  it("AC-R11-04: resolves a workspace file through the worker", async () => {
+    const harness = createHarness();
+    harness.supervisor.start();
+    const child = harness.children[0] as FakeChild;
+    child.emit("spawn");
+
+    const resolution = harness.supervisor.resolveWorkspaceFile(7, "root", "daily.md");
+    await vi.waitFor(() => expect(child.posts).toHaveLength(1));
+    const request = child.posts[0]?.message as { id: string };
+    expect(request).toMatchObject({
+      type: "resolveWorkspaceFile",
+      windowId: 7,
+      grant: "root",
+      relativePath: "daily.md",
+    });
+    child.emit("message", {
+      id: request.id,
+      result: { ok: true, value: { path: "/notes/daily.md" } },
+    });
+
+    await expect(resolution).resolves.toEqual({
+      ok: true,
+      value: { path: "/notes/daily.md" },
+    });
+  });
+
+  it("AC-R11-04: a stopped supervisor refuses workspace resolution", async () => {
+    const harness = createHarness();
+
+    await expect(harness.supervisor.resolveWorkspaceFile(7, "root", "daily.md"))
+      .resolves.toMatchObject({ ok: false, error: { code: "WORKER_RESTARTED" } });
+  });
+
   it("AC-SEC-17: a stopped supervisor refuses asset resolution", async () => {
     const harness = createHarness();
     harness.supervisor.start();
