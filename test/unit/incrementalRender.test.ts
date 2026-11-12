@@ -362,6 +362,7 @@ describe("progressive large-document rendering", () => {
       0,
       textFrom(text),
       () => "😀".repeat(20 * 1024),
+      () => 0,
     );
 
     const initial = state.initial();
@@ -392,12 +393,46 @@ describe("progressive large-document rendering", () => {
         renders += 1;
         return "😀".repeat(20 * 1024);
       },
+      () => 0,
     );
 
     const initial = state.initial();
     const fill = state.fill();
 
     expect(renders).toBe(initial.blocks.length + fill.blocks.length + 1);
+  });
+
+  it("AC-PERF-02: a fill batch stops at its time budget so a keystroke render cuts in", () => {
+    const text = Array.from(
+      { length: 30 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let clock = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => {
+        clock += 1;
+        return "p";
+      },
+      () => clock,
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.complete).toBe(false);
+    expect(fill.blocks.length).toBeGreaterThan(0);
+    expect(fill.blocks.length).toBeLessThan(8);
+
+    let complete = fill.complete;
+    for (let round = 0; round < 20 && !complete; round += 1) {
+      const next = state.fill();
+      complete = next.complete;
+    }
+    expect(complete).toBe(true);
   });
 
   it("AC-PERF-11: a reference change discards an over-budget lookahead", () => {

@@ -186,16 +186,17 @@ const dirtyFrame = new FrameCoalescer<DocumentRecord>({
     }));
   },
   apply: (document) => {
-    if (!registry.get(document.id)) {
-      return;
+    performance.mark("dirty-state-start");
+    if (registry.get(document.id)) {
+      document.dirty = isDocumentDirty(document);
+      if (document.dirty) {
+        drafts.documentChanged(document.id, document.state.doc.length);
+      } else {
+        drafts.documentSaved(document.id);
+      }
+      syncDirty(document);
     }
-    document.dirty = isDocumentDirty(document);
-    if (document.dirty) {
-      drafts.documentChanged(document.id, document.state.doc.length);
-    } else {
-      drafts.documentSaved(document.id);
-    }
-    syncDirty(document);
+    performance.mark("dirty-state-end");
   },
 });
 

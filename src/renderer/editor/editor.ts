@@ -114,19 +114,30 @@ export function dispatchRedo(view: EditorView): void {
   redo(view);
 }
 
+// The marks let performance tests attribute keystroke latency per phase
+// (docs/dev/briefs/perf-slow-machine-tail.md F2); they stay quiet on green.
 export function handleDocumentUpdate(
   update: DocumentUpdate,
   documentState: DocumentState,
   callbacks: EditorCallbacks,
 ): void {
+  performance.mark("editor-update-start");
+  performance.mark("editor-state-hooks-start");
   callbacks.onStateChanged?.(update.state);
+  performance.mark("editor-state-hooks-end");
   if (!update.docChanged) {
+    performance.mark("editor-update-end");
     return;
   }
   if (!documentState.applyingDocument) {
+    performance.mark("editor-change-hooks-start");
     callbacks.onChanges(update.changes, update.state);
+    performance.mark("editor-change-hooks-end");
   }
+  performance.mark("editor-document-hooks-start");
   callbacks.onDocumentChanged();
+  performance.mark("editor-document-hooks-end");
+  performance.mark("editor-update-end");
 }
 
 export function createEditorState(

@@ -44,6 +44,39 @@ describe("editor replication performance", () => {
     expect(order).toEqual(["transport", "schedule"]);
   });
 
+  it("AC-PERF-02: a doc update fires every keystroke phase mark the report reads", () => {
+    const state = EditorState.create({ doc: "saved" });
+    const documentState = createDocumentState();
+    const transaction = state.update({ changes: { from: 0, insert: "x" } });
+    const marks = [
+      "editor-update-start",
+      "editor-update-end",
+      "editor-state-hooks-start",
+      "editor-state-hooks-end",
+      "editor-change-hooks-start",
+      "editor-change-hooks-end",
+      "editor-document-hooks-start",
+      "editor-document-hooks-end",
+    ];
+    for (const mark of marks) {
+      performance.clearMarks(mark);
+    }
+
+    handleDocumentUpdate({
+      docChanged: transaction.docChanged,
+      state: transaction.state,
+      changes: transaction.changes,
+    }, documentState, {
+      onDocumentChanged: vi.fn(),
+      onChanges: vi.fn(),
+    });
+
+    for (const mark of marks) {
+      expect(performance.getEntriesByName(mark, "mark").length, mark)
+        .toBeGreaterThan(0);
+    }
+  });
+
   it("AC-PERF-05: a one-character edit of 20 MB never flattens the document", () => {
     const initial = Text.of(["x".repeat(20 * 1024 * 1024)]);
     const state = EditorState.create({ doc: initial });
