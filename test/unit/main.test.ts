@@ -99,6 +99,21 @@ const electron = vi.hoisted(() => {
           result: { ok: true, value: {} },
         }));
       }
+      if (message.type === "readSettings") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: {
+            ok: true,
+            value: { editor: { background: "#123456" } },
+          },
+        }));
+      }
+      if (message.type === "writeSettings") {
+        queueMicrotask(() => this.emit("message", {
+          id: message.id,
+          result: { ok: true, value: {} },
+        }));
+      }
     }
   }
 
@@ -158,7 +173,8 @@ const electron = vi.hoisted(() => {
   }
 
   const app = {
-    getName: vi.fn(() => "MD Editor"),
+    getAppPath: vi.fn(() => "/application"),
+    getName: vi.fn(() => "SolidMD"),
     getPath: vi.fn(() => "/profiles/default"),
     isPackaged: false,
     requestSingleInstanceLock: vi.fn(() => true),
@@ -272,6 +288,7 @@ vi.mock("node:fs", () => ({
 
 const originalArgv = process.argv;
 const originalAppImage = process.env.APPIMAGE;
+const originalResourcesPath = process.resourcesPath;
 let addedProcessListeners: Array<{ event: "uncaughtException" | "unhandledRejection"; listener: (...args: any[]) => void }> = [];
 
 async function loadMain() {
@@ -358,10 +375,18 @@ beforeEach(() => {
   fileSystem.unlink.mockResolvedValue(undefined);
   electron.shell.openExternal.mockResolvedValue(undefined);
   process.argv = ["electron", "."];
+  Object.defineProperty(process, "resourcesPath", {
+    configurable: true,
+    value: "/application/resources",
+  });
 });
 
 afterEach(() => {
   process.argv = originalArgv;
+  Object.defineProperty(process, "resourcesPath", {
+    configurable: true,
+    value: originalResourcesPath,
+  });
   if (originalAppImage === undefined) {
     delete process.env.APPIMAGE;
   } else {
@@ -375,13 +400,51 @@ afterEach(() => {
 });
 
 describe("main process", () => {
+  it.each(["linux", "win32"] as const)(
+    "main window uses the packaged icon on %s",
+    async (platform) => {
+      electron.app.isPackaged = true;
+
+      await withPlatform(platform, async () => {
+        await loadMain();
+        await readyApplication();
+      });
+
+      expect(electron.BrowserWindowMock.instances[0]?.options).toMatchObject({
+        icon: path.join(process.resourcesPath, "window-icon.png"),
+      });
+    },
+  );
+
+  it("main window uses the repository icon outside a package on linux", async () => {
+    await withPlatform("linux", async () => {
+      await loadMain();
+      await readyApplication();
+    });
+
+    expect(electron.BrowserWindowMock.instances[0]?.options).toMatchObject({
+      icon: path.join("/application", "build", "icons", "512x512.png"),
+    });
+  });
+
+  it("main window keeps the bundle icon on macOS", async () => {
+    electron.app.isPackaged = true;
+
+    await withPlatform("darwin", async () => {
+      await loadMain();
+      await readyApplication();
+    });
+
+    expect(electron.BrowserWindowMock.instances[0]?.options).not.toHaveProperty("icon");
+  });
+
   it("AC-R5-01: starts without an open-with file", async () => {
     await loadMain();
     await readyApplication();
 
     await expect(invoke("file:open-requests-ready", {})).resolves.toEqual({
       ok: true,
-      value: { notice: null, productName: "MD Editor", windowId: 1 },
+      value: { notice: null, productName: "SolidMD", windowId: 1 },
     });
     expect(electron.app.setPath).toHaveBeenCalledWith("userData", "/profiles/default");
   });
@@ -464,7 +527,17 @@ describe("main process", () => {
       "workspace:open-file",
       "session:load",
       "session:close-result",
+      "settings:read",
+      "settings:write",
     ]);
+    await expect(invoke("settings:read", {})).resolves.toMatchObject({
+      ok: true,
+      value: { editor: { background: "#123456" } },
+    });
+    await expect(invoke("settings:write", { futureOption: true })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
 
     for (const url of ["https://example.com", "http://example.com", "mailto:test@example.com"]) {
       await expect(invoke("link:open-external", { url })).resolves.toEqual({
@@ -484,7 +557,7 @@ describe("main process", () => {
     }
     await expect(invoke("file:open-requests-ready", {})).resolves.toMatchObject({
       ok: true,
-      value: { productName: "MD Editor" },
+      value: { productName: "SolidMD" },
     });
   });
 
@@ -532,7 +605,7 @@ describe("main process", () => {
   it("AC-R5-01 AC-R5-08 AC-PERF-01: creates a secure ready-to-show window and menu", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     electron.app.isPackaged = true;
-    process.env.APPIMAGE = path.join("media", "MD-Editor.AppImage");
+    process.env.APPIMAGE = path.join("media", "SolidMD.AppImage");
     process.argv = ["electron", "--inspect", "folder", "missing.md", "document.md"];
     fileSystem.access.mockResolvedValue(undefined);
     fileSystem.stat.mockImplementation(async (filePath: string) => {
@@ -556,7 +629,7 @@ describe("main process", () => {
     await readyApplication();
     const firstWindow = electron.BrowserWindowMock.instances[0];
     expect(firstWindow?.options).toMatchObject({
-      title: "MD Editor",
+      title: "SolidMD",
       show: false,
       backgroundColor: "#ffffff",
       webPreferences: {
@@ -689,7 +762,7 @@ describe("main process", () => {
     // macOS leads with the application menu (it owns Quit there); elsewhere File comes first.
     const firstMenu = electron.menuTemplate[0] as any;
     if (process.platform === "darwin") {
-      expect(firstMenu.label).toBe("MD Editor");
+      expect(firstMenu.label).toBe("SolidMD");
       expect(firstMenu.submenu).toContainEqual({ role: "quit" });
     } else {
       expect(firstMenu.label).toBe("File");

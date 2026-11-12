@@ -1,6 +1,6 @@
 {
-  "name": "mdeditor",
-  "productName": "MD Editor",
+  "name": "solidmd",
+  "productName": "SolidMD",
   "version": "0.0.1",
   "private": true,
   "description": "Fast, stable Markdown editor with live preview",
@@ -50,5 +50,5 @@
     "name": "isumer",
     "url": "https://github.com/isumer"
   },
-  "homepage": "https://github.com/isumer/md-editor"
+  "homepage": "https://github.com/isumer/solidmd"
 }

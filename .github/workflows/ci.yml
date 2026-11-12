@@ -168,8 +168,13 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Build Linux x64 packages
         run: npm run dist:linux -- --x64
+      - name: Check Linux package icon
+        run: |
+          for package in release/*.deb; do
+            dpkg-deb -c "$package" | grep 'usr/share/icons/hicolor/256x256/apps/solidmd.png$' >/dev/null
+          done
       - name: Check packaged fuses
-        run: node scripts/check-fuses.mjs release/linux-unpacked/mdeditor
+        run: node scripts/check-fuses.mjs release/linux-unpacked/solidmd
       - name: Smoke-test the AppImage
         shell: bash
         run: |

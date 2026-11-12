@@ -28,11 +28,20 @@ test("opens an argv file and renders its heading", {
   }
 });
 
+test("window title uses the SolidMD product name", async () => {
+  const { application, page } = await launchEditor(fixturePath);
+  try {
+    await expect(page).toHaveTitle("sample.md — SolidMD");
+  } finally {
+    await closeEditor(application, page);
+  }
+});
+
 test("a failed argv open fails clearly and closes the application", {
   tag: "@AC-R5-01",
   annotation: { type: "AC-R5-01" },
 }, async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-missing-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-missing-"));
   const missingPath = path.join(directory, "missing.md");
   let launched: ElectronApplication | undefined;
   let launchedProcess: ReturnType<ElectronApplication["process"]> | undefined;
@@ -189,7 +198,7 @@ test("saves edits atomically and clears the dirty marker", {
   tag: "@AC-R5-02",
   annotation: { type: "AC-R5-02" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-e2e-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-e2e-"));
   const copiedFile = path.join(temporaryDirectory, "sample.md");
   await fs.copyFile(fixturePath, copiedFile);
   const { application, page } = await launchEditor(copiedFile);
@@ -219,7 +228,7 @@ test("a second instance opens its file in the existing window", {
   tag: "@AC-R9-03",
   annotation: { type: "AC-R9-03" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-single-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-single-"));
   const secondFile = path.join(temporaryDirectory, "second.md");
   await fs.writeFile(secondFile, "# Opened by the second instance\n", "utf8");
   const { application, page } = await launchEditor(fixturePath);
@@ -239,7 +248,7 @@ test("an open request keeps dirty changes in their own tab", {
   tag: "@AC-R5-09",
   annotation: { type: "AC-R5-09" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-dirty-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-dirty-"));
   const secondFile = path.join(temporaryDirectory, "second.md");
   await fs.writeFile(secondFile, "# Replacement document\n", "utf8");
   const { application, page } = await launchEditor(fixturePath);

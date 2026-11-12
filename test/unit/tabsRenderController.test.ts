@@ -95,6 +95,20 @@ describe("render controller", () => {
     });
   });
 
+  it("AC-PERF-11: attachVersion sends a version before its document record exists", async () => {
+    const { instance } = await controller(() => null);
+
+    instance.attachVersion({ docId: "early", epoch: 2, version: 0 }, "opened text");
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "attach",
+      docId: "early",
+      epoch: 2,
+      version: 0,
+      text: "opened text",
+    });
+  });
+
   it("AC-R1-07: attach without supplied text sends the document text", async () => {
     const document = item();
     const { instance } = await controller(() => document);
@@ -189,8 +203,9 @@ describe("render controller", () => {
       fillToken: 4,
       complete: true,
     } } as unknown as MessageEvent<RenderResponse>);
-    // Fill acknowledgements are paced to the next animation frame.
+    // Fill acknowledgements yield after the next frame so edits go first.
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(worker?.messages).toContainEqual({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });

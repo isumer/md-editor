@@ -199,7 +199,10 @@ thread. A test asserts no `doc.toString()` on the UI thread per edit.
   Edit roles; Window and Help roles). The renderer contributes item
   lists and state; pushes are coalesced to at most one per 100 ms,
   patched in place (`enabled`/`checked`) and rebuilt only when structure
-  changes. Budget: a push costs < 2 ms in main.
+  changes. Item and command id unions stay literal in the shared
+  contract; declaration files live in `src/shared/ipc/menu/` and each
+  process composes the ordered list itself (`compose.ts`), so
+  `src/shared` imports nothing. Budget: a push costs < 2 ms in main.
 - **Keys**: the renderer keymap owns all chords; menu items display their
   chord with `registerAccelerator: false`. Exceptions: OS-native roles
   (macOS ⌘Q/⌘H/⌘M, Edit-menu roles for IME and Services). Matching uses
@@ -208,8 +211,9 @@ thread. A test asserts no `doc.toString()` on the UI thread per edit.
   never a command; default bindings avoid Ctrl+Alt chords for this reason.
 - **Macros** record command invocations, with typing recorded as
   `editor.insertText(text)` relative to the selection. "Play to end of file" runs in cancellable, yielding batches.
-- **i18n**: titles are message keys in a catalog (`shared/messages/en.ts`)
-  from the first command; English is the only catalog in v1.
+- **i18n**: titles are message keys in a catalog. Each area exports its
+  strings from `shared/messages/en/`; the renderer composes them in
+  `renderer/core/messages.ts`. English is the only catalog in v1.
 
 ## 6. State and UI ([ADR-0003](adr/0003-ui-framework.md))
 - Core stores are framework-free observables with explicit actions.

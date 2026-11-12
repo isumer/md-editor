@@ -27,7 +27,7 @@ async function enableSandboxHelper(helperPath) {
 }
 
 async function smoke(appImagePath, fixturePath) {
-  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "mdeditor-appimage-"));
+  const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "solidmd-appimage-"));
   try {
     await run(appImagePath, ["--appimage-extract"], { cwd: temporaryDirectory });
     const root = path.join(temporaryDirectory, "squashfs-root");

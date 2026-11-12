@@ -12,7 +12,7 @@ const ONE_PIXEL_PNG = Buffer.from(
 );
 
 async function createDocumentFolder(): Promise<string> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-doc-asset-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-doc-asset-"));
   const documents = path.join(root, "documents");
   await fs.mkdir(path.join(documents, "images"), { recursive: true });
   await fs.writeFile(path.join(documents, "images", "pic.png"), ONE_PIXEL_PNG);

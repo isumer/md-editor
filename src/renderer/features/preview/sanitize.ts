@@ -6,7 +6,11 @@ const ALLOWED_URI =
   /^(?:doc-asset:|(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 const DOC_ASSET_URL = /^\s*doc-asset:/i;
 
-DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+// A private instance configured once, so the hook and settings apply to every
+// call without a config object being re-parsed per preview block.
+const purifier = DOMPurify(window);
+
+purifier.addHook("uponSanitizeAttribute", (node, data) => {
   if (!DOC_ASSET_URL.test(data.attrValue)) {
     return;
   }
@@ -18,11 +22,13 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
   }
 });
 
+purifier.setConfig({
+  ALLOW_DATA_ATTR: true,
+  ADD_ATTR: ["data-line"],
+  ALLOWED_URI_REGEXP: ALLOWED_URI,
+  FORBID_TAGS: ["style", "link", "meta", "base", "form"],
+});
+
 export function sanitizeRenderedHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ALLOW_DATA_ATTR: true,
-    ADD_ATTR: ["data-line"],
-    ALLOWED_URI_REGEXP: ALLOWED_URI,
-    FORBID_TAGS: ["style", "link", "meta", "base", "form"],
-  });
+  return purifier.sanitize(html);
 }
