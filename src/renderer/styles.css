@@ -265,10 +265,8 @@ body {
 }
 
 #preview {
-  contain: strict;
   padding: 24px 32px;
   overflow: auto;
-  will-change: scroll-position;
   line-height: 1.55;
   background: var(--custom-background, var(--preview-background));
   color: var(--custom-text-color, var(--preview-text-color));

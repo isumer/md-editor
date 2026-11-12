@@ -350,13 +350,13 @@ function requestNextFill(
       token: response.fillToken,
     } satisfies RenderFillReadyMessage);
   };
-  if (deferToTask) {
-    requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    if (deferToTask) {
       window.setTimeout(postFillReady, 0);
-    });
-  } else {
-    window.setTimeout(postFillReady, 0);
-  }
+    } else {
+      postFillReady();
+    }
+  });
 }
 
 export function wireRenderWorker(
