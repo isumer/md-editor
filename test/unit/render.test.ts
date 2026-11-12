@@ -22,6 +22,16 @@ describe("renderMarkdown", () => {
     expect(highlight).toHaveBeenCalledTimes(1);
   });
 
+  it("AC-PERF-11: keeps cached highlighting separate by language", () => {
+    const source = "value = 1\n";
+
+    const javascript = renderMarkdown(`\`\`\`js\n${source}\`\`\``);
+    const python = renderMarkdown(`\`\`\`python\n${source}\`\`\``);
+
+    expect(javascript).toContain("language-js");
+    expect(python).toContain("language-python");
+  });
+
   it("AC-PERF-11: evicts the oldest highlight after 64 entries", () => {
     const highlight = vi.spyOn(hljs, "highlight");
     const oldestSource = "const cacheProbeOldest = 0;\n";
@@ -48,6 +58,19 @@ describe("renderMarkdown", () => {
     expect(
       highlight.mock.calls.filter(([highlighted]) => highlighted === source),
     ).toHaveLength(2);
+  });
+
+  it("AC-PERF-11: reuses highlighting for a 64 KiB code block", () => {
+    const highlight = vi.spyOn(hljs, "highlight");
+    const source = `${"x".repeat(64 * 1024 - 1)}\n`;
+    const markdown = `\`\`\`plaintext\n${source}\`\`\``;
+
+    renderMarkdown(markdown);
+    renderMarkdown(markdown);
+
+    expect(
+      highlight.mock.calls.filter(([highlighted]) => highlighted === source),
+    ).toHaveLength(1);
   });
 
   it("AC-R1-03: escapes code when the fenced language is unknown", () => {

@@ -589,6 +589,37 @@ describe("preview render flow", () => {
     mark.mockRestore();
   });
 
+  it("AC-PERF-11: marks only the first block of a replace", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        { id: "b2", startLine: 1, endLine: 2, html: "<p>two</p>" },
+      ],
+      complete: true,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-sanitize-start",
+      "preview-sanitize-end",
+      "preview-rewrite-start",
+      "preview-rewrite-end",
+      "preview-dom-start",
+      "preview-dom-end",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
   it("AC-PERF-11: clears each previous first-preview phase mark", () => {
     const clearMarks = vi.spyOn(performance, "clearMarks");
     const { worker } = wiring();
