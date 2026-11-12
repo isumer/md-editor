@@ -3,7 +3,10 @@ import path from "node:path";
 import {
   app,
   BrowserWindow,
+  dialog,
+  net,
   protocol,
+  shell,
   type MessagePortMain,
 } from "electron";
 
@@ -42,7 +45,13 @@ import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 import { WorkspaceService } from "./services/workspace";
+import {
+  createStartupUpdateCheck,
+  createUpdateCheck,
+  scheduleStartupUpdateCheck,
+} from "./update/updateCheck";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
+import type { Settings } from "../shared/settings/settings";
 
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
@@ -72,6 +81,37 @@ const openRequests = createOpenRequests(fileService);
 const menuContributions = createContributionPump({ apply: applyMenuContribution });
 let sessionStore: SessionStore | null = null;
 let settingsStore: SettingsStore | null = null;
+
+function readUpdateSettings(): Promise<Settings> {
+  return settingsStore === null
+    ? Promise.reject(new Error("Settings are not ready."))
+    : settingsStore.read();
+}
+
+function writeUpdateSettings(settings: Settings): Promise<void> {
+  return settingsStore === null
+    ? Promise.reject(new Error("Settings are not ready."))
+    : settingsStore.write(settings);
+}
+
+const checkForUpdates = createUpdateCheck({
+  currentVersion: () => app.getVersion(),
+  fetchFeed: (url) => net.fetch(url),
+  showMessage: (message) => dialog.showMessageBox({
+    ...message,
+    buttons: [...message.buttons],
+    noLink: true,
+  }),
+  openExternal: (url) => shell.openExternal(url),
+  readSettings: readUpdateSettings,
+  writeSettings: writeUpdateSettings,
+});
+const checkForStartupUpdates = createStartupUpdateCheck({
+  check: checkForUpdates,
+  now: Date.now,
+  read: readUpdateSettings,
+  write: writeUpdateSettings,
+});
 
 const closeRequests = new CloseRequestBroker(
   (windowId, requestId) => {
@@ -123,6 +163,9 @@ function createApplicationWindow(): void {
       attachIoPort,
       closeWindow: async (windowId) => fileService.closeWindow(windowId),
       requestClose: async (window) => {
+        if (!openRequests.isRendererReady()) {
+          return true;
+        }
         const allow = await closeRequests.request(window.id);
         if (!allow) {
           applicationEvents.cancelQuit();
@@ -181,10 +224,15 @@ void initializeApplication(
     registerAppProtocol(rendererDirectory);
     registerDocAssetProtocol(ioWorker);
   },
-).catch((error: unknown) => {
-  logProcessEvent("startup", error);
-  app.quit();
-});
+  () => {
+    void checkForUpdates();
+  },
+)
+  .then(() => scheduleStartupUpdateCheck(checkForStartupUpdates))
+  .catch((error: unknown) => {
+    logProcessEvent("startup", error);
+    app.quit();
+  });
 
 function createSettingsStore(): SettingsStore {
   return new SettingsStore(

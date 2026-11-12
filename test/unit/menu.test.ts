@@ -173,6 +173,20 @@ describe("menu skeleton", () => {
       "separator",
       "selectAll",
     ]);
+    expect(() => shaped[3]?.submenu?.[0]?.click?.()).not.toThrow();
+  });
+
+  it("AC-R9-07: runs the update check from the stable Help menu item", () => {
+    const checkForUpdates = vi.fn();
+    const template = buildSkeletonTemplate("linux", "SolidMD", { checkForUpdates });
+    const helpMenu = asShape(template)[3]?.submenu ?? [];
+
+    expect(helpMenu[0]).toMatchObject({
+      id: "help-check-updates",
+      label: "Check for Updates",
+    });
+    helpMenu[0]?.click?.();
+    expect(checkForUpdates).toHaveBeenCalledOnce();
   });
 
   it("AC-R5-21: uses role-supplied labels for the macOS application menu", () => {
@@ -317,7 +331,10 @@ describe("menu controller", () => {
     const getApplicationMenu = vi.fn(() => current);
     const send = vi.fn();
     const host = { buildFromTemplate, setApplicationMenu, getApplicationMenu };
-    const menu = createMenuController("linux", "SolidMD", host, send);
+    const menu = createMenuController("linux", "SolidMD", host, {
+      checkForUpdates: vi.fn(),
+      send,
+    });
     return { buildFromTemplate, menu, setApplicationMenu, currentMenu: () => current };
   }
 
@@ -365,6 +382,7 @@ describe("menu IPC contributions in main", () => {
     createMenu();
     const skeleton = electron.state.menu;
     expect(skeleton?.getMenuItemById("file-open")).toBeNull();
+    expect(() => skeleton?.getMenuItemById("help-check-updates")?.click?.()).not.toThrow();
 
     const webContents = { send: vi.fn() };
     setMainWindow({
