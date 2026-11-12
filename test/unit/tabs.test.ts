@@ -47,6 +47,7 @@ describe("tab modules", () => {
       "file-save",
       "file-save-as",
       "file-compare-open",
+      "file-merge-open",
     ]);
   });
 
