@@ -55,6 +55,9 @@ jobs:
         run: |
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - name: Disable Spotlight indexing
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off
       - name: Typecheck
         run: npm run typecheck
       - name: Check dependency boundaries
@@ -67,8 +70,24 @@ jobs:
         # Coverage is a Linux-measured number; see vitest.config.mts.
         if: runner.os == 'Linux'
         run: npm run check:coverage
-      - name: Run end-to-end tests
-        run: npm run test:e2e
+      - name: Build the app for end-to-end tests
+        run: npm run build
+      - name: Run performance end-to-end tests
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: reports/perf-e2e-junit.xml
+        run: node scripts/run-e2e.cjs test/e2e/preview-perf.spec.ts test/e2e/io-worker.spec.ts
+      - name: Run remaining end-to-end tests
+        run: node scripts/run-e2e.cjs '^(?!.*(?:preview-perf|io-worker)\.spec\.ts$).*'
+      - name: Merge end-to-end test reports
+        shell: bash
+        run: |
+          {
+            echo '<testsuites>'
+            sed '1d;$d' reports/perf-e2e-junit.xml
+            sed '1d;$d' reports/e2e-junit.xml
+            echo '</testsuites>'
+          } > reports/merged-e2e-junit.xml
+          mv reports/merged-e2e-junit.xml reports/e2e-junit.xml
       - name: Check acceptance criteria
         env:
           ACCEPTANCE_JUNIT_REPORTS: unit-junit.xml,e2e-junit.xml,perf-e2e-junit.xml
@@ -92,6 +111,47 @@ jobs:
         with:
           name: coverage-${{ matrix.os }}
           path: coverage/
+          if-no-files-found: ignore
+
+  perf-throttled:
+    name: Performance with 4x CPU throttle
+    runs-on: ubuntu-latest
+    # Same rule as the test job: a candidate's push run already covers its PR.
+    if: github.event_name != 'pull_request' || !(startsWith(github.head_ref, 'feature/') || startsWith(github.head_ref, 'bug/') || startsWith(github.head_ref, 'release/'))
+    # lowres-1-ci-throttle.md: This job stays non-blocking until the low-resource product slices land.
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Download the Electron binary
+        # npm 12 does not run install scripts, so fetch the binary explicitly.
+        run: node node_modules/electron/install.js
+      - name: Enable Electron's setuid sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - name: Build the app for end-to-end tests
+        run: npm run build
+      - name: Run throttled performance end-to-end tests
+        env:
+          MDEDITOR_CPU_THROTTLE: 4
+        run: node scripts/run-e2e.cjs test/e2e/preview-perf.spec.ts test/e2e/io-worker.spec.ts
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-throttled-failure
+          path: |
+            reports/
+            test-results/
+            playwright-report/
           if-no-files-found: ignore
 
   package-linux:
