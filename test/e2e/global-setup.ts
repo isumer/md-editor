@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { closeEditor, launchEditor, repositoryRoot } from "./helpers";
+import { isSteady } from "./prime-steady";
 
 // A fresh CI machine pays one-time costs on its first Electron launches: the OS
 // assesses each new binary and helper app on first exec, pages in the framework,
@@ -11,12 +12,15 @@ import { closeEditor, launchEditor, repositoryRoot } from "./helpers";
 // pays those costs once, not per start, so the machine is primed here before any
 // budget is measured. Each test still launches its own app with a fresh profile;
 // no test, budget or sample count changes.
-const PRIME_ROUNDS = 2;
+// A slow machine keeps settling after the first launch (diag run 43253195712:
+// one runner took 11.7 s then 4.6 s, the others about 2.5 s on round two), so
+// rounds repeat until two in a row agree (see prime-steady.ts).
+const PRIME_MAX_ROUNDS = 6;
 const PRIME_KEYSTROKES = "prime";
 const PRIME_TIMEOUT_MS = 60_000;
 const primeDocument = path.join(repositoryRoot, "test/fixtures/big/large-50kb.md");
 
-async function primeOnce(round: number): Promise<void> {
+async function primeOnce(round: number): Promise<number> {
   const started = Date.now();
   const { application, page } = await launchEditor(primeDocument, {
     titleTimeoutMs: PRIME_TIMEOUT_MS,
@@ -35,11 +39,20 @@ async function primeOnce(round: number): Promise<void> {
   } finally {
     await closeEditor(application, page);
   }
-  console.log(`e2e machine prime round ${String(round)}: ${String(Date.now() - started)} ms`);
+  const elapsedMs = Date.now() - started;
+  console.log(`e2e machine prime round ${String(round)}: ${String(elapsedMs)} ms`);
+  return elapsedMs;
 }
 
 export default async function globalSetup(): Promise<void> {
-  for (let round = 1; round <= PRIME_ROUNDS; round += 1) {
-    await primeOnce(round);
+  let previousMs = await primeOnce(1);
+  for (let round = 2; round <= PRIME_MAX_ROUNDS; round += 1) {
+    const currentMs = await primeOnce(round);
+    if (isSteady(previousMs, currentMs)) {
+      return;
+    }
+    previousMs = currentMs;
   }
+  // Not steady after the cap: the tests run anyway and report what they measure.
+  console.log(`e2e machine prime: not steady after ${String(PRIME_MAX_ROUNDS)} rounds`);
 }

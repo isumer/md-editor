@@ -22,12 +22,19 @@ roughly half the cost.
 
 ## Decision
 
-`test/e2e/global-setup.ts` launches the real app twice before any test,
+`test/e2e/global-setup.ts` launches the real app before any test, at least
+twice and until two rounds in a row agree within 25 % (at most six),
 through the path the perf specs use (argv open of the 50 KB fixture, preview,
 typing), and measures nothing. The perf specs still run first, before the rest
 of the suite (the #85 intent). No budget, sample count, test or retry setting
 changes. It replaces the earlier `electron --version` prewarm, which never
 started a window, renderer or helper process.
+
+Verification run 43253195712 (three fresh macos-latest runners, two fixed
+rounds): AC-PERF-03 and AC-PERF-02 passed on all three. One slow runner was
+still settling (rounds 11.7 s and 4.6 s, against about 2.5 s on round two
+elsewhere) and missed AC-PERF-11, so rounds now repeat until the machine is
+steady.
 
 ## What would reverse this
 
