@@ -86,6 +86,8 @@ export class ViewController {
     this.applyShare();
     if (options.skipInitialMeasurement === true) {
       options.workspace.dataset["viewMode"] = "split";
+      // Freeze pane widths after first paint without geometry reads on startup.
+      requestAnimationFrame(() => requestAnimationFrame(() => this.refreshPaneWidths()));
     } else {
       this.setMode("split");
     }

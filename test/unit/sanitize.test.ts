@@ -11,6 +11,14 @@ describe("sanitizeRenderedHtml", () => {
     expect(sanitizeRenderedHtml(html)).toBe(html);
   });
 
+  it("AC-SEC-04: sanitises active markup inside a generated block shape", () => {
+    const result = sanitizeRenderedHtml(
+      '<p data-line="12"><img src="safe.png" onerror="bad()"><script>bad()</script></p>\n',
+    );
+
+    expect(result).toBe('<p data-line="12"><img src="safe.png"></p>\n');
+  });
+
   it("AC-SEC-04: removes active document elements and event handlers", () => {
     const result = sanitizeRenderedHtml(`
       <script>bad()</script>

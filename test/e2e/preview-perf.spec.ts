@@ -423,6 +423,10 @@ function phaseDuration(
 function phaseSummary(
   marks: readonly { name: string; start: number }[],
 ): string {
+  const openStart = marks.find((mark) => mark.name === "open-20mb-start")?.start;
+  const openMarks = openStart === undefined
+    ? marks
+    : marks.filter((mark) => mark.start >= openStart);
   const phases = [
     ["editable", "open-20mb-start", "open-20mb-editable"],
     ["firstPreview", "open-20mb-start", "open-20mb-first-preview"],
@@ -433,7 +437,7 @@ function phaseSummary(
     ["apply", "preview-apply-start", "preview-apply-end"],
   ] as const;
   return phases.map(([label, start, end]) => {
-    const duration = phaseDuration(marks, start, end);
+    const duration = phaseDuration(openMarks, start, end);
     return `${label}=${duration === undefined ? "missing" : duration.toFixed(1)}ms`;
   }).join(" ");
 }

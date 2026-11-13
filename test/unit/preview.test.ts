@@ -1114,6 +1114,37 @@ describe("preview render flow", () => {
     expect(blocks(preview)[1]?.textContent).toBe("two");
   });
 
+  it("AC-PERF-08: updates a generated text element without replacing it", () => {
+    const { worker, preview } = wiring();
+    send(worker, {
+      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "replace",
+      blocks: [{
+        id: "b1", startLine: 4, endLine: 5,
+        html: '<p data-line="4">before</p>\n',
+      }],
+      complete: true,
+    });
+    const paragraph = preview.querySelector("p");
+
+    send(worker, {
+      id: 2, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "patch",
+      blocks: [{
+        block: {
+          id: "b1", startLine: 4, endLine: 5,
+          html: '<p data-line="4">after</p>\n',
+        },
+        after: null,
+      }],
+      removed: [],
+      complete: true,
+    });
+
+    expect(preview.querySelector("p")).toBe(paragraph);
+    expect(paragraph?.textContent).toBe("after");
+  });
+
   it("AC-R1-09: inserts a new block after its anchor and removes deleted blocks", () => {
     const { worker, preview } = wiring();
 
