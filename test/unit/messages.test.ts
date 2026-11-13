@@ -35,6 +35,7 @@ describe("English messages", () => {
       "menu.redo": "Redo",
       "menu.view": "View",
       "menu.viewEditor": "Editor Only",
+      "menu.syncScroll": "Sync Scroll",
       "menu.focusMode": "Focus Mode",
       "menu.viewFullScreen": "Full Screen",
       "menu.viewPreview": "Preview Only",

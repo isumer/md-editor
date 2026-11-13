@@ -14,6 +14,7 @@ export interface FeatureContext {
   readonly editorHost: HTMLElement;
   readonly preview: HTMLElement;
   readonly workspace: HTMLElement;
+  previewBlockLine?(element: HTMLElement): number;
   documents(): readonly DocumentRecord[];
   hasDocument(documentId: string): boolean;
   isActive(document: DocumentRecord): boolean;

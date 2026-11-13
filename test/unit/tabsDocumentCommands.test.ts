@@ -77,6 +77,11 @@ describe("document commands", () => {
         { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
         { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
         {
+          id: "view-sync-scroll",
+          title: "Sync Scroll",
+          accelerator: "CmdOrCtrl+Shift+L",
+        },
+        {
           id: "view-focus-mode",
           title: "Focus Mode",
           accelerator: "CmdOrCtrl+Shift+F",
@@ -90,6 +95,7 @@ describe("document commands", () => {
     menuListener?.("file-compare-open");
     menuListener?.("file-merge-open");
     menuListener?.("view-editor");
+    menuListener?.("view-sync-scroll");
     menuListener?.("view-focus-mode");
     menuListener?.("view-full-screen");
     (menuListener as ((command: string) => void) | null)?.("unknown");
@@ -100,6 +106,7 @@ describe("document commands", () => {
     expect(compare).toHaveBeenCalledOnce();
     expect(merge).toHaveBeenCalledOnce();
     expect(featureCommand).toHaveBeenCalledWith("view.editor");
+    expect(featureCommand).toHaveBeenCalledWith("view.syncScroll");
     expect(featureCommand).toHaveBeenCalledWith("view.focusMode");
     expect(toggleFullScreen).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -139,6 +146,7 @@ describe("document commands", () => {
       "view-split",
       "view-editor",
       "view-preview",
+      "view-sync-scroll",
       "view-focus-mode",
       "view-full-screen",
     ]);

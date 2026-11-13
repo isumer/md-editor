@@ -39,6 +39,7 @@ import {
   installFeatures,
   rewriteFeatureHtml,
 } from "./features/registry";
+import { blockLine } from "./features/preview/preview";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
@@ -187,6 +188,7 @@ installedFeatures = installFeatures({
   documents: () => registry.all(),
   editorHost,
   preview,
+  previewBlockLine: blockLine,
   workspace,
   editor,
   hasDocument: (documentId) => registry.get(documentId) !== undefined,

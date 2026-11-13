@@ -21,6 +21,12 @@ export const viewMenu = {
       commandId: "view.preview",
     },
     {
+      id: "view-sync-scroll",
+      titleKey: "menu.syncScroll",
+      accelerator: "CmdOrCtrl+Shift+L",
+      commandId: "view.syncScroll",
+    },
+    {
       id: "view-focus-mode",
       titleKey: "menu.focusMode",
       accelerator: "CmdOrCtrl+Shift+F",

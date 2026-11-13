@@ -14,6 +14,7 @@ export const MENU_ITEM_IDS = [
   "view-split",
   "view-editor",
   "view-preview",
+  "view-sync-scroll",
   "view-focus-mode",
   "view-full-screen",
 ] as const;
@@ -29,6 +30,7 @@ export const MENU_COMMAND_IDS = [
   "view.split",
   "view.editor",
   "view.preview",
+  "view.syncScroll",
   "view.focusMode",
   "view.toggleFullScreen",
 ] as const;

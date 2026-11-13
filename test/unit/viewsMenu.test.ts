@@ -32,6 +32,7 @@ it("AC-R2-08: builds the View menu from renderer catalog contributions", () => {
     ["view-split", "Split View"],
     ["view-editor", "Editor Only"],
     ["view-preview", "Preview Only"],
+    ["view-sync-scroll", "Sync Scroll"],
     ["view-focus-mode", "Focus Mode"],
     ["view-full-screen", "Full Screen"],
   ]);
@@ -45,10 +46,11 @@ it("AC-R2-01 AC-R2-03 AC-R2-04: displays chords without native registration", ()
     "CmdOrCtrl+1",
     "CmdOrCtrl+2",
     "CmdOrCtrl+3",
+    "CmdOrCtrl+Shift+L",
     "CmdOrCtrl+Shift+F",
     "F11",
   ]);
-  expect(darwin[4]?.accelerator).toBe("Ctrl+Command+F");
+  expect(darwin[5]?.accelerator).toBe("Ctrl+Command+F");
   expect([...linux, ...darwin].every((item) => item.registerAccelerator === false))
     .toBe(true);
 });

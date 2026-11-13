@@ -20,6 +20,7 @@ it("AC-R2-01 AC-R2-03 AC-R2-04: resolves every View title through the message ca
     "Split View",
     "Editor Only",
     "Preview Only",
+    "Sync Scroll",
     "Focus Mode",
     "Full Screen",
   ]);

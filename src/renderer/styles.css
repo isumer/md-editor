@@ -430,6 +430,7 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 
 #editor,
 #preview {
+  contain: strict;
   min-width: 0;
   min-height: 0;
 }

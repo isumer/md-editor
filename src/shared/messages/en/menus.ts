@@ -9,6 +9,7 @@ export const menuMessages = {
   "menu.viewSplit": "Split View",
   "menu.viewEditor": "Editor Only",
   "menu.viewPreview": "Preview Only",
+  "menu.syncScroll": "Sync Scroll",
   "menu.focusMode": "Focus Mode",
   "menu.viewFullScreen": "Full Screen",
 } as const;
