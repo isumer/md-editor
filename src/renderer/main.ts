@@ -357,8 +357,13 @@ function attachIoMirror(
   fileName: string | null,
 ): void {
   const attach = (): void => {
-    if (registry.get(version.docId) === undefined) return;
-    void attachDocument({ ...version, text }).then((result) => {
+    const document = registry.get(version.docId);
+    if (document === undefined) return;
+    const currentVersion = document.replication.current();
+    const currentText = currentVersion.version === version.version
+      ? text
+      : document.state.doc.toString();
+    void attachDocument({ ...currentVersion, text: currentText }).then((result) => {
       valueOrStatus(result, fileName);
     }).catch(showUnexpectedError);
   };

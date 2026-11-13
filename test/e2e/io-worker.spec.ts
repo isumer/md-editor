@@ -6,14 +6,18 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 
 import {
   clickMenuItem,
+  closeCrashedEditor,
   closeEditor,
   dialogCallCount,
+  evaluateInWindow,
   fixturePath,
   launchEditor,
   readTextOrNull,
   stubOpenDialog,
   stubSaveDialog,
 } from "./helpers";
+
+const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
 
 const STARTUP_MARKS = [
   "app-ready",
@@ -126,9 +130,51 @@ async function ioWorkerPid(application: ElectronApplication): Promise<number | n
 async function appendEditorText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(DOCUMENT_END);
   await page.keyboard.type(text);
 }
+
+test("an edit before a delayed mirror attach survives a renderer crash", {
+  tag: "@AC-R4-07",
+  annotation: { type: "AC-R4-07" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-attach-"));
+  const currentPath = path.join(temporaryDirectory, "large.md");
+  const originalText = `# Large\n${"a".repeat(2 * 1024 * 1024)}`;
+  await fs.writeFile(currentPath, originalText, "utf8");
+  const { application, page } = await launchEditor();
+  try {
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1_000);
+    await stubOpenDialog(application, currentPath);
+    await clickMenuItem(application, "file-open");
+    await expect(page).toHaveTitle(/large\.md/);
+
+    const edit = "EDIT-BEFORE-ATTACH";
+    await appendEditorText(page, edit);
+    await page.clock.runFor(2_100);
+    await expect.poll(async () => {
+      const listed = await page.evaluate(() => window.api.listDrafts());
+      return listed.ok && listed.value.drafts.some((draft) => draft.text.endsWith(edit));
+    }).toBe(true);
+    await page.clock.resume();
+
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer();
+    });
+
+    await expect.poll(
+      () => evaluateInWindow<boolean>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab-dirty\"]')].some((marker) => !marker.hidden)"),
+      { timeout: 10_000 },
+    ).toBe(true);
+    await clickMenuItem(application, "file-save");
+    await expect.poll(() => readTextOrNull(currentPath)).toBe(originalText + edit);
+  } finally {
+    await closeCrashedEditor(application);
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
 
 test("saving succeeds after the io-worker restarts", {
   tag: "@AC-R5-17",

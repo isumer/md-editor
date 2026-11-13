@@ -74,7 +74,6 @@ export class ViewController {
   private previewScrollTop = 0;
   private restoreGeneration = 0;
   private resizeTimer: number | null = null;
-  private resizeDeadline = 0;
   private enteringFocusMode = false;
   private readonly enterFullScreen: () => Promise<void>;
   private readonly leaveFullScreen: () => Promise<void>;
@@ -116,11 +115,7 @@ export class ViewController {
       if (generation !== this.restoreGeneration) return;
       this.restoreScroll();
       requestAnimationFrame(() => {
-        if (generation !== this.restoreGeneration) return;
-        this.restoreScroll();
-        requestAnimationFrame(() => {
-          if (generation === this.restoreGeneration) this.restoreScroll();
-        });
+        if (generation === this.restoreGeneration) this.restoreScroll();
       });
     });
     if (mode === "split") this.refreshPaneWidths();
@@ -183,8 +178,8 @@ export class ViewController {
   };
 
   private readonly resize = (): void => {
-    this.resizeDeadline = performance.now() + RESIZE_SETTLE_MS;
-    this.resizeTimer ??= window.setTimeout(this.finishResize, RESIZE_SETTLE_MS);
+    if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+    this.resizeTimer = window.setTimeout(this.finishResize, RESIZE_SETTLE_MS);
   };
 
   private readonly fullScreenChanged = (): void => {
@@ -200,11 +195,6 @@ export class ViewController {
   };
 
   private readonly finishResize = (): void => {
-    const remaining = this.resizeDeadline - performance.now();
-    if (remaining > 0) {
-      this.resizeTimer = window.setTimeout(this.finishResize, remaining);
-      return;
-    }
     this.resizeTimer = null;
     if (this.mode === "split") this.refreshPaneWidths();
   };
