@@ -298,7 +298,7 @@ describe("sync scroll controller", () => {
     state.flush();
     const pageReads = state.pageRects();
     firstPage.dispatchEvent(new Event("contentvisibilityautostatechange", { bubbles: true }));
-    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(50);
     state.flush();
 
     expect(state.pageRects()).toBeGreaterThan(pageReads);
@@ -445,7 +445,7 @@ describe("sync scroll controller", () => {
     expect(state.scrollEditorToLine).not.toHaveBeenCalled();
   });
 
-  it("uses the browser frame and resize observers by default", async () => {
+  it("defers the resize refresh until continuous resizing stops", async () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
@@ -477,10 +477,15 @@ describe("sync scroll controller", () => {
     });
     const callback = resizeCallback as ResizeObserverCallback | null;
     if (callback === null) throw new Error("Missing resize observer callback");
+    for (const frame of frames.splice(0)) frame(16);
 
     callback([], {} as ResizeObserver);
+    await vi.advanceTimersByTimeAsync(50);
     callback([], {} as ResizeObserver);
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(frames).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(frames).toHaveLength(1);
     for (const frame of frames.splice(0)) frame(16);
     controller.dispose();
 

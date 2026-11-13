@@ -60,7 +60,7 @@ export class SyncScrollController {
     this.mutationObserver.observe(options.preview, { childList: true, subtree: true });
     this.resizeObserver = typeof ResizeObserver === "undefined"
       ? null
-      : new ResizeObserver(() => this.scheduleDelayedRefresh());
+      : new ResizeObserver(() => this.scheduleDelayedRefresh(true));
     this.resizeObserver?.observe(options.preview);
     this.scheduleAnchorRefresh();
   }
@@ -161,7 +161,7 @@ export class SyncScrollController {
     if (event.target === this.options.preview) {
       this.scheduleAnchorRefresh();
     } else {
-      this.scheduleDelayedRefresh(true, 250);
+      this.scheduleDelayedRefresh(true, 50);
     }
   };
 
