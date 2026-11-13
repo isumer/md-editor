@@ -36,12 +36,19 @@ import type {
   SessionLoadResponse,
 } from "../shared/ipc/session";
 import type {
+  SETTINGS_CHANNELS as SharedSettingsChannels,
+  SettingsReadResponse,
+  SettingsWriteRequest,
+  SettingsWriteResponse,
+} from "../shared/ipc/settings";
+import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
   WORKSPACE_CHANNELS as SharedWorkspaceChannels,
   WorkspacePathRequest,
 } from "../shared/ipc/workspace";
+import type { WINDOW_CHANNELS as SharedWindowChannels } from "../shared/ipc/window";
 
 const FILE_CHANNELS = {
   openFile: "file:open",
@@ -66,11 +73,18 @@ const SESSION_CHANNELS = {
   requestClose: "session:request-close",
   closeResult: "session:close-result",
 } as const satisfies typeof SharedSessionChannels;
+const SETTINGS_CHANNELS = {
+  read: "settings:read",
+  write: "settings:write",
+} as const satisfies typeof SharedSettingsChannels;
 const WORKSPACE_CHANNELS = {
   chooseRoot: "workspace:choose-root",
   listChildren: "workspace:list-children",
   openFile: "workspace:open-file",
 } as const satisfies typeof SharedWorkspaceChannels;
+const WINDOW_CHANNELS = {
+  toggleFullScreen: "window:toggle-full-screen",
+} as const satisfies typeof SharedWindowChannels;
 
 interface RendererPort {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -299,6 +313,8 @@ interface Api {
   contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
   loadSession(): Promise<Result<SessionLoadResponse>>;
+  loadSettings(): Promise<Result<SettingsReadResponse>>;
+  saveSettings(settings: SettingsWriteRequest): Promise<Result<SettingsWriteResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
   chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;
@@ -308,6 +324,7 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  toggleFullScreen(): Promise<Result<void>>;
 }
 
 const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
@@ -421,6 +438,10 @@ const api: Api = {
     MENU_CHANNELS.contribute,
     request,
   ) as Promise<Result<void>>,
+  toggleFullScreen: () => ipcRenderer.invoke(
+    WINDOW_CHANNELS.toggleFullScreen,
+    {},
+  ) as Promise<Result<void>>,
   onOpenRequest: (listener) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
@@ -439,6 +460,14 @@ const api: Api = {
     SESSION_CHANNELS.load,
     {},
   ) as Promise<Result<SessionLoadResponse>>,
+  loadSettings: () => ipcRenderer.invoke(
+    SETTINGS_CHANNELS.read,
+    {},
+  ) as Promise<Result<SettingsReadResponse>>,
+  saveSettings: (settings) => ipcRenderer.invoke(
+    SETTINGS_CHANNELS.write,
+    settings,
+  ) as Promise<Result<SettingsWriteResponse>>,
   respondSessionClose: (result) => ipcRenderer.invoke(
     SESSION_CHANNELS.closeResult,
     result,

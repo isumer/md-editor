@@ -49,6 +49,12 @@ interface RenderChunk {
   definitionCandidate: boolean;
 }
 
+interface PreparedBlock {
+  block: RenderBlock;
+  html: string;
+  labels: Set<string>;
+}
+
 interface LineSegment {
   // Chunk index where this base starts; bases are absolute line offsets.
   start: number;
@@ -68,7 +74,14 @@ interface ChangedRange {
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
 const FILL_BATCH_SIZE = 8;
+export const RENDER_BATCH_BYTE_LIMIT = 256 * 1024;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
+// A fill task runs to its time budget so a keystroke's render request waits at
+// most one short task: eight blocks can cost over half the 50 ms keystroke
+// budget on a slow machine, and the worker cannot preempt a running task.
+const FILL_TASK_BUDGET_MS = 2;
+const UTF8_ENCODER = new TextEncoder();
+const UTF8_SCRATCH = new Uint8Array(RENDER_BATCH_BYTE_LIMIT + 1);
 // Segment lookups are linear; compacting an edit-heavy session keeps the list
 // short. Compaction is amortised over the edits that created the segments.
 const MAX_LINE_SEGMENTS = 64;
@@ -88,6 +101,18 @@ function sourceOf(lines: LineReader, startLine: number, endLine: number): string
   // Keep the line break after the last chunk line when one exists: raw HTML
   // blocks include it in their rendered output, and a full render has it.
   return endLine < lines.length ? `${selected.join("\n")}\n` : selected.join("\n");
+}
+
+function renderedBytesWithin(html: string, limit: number): number {
+  // Reuse one bounded buffer so byte accounting does not add a full encoded
+  // allocation and its collection cost for every rendered block.
+  if (html.length > limit) {
+    return limit + 1;
+  }
+  const encoded = UTF8_ENCODER.encodeInto(html, UTF8_SCRATCH);
+  return encoded.read < html.length || encoded.written > limit
+    ? limit + 1
+    : encoded.written;
 }
 
 function rangeHasCandidate(lines: LineReader, range: LineRange): boolean {
@@ -146,6 +171,7 @@ export class IncrementalRenderState {
   private readonly dirty = new Set<RenderChunk>();
   private readonly removed = new Set<string>();
   private pendingLineShifts: RenderLineShift[] = [];
+  private pendingBlock: PreparedBlock | null = null;
   private references: Record<string, ReferenceDefinition> = {};
   private segments: LineSegment[] = [{ start: 0, base: 0 }];
   private nextId = 1;
@@ -163,6 +189,7 @@ export class IncrementalRenderState {
     version: number,
     document: Text,
     private readonly renderText: ChunkRenderer,
+    private readonly now: () => number = () => performance.now(),
   ) {
     this.version = version;
     this.document = document;
@@ -225,14 +252,7 @@ export class IncrementalRenderState {
     // Every block is rendered from the current document, so any shift that
     // accumulated before the first publish is already reflected in its lines.
     this.pendingLineShifts = [];
-    this.ensureChunks(INITIAL_CHUNK_COUNT);
-    const limit = Math.min(INITIAL_CHUNK_COUNT, this.chunks.length);
-    const blocks: RenderBlock[] = [];
-    while (this.cursor < limit) {
-      const chunk = this.chunks[this.cursor] as RenderChunk;
-      blocks.push(this.send(chunk, this.cursor));
-      this.cursor += 1;
-    }
+    const blocks = this.nextBatch(INITIAL_CHUNK_COUNT);
     this.published = true;
     return { blocks, complete: this.complete };
   }
@@ -259,17 +279,47 @@ export class IncrementalRenderState {
   }
 
   fill(): RenderBatch {
-    this.ensureChunks(this.cursor + FILL_BATCH_SIZE);
+    const blocks = this.nextBatch(
+      FILL_BATCH_SIZE,
+      this.now() + FILL_TASK_BUDGET_MS,
+    );
+    return { blocks, complete: this.complete };
+  }
+
+  private nextBatch(countLimit: number, deadline?: number): RenderBlock[] {
+    this.ensureChunks(this.cursor + countLimit);
     const blocks: RenderBlock[] = [];
-    const end = Math.min(this.chunks.length, this.cursor + FILL_BATCH_SIZE);
-    // Everything before the cursor has been sent; the fill pass starts on the
+    const end = Math.min(this.chunks.length, this.cursor + countLimit);
+    let bytes = 0;
+    // Everything before the cursor has been sent. This batch starts on the
     // first chunk that has never been rendered.
     while (this.cursor < end) {
+      // Always send one block so a slow stretch cannot starve the fill pass.
+      if (blocks.length > 0 && deadline !== undefined && this.now() >= deadline) {
+        break;
+      }
       const chunk = this.chunks[this.cursor] as RenderChunk;
-      blocks.push(this.send(chunk, this.cursor));
+      const prepared = this.pendingBlock
+        ? this.pendingBlock
+        : this.prepare(chunk, this.cursor);
+      this.pendingBlock = null;
+      const blockBytes = renderedBytesWithin(
+        prepared.block.html,
+        RENDER_BATCH_BYTE_LIMIT - bytes,
+      );
+      if (blocks.length > 0 && bytes + blockBytes > RENDER_BATCH_BYTE_LIMIT) {
+        this.pendingBlock = prepared;
+        break;
+      }
+      this.commit(chunk, prepared);
+      blocks.push(prepared.block);
+      bytes += blockBytes;
       this.cursor += 1;
+      if (bytes >= RENDER_BATCH_BYTE_LIMIT) {
+        break;
+      }
     }
-    return { blocks, complete: this.complete };
+    return blocks;
   }
 
   applyChange(
@@ -288,6 +338,7 @@ export class IncrementalRenderState {
       this.document = after;
       return;
     }
+    this.pendingBlock = null;
 
     const changed = this.changedLines(before, bounds);
     const lineDelta = after.lines - before.lines;
@@ -608,23 +659,34 @@ export class IncrementalRenderState {
   }
 
   private send(chunk: RenderChunk, index: number): RenderBlock {
+    const prepared = this.prepare(chunk, index);
+    this.commit(chunk, prepared);
+    return prepared.block;
+  }
+
+  private prepare(chunk: RenderChunk, index: number): PreparedBlock {
     const startLine = this.startOf(index);
     const endLine = this.endOf(index);
     const source = sourceOf(textReader(this.document), startLine, endLine);
-    chunk.labels = referenceLabels(source);
     const html = this.renderText(source, this.environment());
-    if (!chunk.rendered) {
-      chunk.rendered = true;
-      this.unrendered -= 1;
-    }
-    chunk.html = html;
-    this.dirty.delete(chunk);
     return {
-      id: chunk.id,
-      startLine,
-      endLine,
-      html: shiftChunkDataLines(html, startLine),
+      block: {
+        id: chunk.id,
+        startLine,
+        endLine,
+        html: shiftChunkDataLines(html, startLine),
+      },
+      html,
+      labels: referenceLabels(source),
     };
+  }
+
+  private commit(chunk: RenderChunk, prepared: PreparedBlock): void {
+    chunk.labels = prepared.labels;
+    chunk.rendered = true;
+    this.unrendered -= 1;
+    chunk.html = prepared.html;
+    this.dirty.delete(chunk);
   }
 
   private environment(): RenderEnvironment {
@@ -659,6 +721,7 @@ export class IncrementalRenderState {
     if (changed.size === 0) {
       return;
     }
+    this.pendingBlock = null;
     this.references = next;
     for (const chunk of this.chunks) {
       if (!chunk.rendered) {

@@ -83,6 +83,7 @@ describe("preload bridge", () => {
         "listDrafts",
         "listWorkspaceChildren",
         "loadSession",
+        "loadSettings",
         "onMenuCommand",
         "onOpenRequest",
         "onSessionCloseRequest",
@@ -94,7 +95,9 @@ describe("preload bridge", () => {
         "releaseDocument",
         "respondSessionClose",
         "saveDocument",
+        "saveSettings",
         "sendChanges",
+        "toggleFullScreen",
       ]
     `);
     expect(api).not.toHaveProperty("openPath");
@@ -106,11 +109,15 @@ describe("preload bridge", () => {
     await api.openExternal("https://example.com");
     await api.readyForOpenRequests();
     await api.loadSession();
+    await api.loadSettings();
+    await api.saveSettings({ futureOption: true });
     await api.respondSessionClose({ allow: true, documents: [], id: 1 });
     await api.contributeMenu({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
     });
+    await api.toggleFullScreen();
     await api.chooseWorkspaceRoot();
     await api.listWorkspaceChildren({ path: "notes" });
     await api.openWorkspaceFile({ path: "notes/daily.md" });
@@ -121,11 +128,15 @@ describe("preload bridge", () => {
       ["link:open-external", { url: "https://example.com" }],
       ["file:open-requests-ready", {}],
       ["session:load", {}],
+      ["settings:read", {}],
+      ["settings:write", { futureOption: true }],
       ["session:close-result", { allow: true, documents: [], id: 1 }],
       ["menu:contribute", {
         fileMenuTitle: "File",
+        viewMenuTitle: "View",
         items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
       }],
+      ["window:toggle-full-screen", {}],
       ["workspace:choose-root", {}],
       ["workspace:list-children", { path: "notes" }],
       ["workspace:open-file", { path: "notes/daily.md" }],

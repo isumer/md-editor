@@ -87,7 +87,7 @@ const electron = vi.hoisted(() => {
   };
 
   return {
-    app: { getName: () => "MD Editor" },
+    app: { getName: () => "SolidMD" },
     BrowserWindow: {},
     FakeMenu,
     Menu,
@@ -131,6 +131,7 @@ const asShape = (template: MenuItemConstructorOptions[]): TemplateShape[] =>
 
 const contribution: MenuContribution = {
   fileMenuTitle: "File",
+  viewMenuTitle: "View",
   items: [
     { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
     { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
@@ -155,7 +156,7 @@ function fileSubmenu(template: MenuItemConstructorOptions[]): TemplateShape[] {
 
 describe("menu skeleton", () => {
   it("AC-R5-21: has no File action items and works without a renderer", () => {
-    const template = buildSkeletonTemplate("linux", "MD Editor");
+    const template = buildSkeletonTemplate("linux", "SolidMD");
     const shaped = asShape(template);
 
     expect(shaped.map((item) => item.label ?? item.role)).toEqual([
@@ -173,13 +174,27 @@ describe("menu skeleton", () => {
       "separator",
       "selectAll",
     ]);
+    expect(() => shaped[3]?.submenu?.[0]?.click?.()).not.toThrow();
+  });
+
+  it("AC-R9-07: runs the update check from the stable Help menu item", () => {
+    const checkForUpdates = vi.fn();
+    const template = buildSkeletonTemplate("linux", "SolidMD", { checkForUpdates });
+    const helpMenu = asShape(template)[3]?.submenu ?? [];
+
+    expect(helpMenu[0]).toMatchObject({
+      id: "help-check-updates",
+      label: "Check for Updates",
+    });
+    helpMenu[0]?.click?.();
+    expect(checkForUpdates).toHaveBeenCalledOnce();
   });
 
   it("AC-R5-21: uses role-supplied labels for the macOS application menu", () => {
-    const template = buildSkeletonTemplate("darwin", "MD Editor");
+    const template = buildSkeletonTemplate("darwin", "SolidMD");
     const appMenu = asShape(template)[0] ?? {};
 
-    expect(appMenu.label).toBe("MD Editor");
+    expect(appMenu.label).toBe("SolidMD");
     expect((appMenu.submenu ?? []).map((item) => item.role ?? item.label ?? item.type))
       .toEqual([
         "about",
@@ -200,7 +215,7 @@ describe("menu skeleton", () => {
 describe("contributed menu template", () => {
   it("AC-R5-21: shows catalog titles and chords without registering accelerators", () => {
     const send = vi.fn();
-    const template = buildContributionTemplate("linux", "MD Editor", contribution, send);
+    const template = buildContributionTemplate("linux", "SolidMD", contribution, send);
     const submenu = fileSubmenu(template);
 
     expect(asShape(template)[0]?.label).toBe("File");
@@ -232,15 +247,15 @@ describe("contributed menu template", () => {
   it("AC-R5-21: leaves only Quit when the contribution has no items", () => {
     const template = buildContributionTemplate(
       "linux",
-      "MD Editor",
-      { fileMenuTitle: "File", items: [] },
+      "SolidMD",
+      { fileMenuTitle: "File", viewMenuTitle: "View", items: [] },
       vi.fn(),
     );
     expect(fileSubmenu(template)).toEqual([{ role: "quit" }]);
   });
 
   it("AC-R5-21: creates the File menu after the macOS app menu", () => {
-    const template = buildContributionTemplate("darwin", "MD Editor", contribution, vi.fn());
+    const template = buildContributionTemplate("darwin", "SolidMD", contribution, vi.fn());
 
     expect(asShape(template)[1]?.label).toBe("File");
     expect((asShape(template)[1]?.submenu ?? []).map((item) => item.id)).toEqual([
@@ -255,10 +270,11 @@ describe("contributed menu template", () => {
 describe("menu patch in place", () => {
   it("AC-R5-21: updates label, enabled and checked without rebuilding", () => {
     const menu = new electron.FakeMenu(
-      buildContributionTemplate("linux", "MD Editor", contribution, vi.fn()) as never,
+      buildContributionTemplate("linux", "SolidMD", contribution, vi.fn()) as never,
     );
     const patched: MenuContribution = {
       fileMenuTitle: "Documents",
+      viewMenuTitle: "View",
       items: [
         { id: "file-open", title: "Open file", accelerator: "CmdOrCtrl+O", enabled: false },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
@@ -283,7 +299,7 @@ describe("menu patch in place", () => {
       .not.toThrow();
     expect(() => patchContribution(
       new electron.FakeMenu(
-        buildSkeletonTemplate("linux", "MD Editor") as never,
+        buildSkeletonTemplate("linux", "SolidMD") as never,
       ),
       contribution,
       "linux",
@@ -291,7 +307,7 @@ describe("menu patch in place", () => {
   });
 
   it("AC-PERF-06: a representative patch stays under 2 ms at p95", () => {
-    const template = buildContributionTemplate("linux", "MD Editor", contribution, vi.fn());
+    const template = buildContributionTemplate("linux", "SolidMD", contribution, vi.fn());
     const samples: number[] = [];
     for (let sample = 0; sample < 30; sample += 1) {
       const menu = new electron.FakeMenu(template as never);
@@ -317,7 +333,10 @@ describe("menu controller", () => {
     const getApplicationMenu = vi.fn(() => current);
     const send = vi.fn();
     const host = { buildFromTemplate, setApplicationMenu, getApplicationMenu };
-    const menu = createMenuController("linux", "MD Editor", host, send);
+    const menu = createMenuController("linux", "SolidMD", host, {
+      checkForUpdates: vi.fn(),
+      send,
+    });
     return { buildFromTemplate, menu, setApplicationMenu, currentMenu: () => current };
   }
 
@@ -333,6 +352,7 @@ describe("menu controller", () => {
 
     const stateOnly: MenuContribution = {
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: contribution.items.map((entry) => ({ ...entry, enabled: false })),
     };
     expect(menu.applyContribution(stateOnly)).toBe("patched");
@@ -342,13 +362,18 @@ describe("menu controller", () => {
 
     expect(menu.applyContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: contribution.items.slice(0, 2),
     })).toBe("rebuilt");
     expect(buildFromTemplate).toHaveBeenCalledTimes(3);
 
     const reordered = [contribution.items[1], contribution.items[0], contribution.items[2]]
       .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
-    expect(menu.applyContribution({ fileMenuTitle: "File", items: reordered }))
+    expect(menu.applyContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: reordered,
+    }))
       .toBe("rebuilt");
     expect(buildFromTemplate).toHaveBeenCalledTimes(4);
   });
@@ -365,6 +390,7 @@ describe("menu IPC contributions in main", () => {
     createMenu();
     const skeleton = electron.state.menu;
     expect(skeleton?.getMenuItemById("file-open")).toBeNull();
+    expect(() => skeleton?.getMenuItemById("help-check-updates")?.click?.()).not.toThrow();
 
     const webContents = { send: vi.fn() };
     setMainWindow({
@@ -381,6 +407,7 @@ describe("menu IPC contributions in main", () => {
 
     applyMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: contribution.items.map((entry, index) => ({
         ...entry,
         enabled: index !== 0,
@@ -392,72 +419,6 @@ describe("menu IPC contributions in main", () => {
 
   it("AC-R5-21: drops a contribution when no skeleton has been installed", () => {
     expect(() => applyMenuContribution(contribution)).not.toThrow();
-  });
-});
-
-describe("view menu", () => {
-  it("AC-R2-01: view items send view ids and Full Screen toggles the window state", () => {
-    const webContents = { send: vi.fn() };
-    const setFullScreen = vi.fn();
-    setMainWindow({
-      isDestroyed: () => false,
-      isFullScreen: () => false,
-      setFullScreen,
-      webContents,
-    } as unknown as Parameters<typeof setMainWindow>[0]);
-
-    const template = asShape(
-      buildContributionTemplate("linux", "MD Editor", contribution, vi.fn()),
-    );
-    expect(template.map((item) => item.label ?? item.role)).toEqual([
-      "File", "Edit", "View", "windowMenu", "help",
-    ]);
-    const view = template[2]?.submenu ?? [];
-    expect(view.map((item) => item.id ?? item.type)).toEqual([
-      "view-split",
-      "view-editor",
-      "view-preview",
-      "separator",
-      "view-sync-scroll",
-      "separator",
-      "view-full-screen",
-      "view-focus-mode",
-    ]);
-    const item = (id: string): TemplateShape | undefined =>
-      view.find((entry) => entry.id === id);
-    for (const id of [
-      "view-split", "view-editor", "view-preview", "view-sync-scroll", "view-focus-mode",
-    ]) {
-      expect(item(id)?.registerAccelerator).toBe(false);
-      item(id)?.click?.();
-      expect(webContents.send).toHaveBeenCalledWith(MENU_CHANNELS.command, id);
-    }
-    expect(item("view-split")?.accelerator).toBe("CmdOrCtrl+1");
-    expect(item("view-editor")?.accelerator).toBe("CmdOrCtrl+2");
-    expect(item("view-preview")?.accelerator).toBe("CmdOrCtrl+3");
-    expect(item("view-sync-scroll")?.accelerator).toBe("CmdOrCtrl+Shift+L");
-    expect(item("view-focus-mode")?.accelerator).toBe("CmdOrCtrl+Shift+F");
-    expect(item("view-full-screen")?.accelerator).toBe("F11");
-    expect(item("view-full-screen")?.registerAccelerator).toBeUndefined();
-    item("view-full-screen")?.click?.();
-    expect(setFullScreen).toHaveBeenCalledWith(true);
-
-    const darwin = asShape(
-      buildContributionTemplate("darwin", "MD Editor", contribution, vi.fn()),
-    );
-    expect(darwin[3]?.submenu?.find((entry) => entry.id === "view-full-screen")?.accelerator)
-      .toBe("Ctrl+Command+F");
-  });
-
-  it("AC-R2-01: view clicks without a live window change nothing", () => {
-    setMainWindow(null);
-    const view = asShape(
-      buildContributionTemplate("linux", "MD Editor", contribution, vi.fn()),
-    )[2]?.submenu ?? [];
-    expect(view.length).toBeGreaterThan(0);
-    for (const entry of view) {
-      expect(() => entry.click?.()).not.toThrow();
-    }
   });
 });
 
@@ -474,44 +435,65 @@ describe("menu:contribute contract", () => {
   const item = { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" };
 
   it("AC-SEC-07: accepts exactly the valid shapes", () => {
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [] })).toBe(true);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [item] })).toBe(true);
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [] }))
+      .toBe(true);
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [item] }))
+      .toBe(true);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [{ ...item, enabled: true, checked: false }],
     })).toBe(true);
   });
 
   it("AC-SEC-07: rejects unknown ids, wrong types and extra keys", () => {
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, id: "file-quit" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, id: "file-quit" }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, title: 42 }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, title: 42 }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, title: "" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, title: "" }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, title: "a\u0000b" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, title: "a\u0000b" }] }))
       .toBe(false);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [{ ...item, accelerator: "Ctrl+O;rm" }],
     })).toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, extra: true }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, extra: true }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, enabled: "yes" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, enabled: "yes" }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, checked: 1 }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, checked: 1 }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: null, items: [] })).toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: "none" })).toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [], extra: true })).toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [{ id: "file-open", accelerator: "CmdOrCtrl+O", enabled: true }],
+    })).toBe(false);
+    expect(isMenuContribution({ fileMenuTitle: null, viewMenuTitle: "View", items: [] }))
+      .toBe(false);
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: "none" }))
+      .toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+      extra: true,
+    })).toBe(false);
     expect(isMenuContribution(null)).toBe(false);
     expect(isMenuContribution([])).toBe(false);
   });
 
   it("AC-SEC-07: rejects duplicate ids and more items than the contract allows", () => {
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [item, item] })).toBe(false);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [item, item],
+    })).toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [
         item,
         { ...item, id: "file-save" },
@@ -523,19 +505,35 @@ describe("menu:contribute contract", () => {
   });
 
   it("AC-SEC-07: rejects hostile own prototype keys, getters and proxies", () => {
-    expect(isMenuContribution(withOwnProto({ fileMenuTitle: "File", items: [] })))
+    expect(isMenuContribution(withOwnProto({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    })))
       .toBe(false);
-    expect(isMenuContribution(withOwnProto({ fileMenuTitle: "File", items: [item] })))
+    expect(isMenuContribution(withOwnProto({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [item],
+    })))
       .toBe(false);
 
-    const getter = { fileMenuTitle: "File", items: [] } as Record<string, unknown>;
+    const getter = {
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    } as Record<string, unknown>;
     Object.defineProperty(getter, "items", {
       enumerable: true,
       get: () => [],
     });
     expect(isMenuContribution(getter)).toBe(false);
 
-    const symbol = { fileMenuTitle: "File", items: [] } as Record<PropertyKey, unknown>;
+    const symbol = {
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    } as Record<PropertyKey, unknown>;
     symbol[Symbol("extra")] = true;
     expect(isMenuContribution(symbol)).toBe(false);
 

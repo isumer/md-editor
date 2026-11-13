@@ -1,4 +1,4 @@
-# Welcome to MD Editor
+# Welcome to SolidMD
 
 ## A live Markdown sample
 
@@ -28,4 +28,4 @@ print(message)
 
 Read the [project plan](../PLAN.md) and add a local image when one is available:
 
-![MD Editor screenshot](../assets/screenshot.png)
+![SolidMD screenshot](../assets/screenshot.png)

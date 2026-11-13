@@ -1,0 +1,16 @@
+export const mergeMessages = {
+  "menu.mergeOpen": "Merge Open Files",
+  "merge.needTwo": "Open two files. Select the left file, then start merge.",
+  "merge.workerFailed": "The merge worker stopped unexpectedly.",
+  "merge.left": "Left",
+  "merge.result": "Result",
+  "merge.right": "Right",
+  "merge.conflict": "Conflict {number}",
+  "merge.conflictLeft": "{count} conflict left",
+  "merge.conflictsLeft": "{count} conflicts left",
+  "merge.accept.left": "← Left",
+  "merge.accept.right": "Right →",
+  "merge.accept.both": "Both",
+  "merge.applyChanges": "Apply non-conflicting changes",
+  "merge.counts": "{changes} {changeLabel}, {conflicts} {conflictLabel} left",
+} as const;

@@ -1,94 +1,124 @@
 // @vitest-environment jsdom
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 
-import type { MenuCommandMessage } from "../../src/shared/ipc/menu";
-
-let menuListener: ((command: MenuCommandMessage) => void) | null = null;
-
-beforeAll(() => {
-  const boundary = {
-    onMenuCommand: vi.fn((listener: (command: MenuCommandMessage) => void) => {
-      menuListener = listener;
-      return vi.fn();
-    }),
-  } as unknown as Window["api"];
-  Object.defineProperty(window, "api", { configurable: true, value: boundary });
-});
+import { viewsFeature } from "../../src/renderer/features/views/wiring";
 
 beforeEach(() => {
-  document.body.innerHTML = `<main id="workspace"><div id="divider"></div></main>`;
+  document.body.innerHTML = `
+    <main id="workspace">
+      <section id="editor"></section>
+      <div id="divider"></div>
+      <section id="preview"></section>
+    </main>`;
+  localStorage.clear();
   document.body.className = "";
-  menuListener = null;
 });
 
-describe("view installation", () => {
-  it("focus-mode menu and key commands report full-screen rejection", async () => {
-    const failure = new Error("Full screen failed");
-    const requestFullscreen = vi.fn<() => Promise<void>>()
-      .mockRejectedValueOnce(failure)
-      .mockRejectedValueOnce(failure)
-      .mockResolvedValue(undefined);
-    let fullScreenElement: Element | null = document.body;
-    const exitFullscreen = vi.fn(async () => {
-      fullScreenElement = null;
-      document.dispatchEvent(new Event("fullscreenchange"));
-    });
-    Object.defineProperty(document.documentElement, "requestFullscreen", {
-      configurable: true,
-      value: requestFullscreen,
-    });
-    Object.defineProperty(document, "exitFullscreen", {
-      configurable: true,
-      value: exitFullscreen,
-    });
-    Object.defineProperty(document, "fullscreenElement", {
-      configurable: true,
-      get: () => fullScreenElement,
-    });
-    const onError = vi.fn();
-    const onModeChange = vi.fn();
-    const toggleSync = vi.fn();
-    const { installViews } = await import("../../src/renderer/features/views/install");
-    const divider = document.querySelector<HTMLElement>("#divider");
-    const workspace = document.querySelector<HTMLElement>("#workspace");
-    if (divider === null || workspace === null) throw new Error("Missing view test elements");
-    installViews({ divider, onError, onModeChange, toggleSync, workspace });
+function installViews() {
+  const workspace = document.querySelector<HTMLElement>("#workspace");
+  const preview = document.querySelector<HTMLElement>("#preview");
+  const editor = document.querySelector<HTMLElement>("#editor");
+  if (workspace === null || preview === null || editor === null) {
+    throw new Error("Missing view fixture");
+  }
+  const hooks = viewsFeature.create({
+    editor: { scrollDOM: editor },
+    preview,
+    workspace,
+  } as unknown as Parameters<typeof viewsFeature.create>[0]);
+  return { hooks, workspace };
+}
 
-    menuListener?.("file-open");
-    menuListener?.("view-editor");
-    expect(workspace.dataset["viewMode"]).toBe("editor");
-    menuListener?.("view-preview");
-    expect(workspace.dataset["viewMode"]).toBe("preview");
-    menuListener?.("view-split");
-    expect(workspace.dataset["viewMode"]).toBe("split");
-    menuListener?.("view-sync-scroll");
-    expect(onModeChange).toHaveBeenCalledTimes(3);
-    expect(toggleSync).toHaveBeenCalledOnce();
-    menuListener?.("view-focus-mode");
-    await Promise.resolve();
-    await Promise.resolve();
-    document.dispatchEvent(new KeyboardEvent("keydown", {
-      bubbles: true,
-      ctrlKey: true,
-      key: "f",
-      shiftKey: true,
-    }));
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(2));
+it("AC-R2-01: exposes mode changes only as command handlers", () => {
+  const { hooks, workspace } = installViews();
 
-    expect(requestFullscreen).toHaveBeenCalledTimes(2);
-    expect(onError).toHaveBeenNthCalledWith(1, failure);
-    expect(onError).toHaveBeenNthCalledWith(2, failure);
+  hooks.commands?.["view.editor"]?.();
+  expect(workspace.dataset["viewMode"]).toBe("editor");
+  hooks.commands?.["view.preview"]?.();
+  expect(workspace.dataset["viewMode"]).toBe("preview");
+  hooks.commands?.["view.split"]?.();
+  expect(workspace.dataset["viewMode"]).toBe("split");
+});
 
-    menuListener?.("view-focus-mode");
-    await vi.waitFor(() => expect(document.body.classList.contains("focus-mode")).toBe(true));
-    document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
-    await vi.waitFor(() => expect(exitFullscreen).toHaveBeenCalledOnce());
-    expect(document.body.classList.contains("focus-mode")).toBe(false);
+it("does not expose commands when the view controller cannot start", () => {
+  document.querySelector("#divider")?.remove();
 
-    Object.defineProperty(navigator, "platform", { configurable: true, value: "MacIntel" });
-    installViews({ divider, onError, onModeChange, toggleSync, workspace });
-    Object.defineProperty(navigator, "platform", { configurable: true, value: "Win32" });
-    installViews({ divider, onError, onModeChange, toggleSync, workspace });
+  expect(installViews().hooks.commands).toBeUndefined();
+});
+
+it("AC-R2-04: focus mode reports transition failures", async () => {
+  const showStatus = vi.fn();
+  const workspace = document.querySelector<HTMLElement>("#workspace");
+  const preview = document.querySelector<HTMLElement>("#preview");
+  const editor = document.querySelector<HTMLElement>("#editor");
+  if (workspace === null || preview === null || editor === null) {
+    throw new Error("Missing view fixture");
+  }
+  const hooks = viewsFeature.create({
+    editor: { scrollDOM: editor },
+    preview,
+    showStatus,
+    workspace,
+  } as unknown as Parameters<typeof viewsFeature.create>[0]);
+
+  hooks.commands?.["view.focusMode"]?.();
+  await vi.waitFor(() => expect(showStatus).toHaveBeenCalledOnce());
+
+  expect(String(showStatus.mock.calls[0]?.[0]).toLowerCase()).toContain("fullscreen");
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: async () => Promise.reject("denied"),
   });
+  hooks.commands?.["view.focusMode"]?.();
+  await vi.waitFor(() => expect(showStatus).toHaveBeenCalledTimes(2));
+  expect(showStatus).toHaveBeenLastCalledWith("denied");
+});
+
+it("AC-R2-04: Escape leaves focus mode", async () => {
+  const fullScreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+  const requestDescriptor = Object.getOwnPropertyDescriptor(
+    document.documentElement,
+    "requestFullscreen",
+  );
+  const exitDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+  let fullScreenElement: Element | null = null;
+  const exitFullscreen = vi.fn(async () => {
+    fullScreenElement = null;
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullScreenElement,
+  });
+  Object.defineProperty(document.documentElement, "requestFullscreen", {
+    configurable: true,
+    value: async () => {
+      fullScreenElement = document.documentElement;
+    },
+  });
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: exitFullscreen,
+  });
+  try {
+    const { hooks } = installViews();
+    hooks.commands?.["view.focusMode"]?.();
+    await vi.waitFor(() => expect(document.body.classList.contains("focus-mode")).toBe(true));
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+
+    await vi.waitFor(() => expect(document.body.classList.contains("focus-mode")).toBe(false));
+    expect(exitFullscreen).toHaveBeenCalledOnce();
+  } finally {
+    if (fullScreenDescriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
+    else Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+    if (requestDescriptor === undefined) {
+      Reflect.deleteProperty(document.documentElement, "requestFullscreen");
+    } else {
+      Object.defineProperty(document.documentElement, "requestFullscreen", requestDescriptor);
+    }
+    if (exitDescriptor === undefined) Reflect.deleteProperty(document, "exitFullscreen");
+    else Object.defineProperty(document, "exitFullscreen", exitDescriptor);
+  }
 });

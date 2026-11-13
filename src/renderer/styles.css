@@ -1,11 +1,160 @@
 :root {
-  color: #1f2328;
-  background: #ffffff;
+  color: var(--surface-text);
+  background: var(--surface-background);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --surface-background: #ffffff;
+  --surface-muted-background: #f6f8fa;
+  --surface-text: #1f2328;
+  --muted-text: #57606a;
+  --hover-background: #d8dee4;
+  --selection-background: #cce5ff;
+  --selection-text: #1f2328;
+  --border-color: #d0d7de;
+  --control-border-color: #6e7781;
+  --focus-color: #0969da;
+  --danger-text: #9a3412;
+  --accent-background: #1f883d;
+  --accent-text: #ffffff;
+  --error-background: #fff1ef;
+  --error-text: #9a3412;
+  --error-border-color: #f5b7a8;
+  --overlay-background: rgb(0 0 0 / 25%);
+  --diff-add-background: #dafbe1;
+  --diff-add-emphasis: #aceebb;
+  --diff-remove-background: #ffebe9;
+  --diff-remove-emphasis: #ffb3ad;
+  --diff-change-background: #fff8c5;
+  --diff-change-emphasis: #ffb3ad;
+  --diff-change-marker: #bf8700;
+  --editor-background: #ffffff;
+  --preview-background: #ffffff;
+  --editor-text-color: #1f2328;
+  --preview-text-color: #1f2328;
+  --editor-share: 50%;
+  --editor-width: calc(50% - 110px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color: var(--surface-text);
+    background: var(--surface-background);
+    --surface-background: #0d1117;
+    --surface-muted-background: #161b22;
+    --surface-text: #e6edf3;
+    --muted-text: #8b949e;
+    --hover-background: #21262d;
+    --selection-background: #264f78;
+    --selection-text: #e6edf3;
+    --border-color: #30363d;
+    --control-border-color: #6e7681;
+    --focus-color: #58a6ff;
+    --danger-text: #ff7b72;
+    --accent-background: #238636;
+    --accent-text: #ffffff;
+    --error-background: #3d1418;
+    --error-text: #ff7b72;
+    --error-border-color: #f85149;
+    --overlay-background: rgb(0 0 0 / 25%);
+    --diff-add-background: #12261e;
+    --diff-add-emphasis: #1f6f3f;
+    --diff-remove-background: #2d1214;
+    --diff-remove-emphasis: #8e2a2a;
+    --diff-change-background: #2d2300;
+    --diff-change-emphasis: #7a5c00;
+    --diff-change-marker: #d29922;
+    --editor-background: #0d1117;
+    --preview-background: #0d1117;
+    --editor-text-color: #e6edf3;
+    --preview-text-color: #e6edf3;
+  }
+}
+
+:root[data-theme="light"] {
+  color: var(--surface-text);
+  background: var(--surface-background);
+  --surface-background: #ffffff;
+  --surface-muted-background: #f6f8fa;
+  --surface-text: #1f2328;
+  --muted-text: #57606a;
+  --hover-background: #d8dee4;
+  --selection-background: #cce5ff;
+  --selection-text: #1f2328;
+  --border-color: #d0d7de;
+  --control-border-color: #6e7781;
+  --focus-color: #0969da;
+  --danger-text: #9a3412;
+  --accent-background: #1f883d;
+  --accent-text: #ffffff;
+  --error-background: #fff1ef;
+  --error-text: #9a3412;
+  --error-border-color: #f5b7a8;
+  --overlay-background: rgb(0 0 0 / 25%);
+  --diff-add-background: #dafbe1;
+  --diff-add-emphasis: #aceebb;
+  --diff-remove-background: #ffebe9;
+  --diff-remove-emphasis: #ffb3ad;
+  --diff-change-background: #fff8c5;
+  --diff-change-emphasis: #ffb3ad;
+  --diff-change-marker: #bf8700;
+  --editor-background: #ffffff;
+  --preview-background: #ffffff;
+  --editor-text-color: #1f2328;
+  --preview-text-color: #1f2328;
+}
+
+:root[data-theme="dark"] {
+  color: var(--surface-text);
+  background: var(--surface-background);
+  --surface-background: #0d1117;
+  --surface-muted-background: #161b22;
+  --surface-text: #e6edf3;
+  --muted-text: #8b949e;
+  --hover-background: #21262d;
+  --selection-background: #264f78;
+  --selection-text: #e6edf3;
+  --border-color: #30363d;
+  --control-border-color: #6e7681;
+  --focus-color: #58a6ff;
+  --danger-text: #ff7b72;
+  --accent-background: #238636;
+  --accent-text: #ffffff;
+  --error-background: #3d1418;
+  --error-text: #ff7b72;
+  --error-border-color: #f85149;
+  --overlay-background: rgb(0 0 0 / 25%);
+  --diff-add-background: #12261e;
+  --diff-add-emphasis: #1f6f3f;
+  --diff-remove-background: #2d1214;
+  --diff-remove-emphasis: #8e2a2a;
+  --diff-change-background: #2d2300;
+  --diff-change-emphasis: #7a5c00;
+  --diff-change-marker: #d29922;
+  --editor-background: #0d1117;
+  --preview-background: #0d1117;
+  --editor-text-color: #e6edf3;
+  --preview-text-color: #e6edf3;
+}
+
+::selection {
+  background: var(--selection-background);
+  color: var(--selection-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  color: var(--surface-text);
+  background-color: var(--surface-background);
 }
 
 html,
@@ -25,8 +174,8 @@ body {
   display: flex;
   min-height: 34px;
   overflow-x: auto;
-  border-bottom: 1px solid #d0d7de;
-  background: #f6f8fa;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-muted-background);
 }
 
 .tab {
@@ -35,15 +184,15 @@ body {
   align-items: center;
   max-width: 240px;
   padding: 6px 8px 6px 12px;
-  border-right: 1px solid #d0d7de;
+  border-right: 1px solid var(--border-color);
   cursor: default;
-  color: #57606a;
+  color: var(--muted-text);
   font-size: 13px;
 }
 
 .tab[aria-selected="true"] {
-  color: #1f2328;
-  background: #ffffff;
+  color: var(--surface-text);
+  background: var(--surface-background);
 }
 
 .tab-name {
@@ -53,7 +202,7 @@ body {
 }
 
 .tab-dirty {
-  color: #9a3412;
+  color: var(--danger-text);
 }
 
 .tab-close {
@@ -68,23 +217,30 @@ body {
 }
 
 .tab-close:hover {
-  background: #d0d7de;
+  background: var(--hover-background);
 }
 
 #workspace {
-  --editor-share: 50%;
-
   position: relative;
   display: grid;
   min-height: 0;
-  grid-template-columns: 220px minmax(0, var(--editor-share)) 6px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
+}
+
+#workspace[data-divider-custom="true"] {
+  grid-template-columns: 220px minmax(0, var(--editor-width)) minmax(0, 1fr);
+}
+
+#workspace[data-stable-pane-widths="true"] {
+  grid-template-columns:
+    220px minmax(0, var(--editor-resize-width)) minmax(0, var(--preview-resize-width));
 }
 
 #workspace-sidebar {
   min-width: 0;
   overflow: auto;
-  border-right: 1px solid #d0d7de;
-  background: #f6f8fa;
+  border-right: 1px solid var(--border-color);
+  background: var(--surface-muted-background);
 }
 
 .workspace-sidebar-header {
@@ -125,7 +281,7 @@ body {
 }
 
 .workspace-row:hover {
-  background: #d8dee4;
+  background: var(--hover-background);
 }
 
 .workspace-folder::before {
@@ -138,13 +294,41 @@ body {
 
 #workspace-empty {
   margin: 8px;
-  color: #57606a;
+  color: var(--muted-text);
   font-size: 12px;
 }
 
 #workspace[data-view-mode="editor"],
 #workspace[data-view-mode="preview"] {
   grid-template-columns: 220px minmax(0, 1fr);
+}
+
+body.focus-mode {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+body.focus-mode #tabs,
+body.focus-mode #status,
+body.focus-mode #workspace-sidebar {
+  display: none;
+}
+
+body.focus-mode #workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+body.focus-mode #workspace[data-divider-custom="true"] {
+  grid-template-columns: minmax(0, var(--editor-share)) minmax(0, 1fr);
+}
+
+body.focus-mode #workspace[data-stable-pane-widths="true"] {
+  grid-template-columns:
+    minmax(0, var(--editor-resize-width)) minmax(0, var(--preview-resize-width));
+}
+
+body.focus-mode #workspace[data-view-mode="editor"],
+body.focus-mode #workspace[data-view-mode="preview"] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 #workspace[data-view-mode="editor"] #preview,
@@ -155,33 +339,31 @@ body {
 }
 
 #divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% + 107px);
+  width: 6px;
   z-index: 1;
   cursor: col-resize;
   background: #d0d7de;
   touch-action: none;
 }
 
+#workspace[data-divider-custom="true"] #divider {
+  left: calc(220px + var(--editor-width) - 3px);
+}
+
+body.focus-mode #divider {
+  left: calc(50% - 3px);
+}
+
+body.focus-mode #workspace[data-divider-custom="true"] #divider {
+  left: calc(var(--editor-share) - 3px);
+}
+
 #divider:hover {
   background: #0969da;
-}
-
-body.focus-mode {
-  grid-template-rows: minmax(0, 1fr);
-}
-
-body.focus-mode #workspace {
-  grid-template-columns: minmax(0, var(--editor-share)) 6px minmax(0, 1fr);
-}
-
-body.focus-mode #workspace[data-view-mode="editor"],
-body.focus-mode #workspace[data-view-mode="preview"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-body.focus-mode #tabs,
-body.focus-mode #workspace-sidebar,
-body.focus-mode #status {
-  display: none;
 }
 
 #preview-error {
@@ -190,10 +372,10 @@ body.focus-mode #status {
   right: 12px;
   max-width: 40%;
   padding: 4px 10px;
-  border: 1px solid #f5b7a8;
+  border: 1px solid var(--error-border-color);
   border-radius: 6px;
-  color: #9a3412;
-  background: #fff1ef;
+  color: var(--error-text);
+  background: var(--error-background);
   font-size: 12px;
 }
 
@@ -202,7 +384,7 @@ body.focus-mode #status {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgb(0 0 0 / 25%);
+  background: var(--overlay-background);
 }
 
 #close-prompt[hidden] {
@@ -213,7 +395,7 @@ body.focus-mode #status {
   width: min(440px, 90vw);
   padding: 20px;
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface-background);
   box-shadow: 0 12px 32px rgb(0 0 0 / 20%);
 }
 
@@ -230,20 +412,20 @@ body.focus-mode #status {
 .close-prompt-actions button {
   min-width: 80px;
   padding: 6px 12px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--control-border-color);
   border-radius: 6px;
-  background: #f6f8fa;
+  background: var(--surface-muted-background);
   cursor: pointer;
 }
 
 .close-prompt-actions button[data-action="discard"] {
-  color: #b42318;
+  color: var(--danger-text);
 }
 
 .close-prompt-actions button[data-action="save"] {
-  border-color: #1f883d;
-  color: #ffffff;
-  background: #1f883d;
+  border-color: var(--accent-background);
+  color: var(--accent-text);
+  background: var(--accent-background);
 }
 
 #editor,
@@ -252,37 +434,51 @@ body.focus-mode #status {
   min-height: 0;
 }
 
-#workspace[data-stable-pane-widths="true"][data-view-mode="split"] #editor {
-  width: var(--editor-resize-width);
-}
-
-#workspace[data-stable-pane-widths="true"][data-view-mode="split"] #preview {
-  width: var(--preview-resize-width);
+#workspace[data-view-mode="preview"] .preview-document {
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 #editor {
+  border-right: 1px solid var(--border-color);
   overflow: hidden;
+  background: var(--editor-background);
+  color: var(--editor-text-color);
 }
 
 #editor .cm-editor,
 #editor .cm-scroller {
   height: 100%;
+  background: var(--editor-background);
+  color: var(--editor-text-color);
+}
+
+#editor .cm-editor {
+  background: var(--custom-background, var(--editor-background));
+  color: var(--custom-text-color, var(--editor-text-color));
 }
 
 #editor .cm-editor.cm-focused {
   outline: none;
 }
 
+#editor .cm-gutters {
+  border-color: var(--border-color);
+  background: var(--surface-muted-background);
+  color: var(--muted-text);
+}
+
+#editor .cm-activeLine,
+#editor .cm-activeLineGutter {
+  background: var(--hover-background);
+}
+
 #preview {
   padding: 24px 32px;
   overflow: auto;
   line-height: 1.55;
-}
-
-.preview-document {
-  width: 100%;
-  max-width: 900px;
-  margin: 0 auto;
+  background: var(--custom-background, var(--preview-background));
+  color: var(--custom-text-color, var(--preview-text-color));
 }
 
 #preview > :first-child,
@@ -293,11 +489,11 @@ body.focus-mode #status {
 /* Off-screen regions skip layout and paint but keep their space. Blocks are
    grouped into pages and pages into sections: content-visibility checks scale
    with the number of contained elements, so one wrapper per block makes
-   scrolling worse as the document grows. A section holds 10 pages of 10
-   blocks, so its estimate is 12,000px and a page's is 1,200px. */
+   scrolling worse as the document grows. A section holds 5 pages of 20
+   blocks, so its estimate is 12,000px and a page's is 2,400px. */
 .preview-page {
   content-visibility: auto;
-  contain-intrinsic-size: auto 1200px;
+  contain-intrinsic-size: auto 2400px;
 }
 
 .preview-section {
@@ -309,7 +505,7 @@ body.focus-mode #status {
   overflow: auto;
   padding: 12px;
   border-radius: 6px;
-  background: #f6f8fa;
+  background: var(--surface-muted-background);
 }
 
 #preview code {
@@ -323,8 +519,8 @@ body.focus-mode #status {
 #status {
   min-height: 24px;
   padding: 3px 10px;
-  border-top: 1px solid #d0d7de;
-  color: #9a3412;
-  background: #f6f8fa;
+  border-top: 1px solid var(--border-color);
+  color: var(--danger-text);
+  background: var(--surface-muted-background);
   font-size: 12px;
 }

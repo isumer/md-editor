@@ -47,6 +47,13 @@ describe("tab modules", () => {
       "file-save",
       "file-save-as",
       "file-compare-open",
+      "file-merge-open",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-sync-scroll",
+      "view-focus-mode",
+      "view-full-screen",
     ]);
   });
 
@@ -66,9 +73,11 @@ describe("tab modules", () => {
   });
 
   it("AC-R1-12: render heartbeat replies are distinct from render results", async () => {
-    vi.doMock("dompurify", () => ({
-      default: { addHook: vi.fn(), sanitize: (html: string) => html },
-    }));
+    vi.doMock("dompurify", () => {
+      // Like the real export: callable, returning a configurable instance.
+      const instance = { addHook: vi.fn(), setConfig: vi.fn(), sanitize: (html: string) => html };
+      return { default: Object.assign(() => instance, instance) };
+    });
     const { isRenderPong } = await import("../../src/renderer/tabs/renderController");
     expect(isRenderPong({ op: "pong", id: 3 })).toBe(true);
     expect(isRenderPong({

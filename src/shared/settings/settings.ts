@@ -5,9 +5,10 @@ export interface Settings {
   version: 1;
   theme: Theme;
   fontSize: number;
-  preview: { scrollSync: boolean };
-  editor: { wrap: boolean; tabSize: number };
+  preview: { scrollSync: boolean; background: string | null };
+  editor: { wrap: boolean; tabSize: number; background: string | null };
   encoding: { default: 'utf-8'; lineEndings: LineEndingSetting };
+  updates: { enabled: boolean; lastCheckedAt: number | null };
   ignore: string[];
   [key: string]: unknown;
 }
@@ -19,9 +20,10 @@ function createDefaultSettings(): Settings {
     version: 1,
     theme: 'system',
     fontSize: 14,
-    preview: { scrollSync: true },
-    editor: { wrap: true, tabSize: 2 },
+    preview: { scrollSync: true, background: null },
+    editor: { wrap: true, tabSize: 2, background: null },
     encoding: { default: 'utf-8', lineEndings: 'lf' },
+    updates: { enabled: true, lastCheckedAt: null },
     ignore: [...DEFAULT_IGNORE],
   };
 }
@@ -48,23 +50,25 @@ function normalizeLineEndings(value: unknown): LineEndingSetting {
   return 'lf';
 }
 
-function normalizePreview(value: unknown): { scrollSync: boolean } {
+function normalizePreview(value: unknown): { scrollSync: boolean; background: string | null } {
   if (!isRecord(value)) {
-    return { scrollSync: true };
+    return { scrollSync: true, background: null };
   }
 
   return {
     scrollSync:
       typeof value['scrollSync'] === 'boolean' ? value['scrollSync'] : true,
+    background:
+      typeof value['background'] === 'string' ? value['background'] : null,
   };
 }
 
 function normalizeEditor(
   value: unknown,
   migrate: boolean,
-): { wrap: boolean; tabSize: number } {
+): { wrap: boolean; tabSize: number; background: string | null } {
   if (!isRecord(value)) {
-    return { wrap: true, tabSize: 2 };
+    return { wrap: true, tabSize: 2, background: null };
   }
 
   const tabSize =
@@ -75,6 +79,8 @@ function normalizeEditor(
   return {
     wrap: typeof value['wrap'] === 'boolean' ? value['wrap'] : true,
     tabSize: typeof tabSize === 'number' ? tabSize : 2,
+    background:
+      typeof value['background'] === 'string' ? value['background'] : null,
   };
 }
 
@@ -109,6 +115,24 @@ function normalizeIgnore(value: unknown): string[] {
   return entries;
 }
 
+function normalizeUpdates(value: unknown): {
+  enabled: boolean;
+  lastCheckedAt: number | null;
+} {
+  if (!isRecord(value)) {
+    return { enabled: true, lastCheckedAt: null };
+  }
+  const lastCheckedAt = value['lastCheckedAt'];
+  return {
+    enabled: typeof value['enabled'] === 'boolean' ? value['enabled'] : true,
+    lastCheckedAt:
+      typeof lastCheckedAt === 'number' && Number.isFinite(lastCheckedAt) &&
+        lastCheckedAt >= 0
+        ? lastCheckedAt
+        : null,
+  };
+}
+
 export function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value)) {
     return createDefaultSettings();
@@ -129,6 +153,7 @@ export function normalizeSettings(value: unknown): Settings {
       version === undefined || version === 0,
     ),
     encoding: normalizeEncoding(value['encoding']),
+    updates: normalizeUpdates(value['updates']),
     ignore: normalizeIgnore(value['ignore']),
   };
 

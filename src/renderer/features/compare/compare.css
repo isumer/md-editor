@@ -5,7 +5,7 @@
   min-height: 0;
   grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
-  background: #ffffff;
+  background: var(--surface-background);
 }
 
 .compare-view[hidden] {
@@ -13,7 +13,7 @@
 }
 
 #workspace.compare-open {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
 }
 
 .compare-toolbar {
@@ -22,8 +22,8 @@
   align-items: center;
   justify-content: flex-end;
   padding: 6px 12px;
-  border-bottom: 1px solid #d0d7de;
-  background: #f6f8fa;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-muted-background);
 }
 
 .compare-highlight-label {
@@ -37,9 +37,9 @@
 .compare-button,
 .compare-highlight {
   padding: 4px 8px;
-  border: 1px solid #afb8c1;
+  border: 1px solid var(--control-border-color);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--surface-background);
 }
 
 .compare-headings,
@@ -50,7 +50,7 @@
 
 .compare-heading {
   padding: 6px 12px;
-  border-bottom: 1px solid #d0d7de;
+  border-bottom: 1px solid var(--border-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -58,7 +58,7 @@
 
 .compare-heading:first-child,
 .compare-cell:first-child {
-  border-right: 1px solid #d0d7de;
+  border-right: 1px solid var(--border-color);
 }
 
 .compare-rows {
@@ -78,8 +78,8 @@
 
 .compare-line-number {
   padding: 0 8px;
-  color: #656d76;
-  background: #f6f8fa;
+  color: var(--muted-text);
+  background: var(--surface-muted-background);
   text-align: right;
   user-select: none;
 }
@@ -91,28 +91,28 @@
 .compare-added,
 .compare-deleted,
 .compare-modified {
-  background: #fff8c5;
+  background: var(--diff-change-background);
 }
 
 .compare-added {
-  background: #dafbe1;
+  background: var(--diff-add-background);
 }
 
 .compare-deleted {
-  background: #ffebe9;
+  background: var(--diff-remove-background);
 }
 
 .compare-changed {
   border-radius: 2px;
-  background: #ffb3ad;
+  background: var(--diff-change-emphasis);
 }
 
 .compare-added .compare-changed {
-  background: #aceebb;
+  background: var(--diff-add-emphasis);
 }
 
 .compare-selected {
-  outline: 2px solid #0969da;
+  outline: 2px solid var(--focus-color);
   outline-offset: -2px;
 }
 
@@ -130,5 +130,5 @@
 
 .compare-overview-marker {
   height: 4px;
-  background: #bf8700;
+  background: var(--diff-change-marker);
 }

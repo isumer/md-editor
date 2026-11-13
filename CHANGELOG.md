@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to MD Editor will be documented in this file.
+All notable changes to SolidMD will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Custom editor and preview background colours now survive restarts. Invalid colours use the theme, and text remains readable.
 - Several files can be open at once, each in its own tab with its own text, undo history, cursor, scroll and preview. Opening a file that is already open focuses its tab. A dot marks each tab with unsaved changes. Dropping a file onto the window opens it in a tab.
 - Closing a tab or quitting with unsaved changes asks first: Cancel, Discard or Save. Reopening the app restores the files you had open, with their unsaved changes.
 - Unsaved typing is drafted every few seconds. If the window crashes, the app reopens it and restores the drafts. A stuck preview restarts on its own and the editor stays responsive.
@@ -17,10 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A reference table of the 36 languages code blocks are highlighted in, with a small sample file for each, as groundwork for opening source files.
 - Export groundwork: the editor can build one self-contained HTML page from the rendered preview, and print HTML to PDF in a hidden window that runs no script and loads no local files. The file chooser and menu commands come later.
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
-- A View menu now controls the layout: show the editor alone, the preview alone, or both side by side. The divider between the panes drags to any share and returns to the middle on a double-click; its position comes back after a restart. Focus mode fills the screen and hides the tab bar and status bar until you press Esc. Scrolling one pane brings the same passage to the top of the other; you can turn this off, and the choice is kept.
+- The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
+- Help > Check for Updates tells you what it found: a new version with its release notes, that you are up to date, or why the check failed. A new version opens the download page only after you agree. The app also checks once a day at startup, and you can turn that off from the update dialog.
+- A View menu switches between side by side, editor only and preview only (Ctrl+1, Ctrl+2, Ctrl+3; Cmd on macOS), and Full Screen uses the window's own full-screen state. Drag the divider to set the pane widths; double-click it to go back to half and half. The app keeps the divider position and your scroll place when you switch modes, and a wide preview keeps a 900-pixel text column.
+- Scrolling one pane brings the same passage to the top of the other. You can turn this off, and the choice is kept.
 
 ### Changed
 
+- Renamed to SolidMD.
+- No visible change: each feature (compare, merge, preview, workspace) now keeps its own files for its menu entries, messages and editor wiring, so features no longer share one big file. Menus, messages and shortcuts stay exactly as they were.
 - Documents above 4 MiB now open without Markdown syntax highlighting, Markdown indentation on input and fold markers, so they open without a long freeze. Bracket matching still works.
 - Typing in a large document now updates only the preview blocks you changed. Other blocks stay as they are.
 - The preview keeps up with typing on 50 KB and 500 KB documents. The scroll stays smooth.
@@ -45,6 +51,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".
 - When two tabs save under the same new file name at the same moment, the second save now refuses with a message instead of overwriting the first save's content.
 - Opening a file, or restoring a draft, while another tab is still saving that same file now shows a message and does not open a second tab for that file.
+- Text is readable in the light and dark themes in every view: the workspace sidebar, tabs, status line, compare and merge views, and the editor now take their colours from the current theme. In dark mode the sidebar text no longer sits on a light background.
+- The editor's code colours now follow the theme, so Markdown markers and code stay readable in dark mode.
 
 ### Security
 
@@ -72,5 +80,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Delayed showing the window until its first paint to avoid a white startup flash.
 
-[Unreleased]: https://github.com/isumer/md-editor/compare/v0.0.1...HEAD
-[0.0.1]: https://github.com/isumer/md-editor/releases/tag/v0.0.1
+[Unreleased]: https://github.com/isumer/solidmd/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/isumer/solidmd/releases/tag/v0.0.1

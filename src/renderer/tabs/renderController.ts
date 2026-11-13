@@ -1,4 +1,5 @@
 import type { DocumentRecord } from "../core/document";
+import type { ReplicatedVersion } from "../core/replication";
 import { WorkerHeartbeat } from "../core/heartbeat";
 import type { ChangeDocumentMessage } from "../../shared/ipc/io";
 import type {
@@ -51,6 +52,7 @@ export class RenderController {
     this.worker = this.createWorker();
     this.proxy = this.createProxy();
     this.scheduler = new RenderScheduler((request) => this.render(request.id), {
+      dispatchImmediately: true,
       onApplied: (latency) => {
         const end = performance.now();
         performance.measure("preview-latency", { start: end - latency, end });
@@ -82,9 +84,13 @@ export class RenderController {
   }
 
   attach(document: DocumentRecord, text = document.state.doc.toString()): void {
+    this.attachVersion(document.replication.current(), text);
+  }
+
+  attachVersion(version: ReplicatedVersion, text: string): void {
     this.worker.postMessage({
       op: "attach",
-      ...document.replication.current(),
+      ...version,
       text,
     } satisfies RenderAttachMessage);
   }
@@ -105,6 +111,7 @@ export class RenderController {
   }
 
   schedule(): void {
+    performance.mark("preview-scheduled");
     this.scheduler.schedule();
   }
 
@@ -137,6 +144,7 @@ export class RenderController {
         this.heartbeat.pong(event.data.id);
         return;
       }
+      performance.mark("preview-response");
       this.handlers.onmessage?.(event);
     };
     this.worker.onerror = (event) => this.handlers.onerror?.(event);
@@ -145,6 +153,7 @@ export class RenderController {
   private render(id: number): void {
     const document = this.options.current();
     if (document) {
+      performance.mark("preview-dispatch");
       this.worker.postMessage({ op: "render", id, ...document.replication.current() });
     }
   }

@@ -108,7 +108,7 @@ for (const invalidCase of invalidSaveCases) {
     tag: "@AC-SEC-07",
     annotation: { type: "AC-SEC-07" },
   }, async () => {
-    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-bad-save-"));
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-bad-save-"));
     const targetPath = path.join(temporaryDirectory, "target.md");
     await fs.writeFile(targetPath, "original", "utf8");
     const { application, page } = await launchEditor(fixturePath);
@@ -226,6 +226,7 @@ test("the preload exposes only the fixed named API", {
         "listDrafts",
         "listWorkspaceChildren",
         "loadSession",
+        "loadSettings",
         "onMenuCommand",
         "onOpenRequest",
         "onSessionCloseRequest",
@@ -237,7 +238,9 @@ test("the preload exposes only the fixed named API", {
         "releaseDocument",
         "respondSessionClose",
         "saveDocument",
+        "saveSettings",
         "sendChanges",
+        "toggleFullScreen",
       ],
       legacyGlobal: false,
     });
@@ -275,7 +278,7 @@ test("the file-save contract rejects raw and forged grants", {
   tag: "@AC-SEC-09",
   annotation: { type: "AC-SEC-09" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-raw-grant-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-raw-grant-"));
   const targetPath = path.join(temporaryDirectory, "must-not-exist.md");
   const { application, page } = await launchEditor(fixturePath);
   try {
@@ -312,7 +315,7 @@ test("the file-save contract rejects a released grant", {
   tag: "@AC-SEC-09",
   annotation: { type: "AC-SEC-09" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-revoked-grant-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-revoked-grant-"));
   const firstPath = path.join(temporaryDirectory, "first.md");
   await fs.writeFile(firstPath, "first", "utf8");
   const { application, page } = await launchEditor(fixturePath);

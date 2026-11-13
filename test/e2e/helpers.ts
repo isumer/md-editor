@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 
@@ -20,14 +21,37 @@ export const fixturePath = path.join(repositoryRoot, "test/fixtures/sample.md");
 export const linkFixturePath = path.join(repositoryRoot, "test/fixtures/external-link.md");
 export const unsafeHtmlFixturePath = path.join(repositoryRoot, "test/fixtures/unsafe-html.md");
 
+// Run 43054587932 spent 15 s on first-exec assessment and page-in; prewarm before test budgets.
+function prewarmElectronBinary(): void {
+  const started = Date.now();
+  let binary: unknown;
+  try {
+    binary = createRequire(__filename)("electron/index.js");
+  } catch {
+    return;
+  }
+  if (typeof binary !== "string") {
+    return;
+  }
+  try {
+    // ELECTRON_RUN_AS_NODE would skip the Electron boot.
+    const result = spawnSync(binary, ["--version"], {
+      timeout: 60_000,
+      env: launchEnvironment(),
+    });
+    if (result.error === undefined) {
+      console.log(`electron prewarm: ${String(Date.now() - started)} ms`);
+    }
+  } catch {
+    // The real launch reports any persistent failure.
+  }
+}
+prewarmElectronBinary();
+
 export interface LaunchEditorOptions {
   // Runs after the first window exists and before the argv document is applied.
   // userDataDir is the profile launchEditor created and must remove on failure.
-  onPage?: (editor: {
-    application: ElectronApplication;
-    page: Page;
-    userDataDir: string;
-  }) => void;
+  onPage?: (editor: LaunchedEditor) => void;
   // Test-only override; the real bound is ARGV_TITLE_TIMEOUT_MS.
   titleTimeoutMs?: number;
 }
@@ -43,7 +67,7 @@ export interface LaunchedEditor {
 }
 
 export async function createUserDataDirectory(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-userdata-"));
+  return fs.mkdtemp(path.join(os.tmpdir(), "solidmd-userdata-"));
 }
 
 function launchEnvironment(): Record<string, string> {
@@ -56,22 +80,44 @@ function launchEnvironment(): Record<string, string> {
   return environment;
 }
 
+const ARGV_TITLE_POLL_MS = 10;
+
 async function waitForArgvDocument(
   page: Page,
   filePath: string,
   timeout: number,
 ): Promise<void> {
   const waitStarted = Date.now();
-  await expect.poll(
-    () => page.title(),
-    {
-      message: `argv document did not open: ${path.basename(filePath)}`,
+  const name = path.basename(filePath);
+  // expect.poll backs off to 1 s between reads, so a startup measured
+  // through it gains up to a second the app never spent. The title is
+  // checked inside the page every 10 ms instead.
+  await page
+    .waitForFunction((expected) => document.title.includes(expected), name, {
+      polling: ARGV_TITLE_POLL_MS,
       timeout,
-    },
-  ).toContain(path.basename(filePath));
+    })
+    .catch(async (error: unknown) => {
+      const title = await page.title().catch(() => "<closed>");
+      throw new Error(`argv document did not open: ${name} (title "${title}")`, { cause: error });
+    });
   console.log(
-    `argv title wait: ${String(Date.now() - waitStarted)} ms (${path.basename(filePath)})`,
+    `argv title wait: ${String(Date.now() - waitStarted)} ms (${name})`,
   );
+}
+
+async function applyCpuThrottle(
+  page: Page,
+  configuredRate: string,
+): Promise<void> {
+  const rate = Number(configuredRate);
+  if (!Number.isFinite(rate) || rate < 1) {
+    throw new Error(
+      "MDEDITOR_CPU_THROTTLE must be a number greater than or equal to 1",
+    );
+  }
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setCPUThrottlingRate", { rate });
 }
 
 export async function launchEditor(
@@ -104,6 +150,10 @@ export async function launchEditor(
   }
   try {
     const page = await application.firstWindow();
+    const configuredCpuThrottle = process.env["MDEDITOR_CPU_THROTTLE"];
+    if (configuredCpuThrottle !== undefined) {
+      await applyCpuThrottle(page, configuredCpuThrottle);
+    }
     // Runs before the argv document is applied, so startup traffic is observable.
     options.onPage?.({ application, page, userDataDir: profileDirectory });
     if (filePath) {
@@ -125,7 +175,7 @@ export async function launchEditor(
   }
 }
 
-const PROFILE_PREFIX = "mdeditor-userdata-";
+const PROFILE_PREFIX = "solidmd-userdata-";
 
 // A crashed Playwright page cannot be reused, but the window reloads. Execute
 // an expression in the live renderer through the main process instead.

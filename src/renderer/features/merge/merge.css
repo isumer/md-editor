@@ -19,8 +19,8 @@
   min-height: 42px;
   padding: 5px 8px;
   overflow-x: auto;
-  border-bottom: 1px solid #d0d7de;
-  background: #f6f8fa;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-muted-background);
   white-space: nowrap;
 }
 
@@ -33,9 +33,9 @@
 .merge-choice,
 .merge-undo {
   padding: 3px 7px;
-  border: 1px solid #afb8c1;
+  border: 1px solid var(--control-border-color);
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--surface-background);
   cursor: pointer;
 }
 
@@ -53,7 +53,7 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-right: 1px solid #d0d7de;
+  border-right: 1px solid var(--border-color);
 }
 
 .merge-pane:last-child {
@@ -64,9 +64,9 @@
   height: 28px;
   margin: 0;
   padding: 5px 10px;
-  border-bottom: 1px solid #d0d7de;
-  color: #57606a;
-  background: #f6f8fa;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--muted-text);
+  background: var(--surface-muted-background);
   font-size: 13px;
 }
 

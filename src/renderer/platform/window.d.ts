@@ -26,6 +26,11 @@ import type {
   SessionLoadResponse,
 } from "../../shared/ipc/session";
 import type {
+  SettingsReadResponse,
+  SettingsWriteRequest,
+  SettingsWriteResponse,
+} from "../../shared/ipc/settings";
+import type {
   ChooseWorkspaceRootResponse,
   ListWorkspaceChildrenResponse,
   OpenWorkspaceFileResponse,
@@ -50,6 +55,8 @@ interface Api {
   contributeMenu(request: MenuContribution): Promise<Result<void>>;
   onOpenRequest(listener: (request: Result<DocumentReference>) => void): () => void;
   loadSession(): Promise<Result<SessionLoadResponse>>;
+  loadSettings(): Promise<Result<SettingsReadResponse>>;
+  saveSettings(settings: SettingsWriteRequest): Promise<Result<SettingsWriteResponse>>;
   respondSessionClose(result: SessionCloseResult): Promise<Result<void>>;
   onSessionCloseRequest(listener: (request: SessionCloseRequest) => void): () => void;
   chooseWorkspaceRoot(): Promise<Result<ChooseWorkspaceRootResponse>>;
@@ -59,6 +66,7 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  toggleFullScreen(): Promise<Result<void>>;
 }
 
 declare global {

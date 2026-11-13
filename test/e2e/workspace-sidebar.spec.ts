@@ -68,45 +68,59 @@ test("Open Folder shows a lazy Markdown tree", {
   }
 });
 
-test("a second expand reuses loaded children and keeps editing responsive", {
-  tag: "@AC-R11-02",
-  annotation: { type: "AC-R11-02" },
-}, async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-large-"));
-  const bulk = path.join(root, "bulk");
-  await fs.mkdir(bulk);
-  await writeNumberedFiles(bulk, 5_000, () => "# Entry\n");
-  const { application, page } = await launchEditor();
-  try {
-    await openWorkspace(application, page, root);
-    const folder = page.getByRole("button", { name: "bulk" });
-    await folder.click();
-    const editor = page.getByTestId("editor").locator(".cm-content");
-    await editor.click();
-    await page.keyboard.type("responsive");
-    await expect(editor).toContainText("responsive");
-    await expect(page.getByTestId("workspace-row")).toHaveCount(5_001);
-    const durations = await page.evaluate(async () => {
-      const button = document.querySelector<HTMLButtonElement>('button[data-path="bulk"]');
-      const samples: number[] = [];
-      for (let index = 0; index < 30; index += 1) {
-        button?.click();
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        const started = performance.now();
-        button?.click();
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        samples.push(performance.now() - started);
-      }
-      return samples;
-    });
-    await expect(page.locator('[data-testid="workspace-row"]:visible')).toHaveCount(5_001);
-    console.log(`AC-R11-02 expand p95 ${percentile95(durations).toFixed(1)} ms`);
-    expect(durations).toHaveLength(30);
-    expect(percentile95(durations)).toBeLessThan(500);
-  } finally {
-    await closeEditor(application, page);
-    await fs.rm(root, { recursive: true, force: true });
-  }
+test.describe("a 5,000-file folder", () => {
+  // Writing and removing 5,000 files takes seconds on a Windows runner; the
+  // hooks keep that time outside the test's own timeout.
+  let root = "";
+
+  test.beforeAll(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-large-"));
+    const bulk = path.join(root, "bulk");
+    await fs.mkdir(bulk);
+    await writeNumberedFiles(bulk, 5_000, () => "# Entry\n");
+  });
+
+  test.afterAll(async () => {
+    if (root !== "") {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a second expand reuses loaded children and keeps editing responsive", {
+    tag: "@AC-R11-02",
+    annotation: { type: "AC-R11-02" },
+  }, async () => {
+    const { application, page } = await launchEditor();
+    try {
+      await openWorkspace(application, page, root);
+      const folder = page.getByRole("button", { name: "bulk" });
+      await folder.click();
+      const editor = page.getByTestId("editor").locator(".cm-content");
+      await editor.click();
+      await page.keyboard.type("responsive");
+      await expect(editor).toContainText("responsive");
+      await expect(page.getByTestId("workspace-row")).toHaveCount(5_001);
+      const durations = await page.evaluate(async () => {
+        const button = document.querySelector<HTMLButtonElement>('button[data-path="bulk"]');
+        const samples: number[] = [];
+        for (let index = 0; index < 30; index += 1) {
+          button?.click();
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          const started = performance.now();
+          button?.click();
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          samples.push(performance.now() - started);
+        }
+        return samples;
+      });
+      await expect(page.locator('[data-testid="workspace-row"]:visible')).toHaveCount(5_001);
+      console.log(`AC-R11-02 expand p95 ${percentile95(durations).toFixed(1)} ms`);
+      expect(durations).toHaveLength(30);
+      expect(percentile95(durations)).toBeLessThan(500);
+    } finally {
+      await closeEditor(application, page);
+    }
+  });
 });
 
 test("the workspace filter keeps matching file ancestors", {
@@ -133,7 +147,7 @@ test("clicking a workspace file opens and reuses its tab", {
   tag: "@AC-R11-04",
   annotation: { type: "AC-R11-04" },
 }, async () => {
-  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "mdeditor-workspace-"));
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-workspace-"));
   await writeNumberedFiles(temporaryDirectory, 31, (index) => {
     const heading = `# Workspace note ${String(index)}\n`;
     return (heading + "workspace text\n".repeat(8_000)).slice(0, 100 * 1024);

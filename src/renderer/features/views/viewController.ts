@@ -1,17 +1,19 @@
 export type ViewMode = "split" | "editor" | "preview";
 
-const DIVIDER_STORAGE_KEY = "view.dividerShare";
+const STORAGE_KEY = "view.dividerShare";
 const DEFAULT_SHARE = 0.5;
 const MIN_SHARE = 0.2;
 const MAX_SHARE = 0.8;
-// Keep wrapped pane contents stable across gaps in a native resize burst.
+const SIDEBAR_WIDTH = 220;
 const RESIZE_SETTLE_MS = 500;
 
 export interface ViewControllerOptions {
   readonly divider: HTMLElement;
-  readonly workspace: HTMLElement;
+  readonly editorScroll?: HTMLElement;
   readonly enterFullScreen?: () => Promise<void>;
   readonly leaveFullScreen?: () => Promise<void>;
+  readonly preview?: HTMLElement;
+  readonly workspace: HTMLElement;
 }
 
 interface PreviewAnchor {
@@ -21,7 +23,7 @@ interface PreviewAnchor {
 }
 
 function savedShare(): number {
-  const value = Number(localStorage.getItem(DIVIDER_STORAGE_KEY));
+  const value = Number(localStorage.getItem(STORAGE_KEY));
   return Number.isFinite(value) && value >= MIN_SHARE && value <= MAX_SHARE
     ? value
     : DEFAULT_SHARE;
@@ -32,18 +34,16 @@ function percentage(share: number): string {
 }
 
 function leaveBrowserFullScreen(): Promise<void> {
-  if (!document.fullscreenElement) return Promise.resolve();
+  if (document.fullscreenElement === null) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const cleanup = (): void => {
       document.removeEventListener("fullscreenchange", changed);
       document.removeEventListener("fullscreenerror", failed);
     };
-    const finish = (): void => {
+    const changed = (): void => {
+      if (document.fullscreenElement !== null) return;
       cleanup();
       resolve();
-    };
-    const changed = (): void => {
-      if (!document.fullscreenElement) finish();
     };
     const failed = (): void => {
       cleanup();
@@ -51,18 +51,27 @@ function leaveBrowserFullScreen(): Promise<void> {
     };
     document.addEventListener("fullscreenchange", changed);
     document.addEventListener("fullscreenerror", failed);
-    if (!document.fullscreenElement) {
-      finish();
-      return;
+    if (document.fullscreenElement === null) {
+      changed();
+    } else {
+      void document.exitFullscreen().then(changed, failed);
     }
-    void document.exitFullscreen().then(changed, failed);
   });
 }
 
+function visiblePreviewBlock(preview: HTMLElement): HTMLElement | null {
+  const top = preview.getBoundingClientRect().top;
+  return [...preview.querySelectorAll<HTMLElement>(".preview-block")]
+    .find((block) => block.getBoundingClientRect().bottom > top) ?? null;
+}
+
 export class ViewController {
-  private mode: ViewMode = "split";
   private share = savedShare();
   private dragging = false;
+  private mode: ViewMode = "split";
+  private editorScrollTop = 0;
+  private previewScrollTop = 0;
+  private restoreGeneration = 0;
   private resizeTimer: number | null = null;
   private readonly enterFullScreen: () => Promise<void>;
   private readonly leaveFullScreen: () => Promise<void>;
@@ -71,6 +80,8 @@ export class ViewController {
     this.enterFullScreen = options.enterFullScreen ?? (() =>
       document.documentElement.requestFullscreen().then(() => undefined));
     this.leaveFullScreen = options.leaveFullScreen ?? leaveBrowserFullScreen;
+    this.editorScrollTop = options.editorScroll?.scrollTop ?? 0;
+    this.previewScrollTop = options.preview?.scrollTop ?? 0;
     this.applyShare();
     this.setMode("split");
     options.divider.addEventListener("pointerdown", this.startDrag);
@@ -78,14 +89,9 @@ export class ViewController {
     window.addEventListener("pointermove", this.drag);
     window.addEventListener("pointerup", this.endDrag);
     window.addEventListener("resize", this.resize);
-  }
-
-  get dividerShare(): number {
-    return this.share;
-  }
-
-  get viewMode(): ViewMode {
-    return this.mode;
+    // Esc can leave the OS full screen without a keydown reaching the page.
+    document.addEventListener("fullscreenchange", this.fullScreenChanged);
+    this.refreshPaneWidths();
   }
 
   get focusMode(): boolean {
@@ -93,9 +99,19 @@ export class ViewController {
   }
 
   setMode(mode: ViewMode): void {
+    this.captureScroll();
     this.mode = mode;
     this.options.workspace.dataset["viewMode"] = mode;
-    if (mode === "split") this.capturePaneWidths();
+    this.restoreScroll();
+    const generation = ++this.restoreGeneration;
+    requestAnimationFrame(() => {
+      if (generation !== this.restoreGeneration) return;
+      this.restoreScroll();
+      requestAnimationFrame(() => {
+        if (generation === this.restoreGeneration) this.restoreScroll();
+      });
+    });
+    if (mode === "split") this.refreshPaneWidths();
   }
 
   async enterFocusMode(): Promise<void> {
@@ -111,29 +127,26 @@ export class ViewController {
       await this.leaveFullScreen();
       return;
     }
-    this.capturePaneWidths();
+    this.refreshPaneWidths();
   }
 
   async leaveFocusMode(): Promise<void> {
     if (!this.focusMode) return;
     await this.leaveFullScreen();
     document.body.classList.remove("focus-mode");
-    this.capturePaneWidths();
+    this.refreshPaneWidths();
   }
 
   async toggleFocusMode(): Promise<void> {
-    if (this.focusMode) {
-      await this.leaveFocusMode();
-    } else {
-      await this.enterFocusMode();
-    }
+    if (this.focusMode) await this.leaveFocusMode();
+    else await this.enterFocusMode();
   }
 
   private readonly startDrag = (event: PointerEvent): void => {
-    if (this.mode !== "split") return;
     event.preventDefault();
     this.dragging = true;
-    this.updateShare(event.clientX);
+    // Frozen widths would override the share; the drag must resize the panes.
+    delete this.options.workspace.dataset["stablePaneWidths"];
   };
 
   private readonly drag = (event: PointerEvent): void => {
@@ -143,14 +156,15 @@ export class ViewController {
   private readonly endDrag = (): void => {
     if (!this.dragging) return;
     this.dragging = false;
-    localStorage.setItem(DIVIDER_STORAGE_KEY, String(this.share));
+    localStorage.setItem(STORAGE_KEY, String(this.share));
+    this.refreshPaneWidths();
   };
 
   private readonly resetDivider = (): void => {
     this.share = DEFAULT_SHARE;
     this.applyShare();
-    this.capturePaneWidths();
-    localStorage.setItem(DIVIDER_STORAGE_KEY, String(this.share));
+    localStorage.setItem(STORAGE_KEY, String(this.share));
+    this.refreshPaneWidths();
   };
 
   private readonly resize = (): void => {
@@ -158,65 +172,88 @@ export class ViewController {
     this.resizeTimer = window.setTimeout(this.finishResize, RESIZE_SETTLE_MS);
   };
 
-  private readonly finishResize = (): void => {
-    this.resizeTimer = null;
-    if (this.mode !== "split") return;
-    const anchor = this.capturePreviewAnchor();
-    this.capturePaneWidths();
-    this.restorePreviewAnchor(anchor);
+  private readonly fullScreenChanged = (): void => {
+    // The OS can leave full screen by itself; focus mode must follow it.
+    if (document.fullscreenElement === null && this.focusMode) {
+      document.body.classList.remove("focus-mode");
+      this.refreshPaneWidths();
+    }
   };
 
-  private capturePreviewAnchor(): PreviewAnchor | null {
-    const preview = this.options.divider.nextElementSibling;
-    if (!(preview instanceof HTMLElement) || typeof document.elementFromPoint !== "function") {
-      return null;
+  private readonly finishResize = (): void => {
+    this.resizeTimer = null;
+    if (this.mode === "split") this.refreshPaneWidths();
+  };
+
+  private updateShare(clientX: number): void {
+    const bounds = this.options.workspace.getBoundingClientRect();
+    const paneWidth = bounds.width - SIDEBAR_WIDTH;
+    if (paneWidth <= 0) return;
+    // The share is a fraction of the pane area, so the divider follows the pointer.
+    const share = (clientX - bounds.left - SIDEBAR_WIDTH) / paneWidth;
+    this.share = Math.min(MAX_SHARE, Math.max(MIN_SHARE, share));
+    this.applyShare();
+  }
+
+  private captureScroll(): void {
+    if (this.mode !== "preview" && this.options.editorScroll) {
+      this.editorScrollTop = this.options.editorScroll.scrollTop;
     }
-    const bounds = preview.getBoundingClientRect();
-    const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + 1);
-    const page = hit?.closest<HTMLElement>(".preview-page");
-    const block = hit?.closest<HTMLElement>(".preview-block") ??
-      [...(page?.querySelectorAll<HTMLElement>(".preview-block") ?? [])]
-        .find((candidate) => candidate.getBoundingClientRect().bottom > bounds.top);
-    if (block === null || block === undefined) return null;
-    return { block, offset: block.getBoundingClientRect().top - bounds.top, preview };
+    if (this.mode !== "editor" && this.options.preview) {
+      this.previewScrollTop = this.options.preview.scrollTop;
+    }
+  }
+
+  private restoreScroll(): void {
+    if (this.options.editorScroll) this.options.editorScroll.scrollTop = this.editorScrollTop;
+    if (this.options.preview) this.options.preview.scrollTop = this.previewScrollTop;
+  }
+
+  private capturePreviewAnchor(): PreviewAnchor | null {
+    const preview = this.options.preview;
+    if (preview === undefined) return null;
+    const block = visiblePreviewBlock(preview);
+    if (block === null) return null;
+    return {
+      block,
+      offset: block.getBoundingClientRect().top - preview.getBoundingClientRect().top,
+      preview,
+    };
   }
 
   private restorePreviewAnchor(anchor: PreviewAnchor | null): void {
     if (anchor === null || !anchor.block.isConnected) return;
-    const previewTop = anchor.preview.getBoundingClientRect().top;
     const blockTop = anchor.block.getBoundingClientRect().top;
+    const previewTop = anchor.preview.getBoundingClientRect().top;
     anchor.preview.scrollTop += blockTop - previewTop - anchor.offset;
   }
 
-  private capturePaneWidths(): void {
+  private refreshPaneWidths(): void {
     const editor = this.options.divider.previousElementSibling;
-    const preview = this.options.divider.nextElementSibling;
-    if (!(editor instanceof HTMLElement) || !(preview instanceof HTMLElement)) return;
-    const workspaceBounds = this.options.workspace.getBoundingClientRect();
-    const dividerBounds = this.options.divider.getBoundingClientRect();
-    const editorBounds = editor.getBoundingClientRect();
-    this.options.workspace.dataset["stablePaneWidths"] = "true";
-    this.options.workspace.style.setProperty(
-      "--editor-resize-width",
-      `${String(Math.max(0, dividerBounds.left - editorBounds.left))}px`,
-    );
-    this.options.workspace.style.setProperty(
-      "--preview-resize-width",
-      `${String(Math.max(0, workspaceBounds.right - dividerBounds.right))}px`,
-    );
-  }
-
-  private updateShare(clientX: number): void {
-    const bounds = this.options.workspace.getBoundingClientRect();
-    if (bounds.width <= 0) return;
-    const left = this.options.divider.previousElementSibling?.getBoundingClientRect().left ?? bounds.left;
-    const next = (clientX - left) / bounds.width;
-    this.share = Math.min(MAX_SHARE, Math.max(MIN_SHARE, next));
-    this.applyShare();
-    this.capturePaneWidths();
+    const preview = this.options.preview;
+    if (!(editor instanceof HTMLElement) || preview === undefined) return;
+    const anchor = this.capturePreviewAnchor();
+    delete this.options.workspace.dataset["stablePaneWidths"];
+    const editorWidth = editor.getBoundingClientRect().width;
+    const previewWidth = preview.getBoundingClientRect().width;
+    if (editorWidth > 0 && previewWidth > 0) {
+      this.options.workspace.style.setProperty("--editor-resize-width", `${String(editorWidth)}px`);
+      this.options.workspace.style.setProperty("--preview-resize-width", `${String(previewWidth)}px`);
+      this.options.workspace.dataset["stablePaneWidths"] = "true";
+    }
+    this.restorePreviewAnchor(anchor);
   }
 
   private applyShare(): void {
     this.options.workspace.style.setProperty("--editor-share", percentage(this.share));
+    this.options.workspace.style.setProperty(
+      "--editor-width",
+      `calc(${percentage(this.share)} - ${String(this.share * SIDEBAR_WIDTH)}px)`,
+    );
+    if (this.share === DEFAULT_SHARE) {
+      delete this.options.workspace.dataset["dividerCustom"];
+    } else {
+      this.options.workspace.dataset["dividerCustom"] = "true";
+    }
   }
 }

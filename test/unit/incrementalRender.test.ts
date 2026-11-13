@@ -8,11 +8,22 @@ import {
   shiftChunkDataLines,
   splitChunks,
 } from "../../src/renderer/workers/render/chunks";
-import { IncrementalRenderState } from "../../src/renderer/workers/render/incremental";
+import {
+  IncrementalRenderState,
+  RENDER_BATCH_BYTE_LIMIT,
+} from "../../src/renderer/workers/render/incremental";
 import { RenderWorkerHandler } from "../../src/renderer/workers/render/handler";
 
 function textFrom(source: string): Text {
   return Text.of(source.split("\n"));
+}
+
+function renderedBytes(blocks: readonly { html: string }[]): number {
+  const encoder = new TextEncoder();
+  return blocks.reduce(
+    (total, block) => total + encoder.encode(block.html).byteLength,
+    0,
+  );
 }
 
 function changeJson(
@@ -336,6 +347,243 @@ describe("progressive large-document rendering", () => {
     ).join("\n");
   }
 
+  it("AC-PERF-11: the render batch byte budget stays at 256 KiB", () => {
+    expect(RENDER_BATCH_BYTE_LIMIT).toBe(256 * 1024);
+  });
+
+  it("AC-PERF-11: many small chunks keep each render batch within its byte limit", () => {
+    const text = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => "😀".repeat(20 * 1024),
+      () => 0,
+    );
+
+    const initial = state.initial();
+    const fill = state.fill();
+
+    expect(initial.blocks.length).toBeGreaterThan(1);
+    expect(renderedBytes(initial.blocks)).toBeLessThanOrEqual(
+      RENDER_BATCH_BYTE_LIMIT,
+    );
+    expect(fill.blocks.length).toBeGreaterThan(1);
+    expect(renderedBytes(fill.blocks)).toBeLessThanOrEqual(
+      RENDER_BATCH_BYTE_LIMIT,
+    );
+  });
+
+  it("AC-PERF-11: reuses an over-budget lookahead in the next batch", () => {
+    const text = Array.from(
+      { length: 40 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let renders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => {
+        renders += 1;
+        return "😀".repeat(20 * 1024);
+      },
+      () => 0,
+    );
+
+    const initial = state.initial();
+    const fill = state.fill();
+
+    expect(renders).toBe(initial.blocks.length + fill.blocks.length + 1);
+  });
+
+  it("AC-PERF-02: a fill batch stops at its time budget so a keystroke render cuts in", () => {
+    const text = Array.from(
+      { length: 30 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let clock = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      () => {
+        clock += 1;
+        return "p";
+      },
+      () => clock,
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.complete).toBe(false);
+    expect(fill.blocks.length).toBeGreaterThan(0);
+    expect(fill.blocks.length).toBeLessThan(8);
+
+    let complete = fill.complete;
+    for (let round = 0; round < 20 && !complete; round += 1) {
+      const next = state.fill();
+      complete = next.complete;
+    }
+    expect(complete).toBe(true);
+  });
+
+  it("AC-PERF-11: a reference change discards an over-budget lookahead", () => {
+    const text = [
+      "[target]: /old",
+      "[first][target]",
+      "[second][target]",
+      "[third][target]",
+    ].join("\n\n");
+    let thirdRenders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      (source, environment) => {
+        if (!source.includes("][target]")) {
+          return source;
+        }
+        if (source.includes("third")) {
+          thirdRenders += 1;
+        }
+        const href = environment?.references?.["TARGET"]?.href ?? "missing";
+        return `${href}:${"x".repeat(100 * 1024)}`;
+      },
+    );
+    const document = textFrom(text);
+    const initial = state.initial();
+    const href = document.toString().indexOf("old");
+    const { changes, after } = changeJson(document, href, "new", href + 3);
+
+    state.applyChange(document, after, 0, 1, changes);
+    const patch = state.patch();
+    const fill = state.fill();
+
+    expect(initial.blocks).toHaveLength(3);
+    expect(patch.blocks).toHaveLength(3);
+    expect(thirdRenders).toBe(2);
+    expect(fill.blocks[0]?.html).toContain("/new");
+  });
+
+  it("AC-PERF-11: one huge chunk is the only block in its fill batch", () => {
+    const prefix = Array.from(
+      { length: 12 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    let afterRenders = 0;
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(`${prefix}\n\nhuge\n\nafter`),
+      (source) => {
+        if (source.startsWith("huge")) {
+          return "x".repeat(RENDER_BATCH_BYTE_LIMIT + 1);
+        }
+        if (source.startsWith("after")) {
+          afterRenders += 1;
+        }
+        return source;
+      },
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.blocks).toHaveLength(1);
+    expect(renderedBytes(fill.blocks)).toBeGreaterThan(RENDER_BATCH_BYTE_LIMIT);
+    expect(afterRenders).toBe(0);
+  });
+
+  it("AC-PERF-11: one multibyte chunk larger than the byte limit is sent alone", () => {
+    const prefix = Array.from(
+      { length: 12 },
+      (_, index) => `paragraph ${String(index)}`,
+    ).join("\n\n");
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(`${prefix}\n\nmultibyte\n\nafter`),
+      (source) => source.startsWith("multibyte")
+        ? "😀".repeat(100 * 1024)
+        : source,
+    );
+
+    state.initial();
+    const fill = state.fill();
+
+    expect(fill.blocks).toHaveLength(1);
+    expect(renderedBytes(fill.blocks)).toBeGreaterThan(RENDER_BATCH_BYTE_LIMIT);
+  });
+
+  it("AC-PERF-11: a lookahead is re-rendered when a later fill finds a definition", () => {
+    const filler = Array.from(
+      { length: 12 },
+      (_, index) => `filler ${String(index)}`,
+    );
+    const text = [
+      ...filler.slice(0, 7),
+      "[link][target]",
+      ...filler.slice(7, 11),
+      "[target]: /new",
+      ...filler.slice(11),
+    ].join("\n\n");
+    const state = new IncrementalRenderState(
+      "doc",
+      1,
+      0,
+      textFrom(text),
+      (source, environment) => {
+        if (source.includes("][target]")) {
+          const href = environment?.references?.["TARGET"]?.href ?? "missing";
+          return `${href}:${"x".repeat(60 * 1024)}`;
+        }
+        return "y".repeat(30 * 1024);
+      },
+    );
+
+    const initial = state.initial();
+    const fill = state.fill();
+
+    expect(initial.blocks).toHaveLength(7);
+    expect(initial.complete).toBe(false);
+    expect(fill.blocks[0]?.html).toContain("/new");
+  });
+
+  it("AC-PERF-11: re-renders a pending chunk after an edit inside it", () => {
+    const filler = Array.from(
+      { length: 12 },
+      (_, index) => `filler ${String(index)}`,
+    );
+    const text = [...filler.slice(0, 7), "MARKER old", ...filler.slice(7)]
+      .join("\n\n");
+    const render = (source: string): string => source.startsWith("MARKER")
+      ? `${"z".repeat(60 * 1024)}${source}`
+      : "y".repeat(30 * 1024);
+    const document = textFrom(text);
+    const state = new IncrementalRenderState("doc", 1, 0, document, render);
+
+    const initial = state.initial();
+    const from = document.toString().indexOf("old");
+    const { changes, after } = changeJson(document, from, "new");
+    state.applyChange(document, after, 0, 1, changes);
+    const fill = state.fill();
+
+    expect(initial.blocks).toHaveLength(7);
+    expect(initial.complete).toBe(false);
+    expect(fill.blocks[0]?.html).toContain("MARKER new");
+  });
+
   it("AC-PERF-11: publishes the first screen, then appends the rest in the background", async () => {
     vi.useFakeTimers();
     const scope = new FakeScope();
@@ -549,6 +797,36 @@ describe("render worker cache lifecycle", () => {
       callbacks[1]?.();
       expect(scope.results().some((result) =>
         result.ok && result.mode === "append")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("AC-PERF-02: waits for an editing pause before resuming background fill", () => {
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (_callback: () => void, delay: number) => {
+      delays.push(delay);
+      return 0;
+    });
+    vi.stubGlobal("clearTimeout", () => undefined);
+    try {
+      const scope = new FakeScope();
+      const handler = new RenderWorkerHandler(scope.postMessage, (source) => source);
+      const document = Array.from(
+        { length: 120 },
+        (_, index) => `paragraph ${String(index)} ${"x".repeat(20_000)}`,
+      ).join("\n\n");
+      const before = textFrom(document);
+      const { changes } = changeJson(before, 0, "edited ");
+      handler.handle({ op: "attach", docId: "doc", epoch: 1, version: 0,
+        text: document });
+      handler.handle({ op: "render", id: 1, docId: "doc", epoch: 1, version: 0 });
+      handler.handle({ op: "change", docId: "doc", epoch: 1, fromVersion: 0,
+        toVersion: 1, changes });
+
+      handler.handle({ op: "render", id: 2, docId: "doc", epoch: 1, version: 1 });
+
+      expect(delays).toEqual([1, 250]);
     } finally {
       vi.unstubAllGlobals();
     }

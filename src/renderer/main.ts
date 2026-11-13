@@ -3,7 +3,8 @@ import { Text, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
-import { formatMessage } from "../shared/messages/en";
+import { parseHexColor, relativeLuminance } from "../shared/settings/appearance";
+import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
   createDocumentRecord,
@@ -15,36 +16,41 @@ import {
 } from "./core/document";
 import { DocumentRegistry } from "./core/documentRegistry";
 import { FrameCoalescer } from "./core/frameCoalescer";
-import { DocumentReplication } from "./core/replication";
+import {
+  DocumentReplication,
+} from "./core/replication";
 import {
   createEditor,
   createEditorState,
+  setEditorDarkTheme,
   type EditorCallbacks,
 } from "./editor/editor";
-import { CompareController } from "./features/compare/controller";
-import compareWorkerUrl from "./features/compare/compare.worker.ts?worker&url";
-import "./features/compare/compare.css";
-import { MergeView } from "./features/merge/mergeView";
-import "./features/merge/merge.css";
+import type { InstalledFeatures } from "./editor/featureWiring";
 import {
-  initializeMarkerMerge,
-  markerMergeExtension,
-  type MarkerMergeState,
-} from "./features/merge/markerMergeState";
-import { blockLine, wirePreviewLinks } from "./features/preview/preview";
-import { rewriteAssetUrls } from "./features/preview/rewriteAssets";
-import { WorkspaceSidebar } from "./features/workspace/workspaceSidebar";
-import { SyncScrollController } from "./features/sync-scroll/controller";
-import { installViews } from "./features/views/install";
+  applyBackgrounds,
+  resetToThemeDefaults,
+  resolveSystemTheme,
+  watchSystemTheme,
+  type ResolvedTheme,
+} from "./features/background/background";
+import { beginStartup } from "./features/background/startup";
+import {
+  featureEditorExtensions,
+  installFeatures,
+  rewriteFeatureHtml,
+} from "./features/registry";
+import { blockLine } from "./features/preview/preview";
 import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
   clearDraft,
   detachDocument,
+  loadSettings,
   onOpenRequest,
   onSessionCloseRequest,
   readyForOpenRequests,
   sendChanges,
+  toggleFullScreen,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
@@ -64,45 +70,24 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 const editorHost = requiredElement<HTMLElement>("#editor");
 const workspace = requiredElement<HTMLElement>("#workspace");
 const preview = requiredElement<HTMLElement>("#preview");
-const divider = requiredElement<HTMLElement>("#divider");
 const previewError = requiredElement<HTMLElement>("#preview-error");
 const status = requiredElement<HTMLElement>("#status");
 const tabsHost = requiredElement<HTMLElement>("#tabs");
 const closePrompt = requiredElement<HTMLElement>("#close-prompt");
 const closePromptMessage = requiredElement<HTMLElement>("#close-prompt-message");
-const workspaceElements = {
-  empty: requiredElement<HTMLElement>("#workspace-empty"),
-  filter: requiredElement<HTMLInputElement>("#workspace-filter"),
-  open: requiredElement<HTMLButtonElement>("#workspace-open"),
-  title: requiredElement<HTMLElement>("#workspace-title"),
-  tree: requiredElement<HTMLElement>("#workspace-tree"),
-};
 const documentState = createDocumentState();
 const registry = new DocumentRegistry();
 let activeDocument: DocumentRecord | null = null;
 let windowId: number | null = null;
 let statusFromPreview = false;
 let editor: EditorView;
-let mergeView: MergeView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
-let compareController: CompareController | null = null;
+let installedFeatures: InstalledFeatures;
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
   status.textContent = message;
-}
-
-function openCompare(): void {
-  compareController ??= new CompareController({
-    documents: () => registry.all(),
-    editor: editorHost,
-    preview,
-    showStatus,
-    workspace,
-    workerUrl: new URL(compareWorkerUrl, window.location.href),
-  });
-  compareController.open();
 }
 
 // A successful render clears only the preview's own error, never a file failure.
@@ -142,7 +127,7 @@ const renderController = new RenderController({
   current: () => activeDocument,
   preview,
   restartMessage: formatMessage("preview.workerRestarted", {}),
-  rewriteHtml: (html) => rewriteAssetUrls(html, {
+  rewriteHtml: (html) => rewriteFeatureHtml(html, {
     windowId,
     grant: activeDocument?.grant ?? null,
   }),
@@ -158,9 +143,11 @@ const callbacks: EditorCallbacks = {
       // Every update, including a selection change, is the tab's view state.
       document.state = editor.state;
       document.scrollTop = editor.scrollDOM.scrollTop;
-      dirtyFrame.changed(document);
     }
     renderController.schedule();
+    if (document) {
+      dirtyFrame.changed(document);
+    }
   },
   onChanges: (changes, state) => {
     const document = activeDocument;
@@ -171,63 +158,50 @@ const callbacks: EditorCallbacks = {
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderController.change(message);
-    dirtyFrame.changed(document);
   },
-  updateTitle,
   onStateChanged: (state) => {
     documentCommands?.refresh();
-    mergeView?.stateChanged(activeDocument?.id ?? null, state);
+    installedFeatures.documentStateChanged(activeDocument?.id ?? null, state);
   },
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
-mergeView = new MergeView({
+installedFeatures = installFeatures({
+  documents: () => registry.all(),
   editorHost,
   preview,
+  previewBlockLine: blockLine,
   workspace,
   editor,
+  hasDocument: (documentId) => registry.get(documentId) !== undefined,
+  isActive: (document) => activeDocument === document,
+  openDocument: (reference) => lifecycle.openReference(reference),
+  showStatus,
 });
 
-const syncScroll = new SyncScrollController({
-  blockLine,
-  editorScroll: editor.scrollDOM,
-  preview,
-  sourceLineAtEditorTop: () => editor.state.doc.lineAt(
-    editor.lineBlockAtHeight(Math.max(0, -editor.documentTop)).from,
-  ).number,
-  scrollEditorToLine: (line) => {
-    const safeLine = Math.min(editor.state.doc.lines, Math.max(1, line));
-    const block = editor.lineBlockAt(editor.state.doc.line(safeLine).from);
-    editor.scrollDOM.scrollTop = block.top + editor.documentPadding.top;
-  },
-});
-installViews({
-  divider,
-  onError: showUnexpectedError,
-  onModeChange: () => requestAnimationFrame(() => syncScroll.refreshAnchors()),
-  toggleSync: () => syncScroll.toggle(),
-  workspace,
-});
 const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
 });
 
-// Dirty state is evaluated at most once per frame, and only that tab row updates.
+// Dirty state runs after paint when the renderer has idle time.
 const dirtyFrame = new FrameCoalescer<DocumentRecord>({
   requestFrame: (callback) => {
-    requestAnimationFrame(callback);
+    requestAnimationFrame(() => window.requestIdleCallback(() => callback(), {
+      timeout: 32,
+    }));
   },
   apply: (document) => {
-    if (!registry.get(document.id)) {
-      return;
+    performance.mark("dirty-state-start");
+    if (registry.get(document.id)) {
+      document.dirty = isDocumentDirty(document);
+      if (document.dirty) {
+        drafts.documentChanged(document.id, document.state.doc.length);
+      } else {
+        drafts.documentSaved(document.id);
+      }
+      syncDirty(document);
     }
-    document.dirty = isDocumentDirty(document);
-    if (document.dirty) {
-      drafts.documentChanged(document.id, document.state.doc.length);
-    } else {
-      drafts.documentSaved(document.id);
-    }
-    syncDirty(document);
+    performance.mark("dirty-state-end");
   },
 });
 
@@ -266,7 +240,7 @@ function activateDocument(document: DocumentRecord): void {
   tabStrip.render();
   showPreviewError();
   renderController.activate(document);
-  mergeView.activate(document.id, document.state);
+  installedFeatures.documentActivated(document);
   editor.focus();
 }
 
@@ -278,39 +252,42 @@ function newDocument(input: {
   text: string;
 }): DocumentRecord {
   const replication = new DocumentReplication();
+  const version = replication.current();
+  // Without "\r" the editor splits lines like split("\n") and its text equals
+  // the input. The render worker then gets the text before the editor state
+  // exists and splits its copy while this thread builds the state.
+  const isLineFeedOnly = !input.text.includes("\r");
+  if (isLineFeedOnly) {
+    renderController.attachVersion(version, input.text);
+  }
+  const state = createEditorState(
+    input.text,
+    documentState,
+    callbacks,
+    featureEditorExtensions,
+  );
   const document = createDocumentRecord({
     canonicalPath: input.canonicalPath,
     grant: input.grant,
     name: input.name,
     replication,
-    savedText: Text.of(input.savedText.split("\n")),
-    state: createEditorState(input.text, documentState, callbacks, markerMergeExtension),
+    // A freshly opened file shares the editor's Text: no second split, and
+    // the dirty check compares one object instead of every line.
+    savedText: isLineFeedOnly && input.savedText === input.text
+      ? state.doc
+      : Text.of(input.savedText.split("\n")),
+    state,
   });
   registry.add(document);
-  const version = replication.current();
-  const text = document.state.doc.toString();
-  renderController.attach(document, text);
-  window.setTimeout(() => detectMerge(document, text), 0);
+  const text = isLineFeedOnly ? input.text : state.doc.toString();
+  if (!isLineFeedOnly) {
+    renderController.attach(document, text);
+  }
+  window.setTimeout(() => installedFeatures?.documentCreated(document, text), 0);
   void attachDocument({ ...version, text }).then((result) => {
     valueOrStatus(result, document.name);
   }).catch(showUnexpectedError);
   return document;
-}
-
-function installMerge(document: DocumentRecord, source: string, merge: MarkerMergeState): void {
-  if (!registry.get(document.id)) return;
-  const spec = initializeMarkerMerge(document.state, source, merge);
-  if (spec === null) return;
-  if (activeDocument === document) {
-    editor.dispatch(spec);
-    mergeView.activate(document.id, editor.state);
-  } else {
-    document.state = document.state.update(spec).state;
-  }
-}
-
-function detectMerge(document: DocumentRecord, text: string): void {
-  mergeView.detect(document.id, text, (merge) => installMerge(document, text, merge));
 }
 
 function createUntitled(): DocumentRecord {
@@ -359,7 +336,7 @@ function removeDocument(document: DocumentRecord): void {
   const ordered = registry.all();
   const index = ordered.indexOf(document);
   registry.remove(document.id);
-  mergeView.forget(document.id);
+  installedFeatures.documentRemoved(document.id);
   dirtyFrame.forget(document.id);
   detachDocument({ docId: document.id });
   renderController.detach(document.id);
@@ -377,7 +354,12 @@ function removeDocument(document: DocumentRecord): void {
     } else {
       preview.replaceChildren();
       documentState.applyingDocument = true;
-      editor.setState(createEditorState("", documentState, callbacks, markerMergeExtension));
+      editor.setState(createEditorState(
+        "",
+        documentState,
+        callbacks,
+        featureEditorExtensions,
+      ));
       documentState.applyingDocument = false;
       documentState.currentGrant = null;
       documentState.currentName = null;
@@ -404,20 +386,20 @@ lifecycle = new DocumentLifecycle({
   showStatus,
   syncDirty,
 });
-new WorkspaceSidebar({
-  elements: workspaceElements,
-  openDocument: (reference) => lifecycle.openReference(reference),
-  showStatus,
-});
 documentCommands = new DocumentCommands({
-  compare: openCompare,
+  compare: () => installedFeatures.runCommand("file.compareOpen"),
   editor,
+  featureCommand: (commandId) => installedFeatures.runCommand(commandId),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
   },
   open: () => lifecycle.open(),
+  merge: () => installedFeatures.runCommand("file.mergeOpen"),
   save: (saveAs) => lifecycle.saveActive(saveAs),
+  toggleFullScreen: async () => {
+    valueOrStatus(await toggleFullScreen());
+  },
 });
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));
@@ -432,6 +414,22 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
 });
 
+async function loadBackgroundSettings(): Promise<void> {
+  const settingsResult = await loadSettings();
+  const applyTheme = (theme: ResolvedTheme): void => {
+    const editorText = settingsResult.ok
+      ? applyBackgrounds(
+        { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
+        theme,
+      )
+      : resetToThemeDefaults(theme);
+    const colour = parseHexColor(editorText);
+    setEditorDarkTheme(editor, colour !== null && relativeLuminance(colour) > 0.5);
+  };
+  applyTheme(resolveSystemTheme());
+  watchSystemTheme(applyTheme);
+}
+
 async function initialize(): Promise<void> {
   for (const action of ["cancel", "discard", "save"] as const) {
     const button = closePrompt.querySelector<HTMLButtonElement>(
@@ -442,12 +440,19 @@ async function initialize(): Promise<void> {
     }
   }
   renderController.start();
-  wirePreviewLinks(preview, showStatus);
-  const untitled = createUntitled();
-  activateDocument(untitled);
-  updateTitle();
+  installedFeatures.start();
+  const readyRequest = beginStartup({
+    openInitialDocument: () => {
+      const untitled = createUntitled();
+      activateDocument(untitled);
+      updateTitle();
+    },
+    requestOpenRequests: readyForOpenRequests,
+    loadSettings: loadBackgroundSettings,
+    showError: showUnexpectedError,
+  });
   try {
-    const ready = valueOrStatus(await readyForOpenRequests());
+    const ready = valueOrStatus(await readyRequest);
     if (ready) {
       windowId = ready.windowId;
       documentState.productName = ready.productName;
@@ -465,4 +470,4 @@ async function initialize(): Promise<void> {
   }
 }
 
-void initialize();
+void initialize().catch(showUnexpectedError);

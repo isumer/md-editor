@@ -1,13 +1,16 @@
 import type { EditorView } from "@codemirror/view";
 
+import { compareMenu } from "../../shared/ipc/menu/compare";
+import { composeMenuItems } from "../../shared/ipc/menu/compose";
+import { fileMenu } from "../../shared/ipc/menu/file";
+import { mergeMenu } from "../../shared/ipc/menu/merge";
+import { viewMenu } from "../../shared/ipc/menu/view";
 import {
-  isMenuItemId,
   type MenuCommandMessage,
   type MenuContribution,
-  type MenuItemId,
 } from "../../shared/ipc/menu";
 import type { Result } from "../../shared/ipc/result";
-import { formatMessage } from "../../shared/messages/en";
+import { formatMessage } from "../core/messages";
 import { createCommandRegistry } from "../core/commands";
 import { createContextKeys } from "../core/contextKeys";
 import { installKeymap } from "../core/keymap";
@@ -21,23 +24,35 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
   return platform.startsWith("Win") ? "win32" : "linux";
 }
 
-export function menuContribution(): MenuContribution {
+// The renderer composes its own item list; main composes the same list
+// from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
+export const menuItems = composeMenuItems([
+  fileMenu,
+  compareMenu,
+  mergeMenu,
+  viewMenu,
+]);
+
+function accelerator(
+  item: (typeof menuItems)[number],
+  platform: "darwin" | "linux" | "win32",
+): string {
+  return platform === "darwin" && "darwinAccelerator" in item
+    ? item.darwinAccelerator
+    : item.accelerator;
+}
+
+export function menuContribution(
+  platform: "darwin" | "linux" | "win32" = platformName(navigator.platform),
+): MenuContribution {
   return {
-    fileMenuTitle: formatMessage("menu.file", {}),
-    items: [
-      { id: "file-open", title: formatMessage("menu.open", {}), accelerator: "CmdOrCtrl+O" },
-      { id: "file-save", title: formatMessage("menu.save", {}), accelerator: "CmdOrCtrl+S" },
-      {
-        id: "file-save-as",
-        title: formatMessage("menu.saveAs", {}),
-        accelerator: "CmdOrCtrl+Shift+S",
-      },
-      {
-        id: "file-compare-open",
-        title: formatMessage("menu.compareOpen", {}),
-        accelerator: "CmdOrCtrl+Shift+C",
-      },
-    ],
+    fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
+    viewMenuTitle: formatMessage(viewMenu.menuTitleKey, {}),
+    items: menuItems.map((item) => ({
+      id: item.id,
+      title: formatMessage(item.titleKey, {}),
+      accelerator: accelerator(item, platform),
+    })),
   };
 }
 
@@ -46,21 +61,17 @@ export interface DocumentCommandsOptions {
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   compare(): void;
+  featureCommand(commandId: string): void;
+  merge(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
+  toggleFullScreen(): Promise<void>;
 }
 
 export class DocumentCommands {
   private readonly contextKeys = createContextKeys();
   private readonly commandContext = { contextKeys: this.contextKeys };
   private readonly commands = createCommandRegistry();
-  private readonly menuCommands: Readonly<Record<MenuItemId, string>> = {
-    "file-open": "file.open",
-    "file-save": "file.save",
-    "file-save-as": "file.saveAs",
-    "file-compare-open": "file.compareOpen",
-  };
-
   constructor(private readonly options: DocumentCommandsOptions) {
     this.register();
     onMenuCommand((item) => this.runMenu(item));
@@ -104,6 +115,11 @@ export class DocumentCommands {
       run: this.options.compare,
     });
     this.commands.register({
+      id: "file.mergeOpen",
+      titleKey: "menu.mergeOpen",
+      run: this.options.merge,
+    });
+    this.commands.register({
       id: "undo",
       titleKey: "menu.undo",
       run: () => dispatchUndo(this.options.editor),
@@ -113,14 +129,22 @@ export class DocumentCommands {
       titleKey: "menu.redo",
       run: () => dispatchRedo(this.options.editor),
     });
+    for (const item of viewMenu.items) {
+      this.commands.register({
+        id: item.commandId,
+        titleKey: item.titleKey,
+        run: item.commandId === "view.toggleFullScreen"
+          ? this.options.toggleFullScreen
+          : () => this.options.featureCommand(item.commandId),
+      });
+    }
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {
-    if (!isMenuItemId(menuItemId)) return;
-    const commandId = this.menuCommands[menuItemId];
-    if (commandId !== undefined) {
-      void this.commands.run(commandId, this.commandContext, undefined, "menu");
-    }
+    const item = menuItems.find((candidate) => candidate.id === menuItemId);
+    if (item === undefined) return;
+    void this.commands.run(item.commandId, this.commandContext, undefined, "menu")
+      .catch(this.options.onError);
   }
 
   private async publish(): Promise<void> {

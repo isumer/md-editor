@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MenuCommandMessage, MenuContribution } from "../../src/shared/ipc/menu";
+import { menuItems as mainMenuItems } from "../../src/main/app/menu/registry";
 
 const contributeMenu = vi.fn(async (_request: MenuContribution) =>
   ({ ok: true, value: undefined } as const));
@@ -38,35 +39,76 @@ describe("document commands", () => {
     const open = vi.fn(async () => undefined);
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
+    const featureCommand = vi.fn();
+    const merge = vi.fn();
+    const toggleFullScreen = vi.fn(async () => undefined);
     const onResult = vi.fn();
     const commands = new DocumentCommands({
       compare,
+      merge,
       editor,
+      featureCommand,
       onError: vi.fn(),
       onResult,
       open,
       save,
+      toggleFullScreen,
     });
     await Promise.resolve();
 
-    expect(contributeMenu.mock.calls[0]?.[0].items.map((item) => item.id)).toEqual([
-      "file-open",
-      "file-save",
-      "file-save-as",
-      "file-compare-open",
-    ]);
-    expect(contributeMenu.mock.calls[0]?.[0].items[3]?.accelerator)
-      .toBe("CmdOrCtrl+Shift+C");
+    expect(contributeMenu.mock.calls[0]?.[0]).toEqual({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [
+        { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
+        { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
+        { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
+        {
+          id: "file-compare-open",
+          title: "Compare Open Files",
+          accelerator: "CmdOrCtrl+Shift+C",
+        },
+        {
+          id: "file-merge-open",
+          title: "Merge Open Files",
+          accelerator: "CmdOrCtrl+Shift+M",
+        },
+        { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
+        { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
+        { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
+        {
+          id: "view-sync-scroll",
+          title: "Sync Scroll",
+          accelerator: "CmdOrCtrl+Shift+L",
+        },
+        {
+          id: "view-focus-mode",
+          title: "Focus Mode",
+          accelerator: "CmdOrCtrl+Shift+F",
+        },
+        { id: "view-full-screen", title: "Full Screen", accelerator: "F11" },
+      ],
+    });
     menuListener?.("file-open");
     menuListener?.("file-save");
     menuListener?.("file-save-as");
     menuListener?.("file-compare-open");
+    menuListener?.("file-merge-open");
+    menuListener?.("view-editor");
+    menuListener?.("view-sync-scroll");
+    menuListener?.("view-focus-mode");
+    menuListener?.("view-full-screen");
     (menuListener as ((command: string) => void) | null)?.("unknown");
     await Promise.resolve();
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
+    expect(merge).toHaveBeenCalledOnce();
+    expect(featureCommand).toHaveBeenCalledWith("view.editor");
+    expect(featureCommand).toHaveBeenCalledWith("view.syncScroll");
+    expect(featureCommand).toHaveBeenCalledWith("view.focusMode");
+    expect(toggleFullScreen).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
@@ -89,30 +131,55 @@ describe("document commands", () => {
     editor.destroy();
   });
 
-  it("view menu ids do not run file commands", async () => {
+  it("composes the same ordered item list as the main registry", async () => {
+    const { menuItems } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(menuItems).toEqual(mainMenuItems);
+    expect(menuItems.map((item) => item.id)).toEqual([
+      "file-open",
+      "file-save",
+      "file-save-as",
+      "file-compare-open",
+      "file-merge-open",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-sync-scroll",
+      "view-focus-mode",
+      "view-full-screen",
+    ]);
+  });
+
+  it("reports a rejected menu command", async () => {
     const { DocumentCommands } = await import(
       "../../src/renderer/tabs/documentCommands"
     );
     const parent = document.createElement("div");
     document.body.append(parent);
     const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
-    const open = vi.fn(async () => undefined);
-    const save = vi.fn(async () => undefined);
+    const onError = vi.fn();
     new DocumentCommands({
       compare: vi.fn(),
       editor,
-      onError: vi.fn(),
+      featureCommand: vi.fn(),
+      merge: vi.fn(),
+      onError,
       onResult: vi.fn(),
-      open,
-      save,
+      open: vi.fn(async () => undefined),
+      save: vi.fn(async () => {
+        throw new Error("save stopped");
+      }),
+      toggleFullScreen: vi.fn(async () => undefined),
     });
     await Promise.resolve();
 
-    menuListener?.("view-split");
-    await Promise.resolve();
+    menuListener?.("file-save");
 
-    expect(open).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(new Error("save stopped"));
+    });
     editor.destroy();
   });
 });

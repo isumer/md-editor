@@ -4,21 +4,37 @@ export const MENU_CHANNELS = {
 } as const;
 
 // Menu item ids are stable across slices: e2e tests address the items by these ids.
+// Keep this list equal to the ids composed from src/shared/ipc/menu/*.ts.
 export const MENU_ITEM_IDS = [
   "file-open",
   "file-save",
   "file-save-as",
   "file-compare-open",
-] as const;
-export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
-export const VIEW_MENU_ITEM_IDS = [
+  "file-merge-open",
   "view-split",
   "view-editor",
   "view-preview",
   "view-sync-scroll",
   "view-focus-mode",
+  "view-full-screen",
 ] as const;
-export type ViewMenuItemId = (typeof VIEW_MENU_ITEM_IDS)[number];
+export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
+
+// Command ids of the same items, in the same order.
+export const MENU_COMMAND_IDS = [
+  "file.open",
+  "file.save",
+  "file.saveAs",
+  "file.compareOpen",
+  "file.mergeOpen",
+  "view.split",
+  "view.editor",
+  "view.preview",
+  "view.syncScroll",
+  "view.focusMode",
+  "view.toggleFullScreen",
+] as const;
+export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
 
 export interface MenuContributionItem {
   id: MenuItemId;
@@ -30,13 +46,13 @@ export interface MenuContributionItem {
 
 export interface MenuContribution {
   fileMenuTitle: string;
+  viewMenuTitle: string;
   items: readonly MenuContributionItem[];
 }
 
 export type MenuContributionResponse = void;
 
-// What main sends back when a contributed item is clicked: the menu item id.
-export type MenuCommandMessage = MenuItemId | ViewMenuItemId;
+export type MenuCommandMessage = MenuItemId;
 
 function exactData(
   value: unknown,
@@ -99,9 +115,10 @@ export function isMenuContributionItem(
 }
 
 export function isMenuContribution(value: unknown): value is MenuContribution {
-  const contribution = exactData(value, ["fileMenuTitle", "items"]);
+  const contribution = exactData(value, ["fileMenuTitle", "viewMenuTitle", "items"]);
   if (contribution === null ||
     !validText(contribution["fileMenuTitle"]) ||
+    !validText(contribution["viewMenuTitle"]) ||
     !Array.isArray(contribution["items"])) {
     return false;
   }

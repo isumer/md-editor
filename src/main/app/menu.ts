@@ -6,9 +6,10 @@ import {
   type MenuContribution,
   type MenuContributionItem,
   type MenuItemId,
-  type ViewMenuItemId,
 } from "../../shared/ipc/menu";
 import { getMainWindow } from "./window";
+import { menuItems, shellMenu } from "./menu/registry";
+import type { ShellMenuActions } from "./menu/shell";
 
 export interface MenuEntry {
   id: string;
@@ -20,6 +21,7 @@ export interface MenuEntry {
 export interface ApplicationMenuLike {
   readonly items: readonly MenuEntry[];
   getMenuItemById(id: string): MenuEntry | null;
+  insert?(position: number, item: unknown): void;
 }
 
 export interface MenuHost {
@@ -42,89 +44,12 @@ function sendMenuCommand(command: MenuCommandMessage): void {
   }
 }
 
-function sendViewCommand(command: ViewMenuItemId): void {
-  const mainWindow = getMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(MENU_CHANNELS.command, command);
-  }
-}
-
-function toggleFullScreen(): void {
-  const mainWindow = getMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setFullScreen(!mainWindow.isFullScreen());
-  }
-}
-
-function viewMenu(platform: string): MenuItemConstructorOptions {
-  return {
-    label: "View",
-    submenu: [
-      { id: "view-split", label: "Split View", accelerator: "CmdOrCtrl+1",
-        registerAccelerator: false, click: () => sendViewCommand("view-split") },
-      { id: "view-editor", label: "Editor Only", accelerator: "CmdOrCtrl+2",
-        registerAccelerator: false, click: () => sendViewCommand("view-editor") },
-      { id: "view-preview", label: "Preview Only", accelerator: "CmdOrCtrl+3",
-        registerAccelerator: false, click: () => sendViewCommand("view-preview") },
-      { type: "separator" },
-      { id: "view-sync-scroll", label: "Sync Scroll",
-        accelerator: "CmdOrCtrl+Shift+L", registerAccelerator: false,
-        click: () => sendViewCommand("view-sync-scroll") },
-      { type: "separator" },
-      { id: "view-full-screen", label: "Full Screen",
-        accelerator: platform === "darwin" ? "Ctrl+Command+F" : "F11",
-        click: toggleFullScreen },
-      { id: "view-focus-mode", label: "Focus Mode", accelerator: "CmdOrCtrl+Shift+F",
-        registerAccelerator: false, click: () => sendViewCommand("view-focus-mode") },
-    ],
-  };
-}
-
-function macApplicationMenu(appName: string): MenuItemConstructorOptions {
-  return {
-    label: appName,
-    submenu: [
-      { role: "about" },
-      { type: "separator" },
-      // Electron has no Settings role, so this item is part of the main-owned skeleton.
-      { label: "Settings", accelerator: "CmdOrCtrl+," },
-      { type: "separator" },
-      { role: "services" },
-      { type: "separator" },
-      { role: "hide" },
-      { role: "hideOthers" },
-      { role: "unhide" },
-      { type: "separator" },
-      { role: "quit" },
-    ],
-  };
-}
-
 export function buildSkeletonTemplate(
   platform: string,
   appName: string,
+  shellActions: ShellMenuActions = { checkForUpdates: () => undefined },
 ): MenuItemConstructorOptions[] {
-  const template: MenuItemConstructorOptions[] = [];
-  if (platform === "darwin") {
-    template.push(macApplicationMenu(appName));
-  } else {
-    template.push({
-      label: "File",
-      submenu: [{ role: "quit" }],
-    });
-  }
-  template.push({
-    label: "Edit",
-    submenu: [
-      { role: "cut" },
-      { role: "copy" },
-      { role: "paste" },
-      { type: "separator" },
-      { role: "selectAll" },
-    ],
-  });
-  template.push({ role: "windowMenu" }, { role: "help" });
-  return template;
+  return [...shellMenu.build(platform, appName, shellActions)];
 }
 
 function contributedMenuItem(
@@ -146,30 +71,50 @@ function fileMenuIndex(platform: string): number {
   return platform === "darwin" ? 1 : 0;
 }
 
+function viewMenuIndex(platform: string): number {
+  return platform === "darwin" ? 3 : 2;
+}
+
+function contributionItems(
+  contribution: MenuContribution,
+  send: (id: MenuItemId) => void,
+  menu: "file" | "view",
+): MenuItemConstructorOptions[] {
+  return menuItems.flatMap((declaration) => {
+    const inMenu = declaration.id.startsWith(`${menu}-`);
+    const item = contribution.items.find((candidate) => candidate.id === declaration.id);
+    return inMenu && item ? [contributedMenuItem(item, send)] : [];
+  });
+}
+
 export function buildContributionTemplate(
   platform: string,
   appName: string,
   contribution: MenuContribution,
   send: (id: MenuItemId) => void,
+  shellActions: ShellMenuActions = { checkForUpdates: () => undefined },
 ): MenuItemConstructorOptions[] {
-  const template = buildSkeletonTemplate(platform, appName);
-  const items = contribution.items.map((item) => contributedMenuItem(item, send));
+  const template = buildSkeletonTemplate(platform, appName, shellActions);
+  const fileItems = contributionItems(contribution, send, "file");
+  const viewItems = contributionItems(contribution, send, "view");
   if (platform === "darwin") {
     template.splice(fileMenuIndex(platform), 0, {
       label: contribution.fileMenuTitle,
-      submenu: items,
+      submenu: fileItems,
     });
-    template.splice(3, 0, viewMenu(platform));
-    return template;
-  }
-  const fileMenu = template[fileMenuIndex(platform)];
-  if (fileMenu) {
-    fileMenu.label = contribution.fileMenuTitle;
-    fileMenu.submenu = items.length > 0
-      ? [...items, { type: "separator" }, { role: "quit" }]
+  } else {
+    const fileMenu = template[fileMenuIndex(platform)];
+    if (fileMenu) {
+      fileMenu.label = contribution.fileMenuTitle;
+      fileMenu.submenu = fileItems.length > 0
+        ? [...fileItems, { type: "separator" }, { role: "quit" }]
       : [{ role: "quit" }];
+    }
   }
-  template.splice(2, 0, viewMenu(platform));
+  template.splice(viewMenuIndex(platform), 0, {
+    label: contribution.viewMenuTitle,
+    submenu: viewItems,
+  });
   return template;
 }
 
@@ -184,6 +129,10 @@ export function patchContribution(
   const fileMenu = menu.items[fileMenuIndex(platform)];
   if (fileMenu) {
     fileMenu.label = contribution.fileMenuTitle;
+  }
+  const viewMenu = menu.items[viewMenuIndex(platform)];
+  if (viewMenu) {
+    viewMenu.label = contribution.viewMenuTitle;
   }
   for (const item of contribution.items) {
     const entry = menu.getMenuItemById(item.id);
@@ -207,7 +156,7 @@ export function createMenuController(
   platform: string,
   appName: string,
   host: MenuHost,
-  send: (id: MenuItemId) => void,
+  actions: ShellMenuActions & { send(id: MenuItemId): void },
 ): MenuController {
   let applied: MenuContribution | null = null;
 
@@ -215,7 +164,7 @@ export function createMenuController(
     installSkeleton() {
       applied = null;
       host.setApplicationMenu(host.buildFromTemplate(
-        buildSkeletonTemplate(platform, appName),
+        buildSkeletonTemplate(platform, appName, actions),
       ));
     },
     applyContribution(contribution) {
@@ -223,7 +172,13 @@ export function createMenuController(
       applied = contribution;
       if (rebuild) {
         host.setApplicationMenu(host.buildFromTemplate(
-          buildContributionTemplate(platform, appName, contribution, send),
+          buildContributionTemplate(
+            platform,
+            appName,
+            contribution,
+            actions.send,
+            actions,
+          ),
         ));
         return "rebuilt";
       }
@@ -246,16 +201,17 @@ function electronMenuHost(): MenuHost {
 
 let menuController: MenuController | null = null;
 
-export function createMenu(): void {
+export function createMenu(checkForUpdates: () => void = () => undefined): void {
   menuController = createMenuController(
     process.platform,
     app.getName(),
     electronMenuHost(),
-    sendMenuCommand,
+    { checkForUpdates, send: sendMenuCommand },
   );
   menuController.installSkeleton();
 }
 
 export function applyMenuContribution(contribution: MenuContribution): void {
-  menuController?.applyContribution(contribution);
+  if (menuController === null) return;
+  menuController.applyContribution(contribution);
 }

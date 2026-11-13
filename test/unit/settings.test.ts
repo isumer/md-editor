@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  isSettingsReadRequest,
+  isSettingsWriteRequest,
+  SETTINGS_CHANNELS,
+} from "../../src/shared/ipc/settings";
+import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   parseSettings,
@@ -28,6 +33,7 @@ describe("AC-R08-01: settings load, migrate and save", () => {
     expect(settings.editor.tabSize).toBe(2);
     expect(settings.encoding.default).toBe("utf-8");
     expect(settings.encoding.lineEndings).toBe("lf");
+    expect(settings.updates).toEqual({ enabled: true, lastCheckedAt: null });
     expect(settings.ignore).toEqual(["node_modules", ".git"]);
   });
 
@@ -59,14 +65,14 @@ describe("AC-R08-01: settings load, migrate and save", () => {
       version: 0,
       editor: { wrap: false },
     });
-    expect(withoutTabWidth.editor).toEqual({ wrap: false, tabSize: 2 });
+    expect(withoutTabWidth.editor).toEqual({ wrap: false, tabSize: 2, background: null });
   });
 
   it("AC-R08-01: migrates tabWidth when the version is missing", () => {
     const settings = normalizeSettings({ editor: { tabWidth: 6 } });
 
     expect(settings.version).toBe(1);
-    expect(settings.editor).toEqual({ wrap: true, tabSize: 6 });
+    expect(settings.editor).toEqual({ wrap: true, tabSize: 6, background: null });
   });
 
   it("AC-R08-01: keeps tabSize when an old file has no tabWidth", () => {
@@ -81,7 +87,7 @@ describe("AC-R08-01: settings load, migrate and save", () => {
       editor: { tabWidth: 6, tabSize: 3 },
     });
 
-    expect(settings.editor).toEqual({ wrap: true, tabSize: 3 });
+    expect(settings.editor).toEqual({ wrap: true, tabSize: 3, background: null });
   });
 
   it("AC-R08-01: keeps an unknown __proto__ key without changing the prototype", () => {
@@ -120,6 +126,7 @@ describe("AC-R08-01: settings load, migrate and save", () => {
       preview: { scrollSync: "yes" },
       editor: { wrap: "yes", tabSize: "2" },
       encoding: { default: "latin1", lineEndings: "mixed" },
+      updates: { enabled: "yes", lastCheckedAt: "yesterday" },
       ignore: ["node_modules", 7],
     });
 
@@ -162,6 +169,33 @@ describe("AC-R08-01: settings load, migrate and save", () => {
     }
   });
 
+  it("preserves stored editor and preview backgrounds", () => {
+    const settings = normalizeSettings({
+      version: 1,
+      preview: { background: "#123456" },
+      editor: { background: "#abcdef" },
+    });
+
+    expect(settings.preview.background).toBe("#123456");
+    expect(settings.editor.background).toBe("#abcdef");
+  });
+
+  it("AC-R9-08: preserves valid update check settings", () => {
+    expect(normalizeSettings({
+      version: 1,
+      updates: { enabled: false, lastCheckedAt: 42 },
+    }).updates).toEqual({ enabled: false, lastCheckedAt: 42 });
+  });
+
+  it("AC-R9-08: rejects invalid update check timestamps", () => {
+    for (const lastCheckedAt of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(normalizeSettings({
+        version: 1,
+        updates: { enabled: true, lastCheckedAt },
+      }).updates).toEqual({ enabled: true, lastCheckedAt: null });
+    }
+  });
+
   it("AC-R08-01: returns a fresh object and never mutates the input", () => {
     const input = { version: 0, editor: { tabWidth: 4 } };
 
@@ -173,5 +207,27 @@ describe("AC-R08-01: settings load, migrate and save", () => {
     expect(first).not.toBe(second);
     expect(first.preview).not.toBe(second.preview);
     expect(first.ignore).not.toBe(second.ignore);
+  });
+});
+
+describe("settings IPC contract", () => {
+  it("uses fixed settings channels", () => {
+    expect(SETTINGS_CHANNELS).toEqual({
+      read: "settings:read",
+      write: "settings:write",
+    });
+  });
+
+  it("accepts only an empty object for settings reads", () => {
+    expect(isSettingsReadRequest({})).toBe(true);
+    expect(isSettingsReadRequest({ extra: true })).toBe(false);
+    expect(isSettingsReadRequest(null)).toBe(false);
+    expect(isSettingsReadRequest([])).toBe(false);
+  });
+
+  it("accepts settings objects with unknown keys but rejects arrays and null", () => {
+    expect(isSettingsWriteRequest({ futureOption: true })).toBe(true);
+    expect(isSettingsWriteRequest([])).toBe(false);
+    expect(isSettingsWriteRequest(null)).toBe(false);
   });
 });

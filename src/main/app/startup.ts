@@ -135,6 +135,10 @@ export class OpenRequests {
     });
   }
 
+  isRendererReady(): boolean {
+    return this.rendererReady;
+  }
+
   private enqueue(operation: () => Promise<void>): Promise<void> {
     const next = this.operation.then(operation, operation);
     this.operation = next.catch(() => undefined);
@@ -266,6 +270,7 @@ export async function initializeApplication(
   startIoWorker: () => void,
   openRequests: OpenRequests,
   applicationReady: () => void,
+  checkForUpdates: () => void,
 ): Promise<void> {
   const dataDirectory = await detectDataDirectory({
     executablePath: process.execPath,
@@ -286,8 +291,13 @@ export async function initializeApplication(
   );
   await app.whenReady();
   applicationReady();
-  await startupRequests;
-  createMenu();
+  // The renderer loads in its own process, so the window starts first and the
+  // menu is built while it loads. OpenRequests runs its operations in order,
+  // so argv files still reach the renderer before its ready call is handled.
+  // The menu is installed in this same task, before any renderer contribution
+  // can arrive.
   startIoWorker();
   createApplicationWindow();
+  createMenu(checkForUpdates);
+  await startupRequests;
 }

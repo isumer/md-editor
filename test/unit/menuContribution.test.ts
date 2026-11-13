@@ -9,6 +9,7 @@ import type { MenuContribution } from "../../src/shared/ipc/menu";
 function contribution(title = "Open"): MenuContribution {
   return {
     fileMenuTitle: "File",
+    viewMenuTitle: "View",
     items: [{ id: "file-open", title, accelerator: "CmdOrCtrl+O" }],
   };
 }

@@ -95,6 +95,20 @@ describe("render controller", () => {
     });
   });
 
+  it("AC-PERF-11: attachVersion sends a version before its document record exists", async () => {
+    const { instance } = await controller(() => null);
+
+    instance.attachVersion({ docId: "early", epoch: 2, version: 0 }, "opened text");
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "attach",
+      docId: "early",
+      epoch: 2,
+      version: 0,
+      text: "opened text",
+    });
+  });
+
   it("AC-R1-07: attach without supplied text sends the document text", async () => {
     const document = item();
     const { instance } = await controller(() => document);
@@ -135,6 +149,33 @@ describe("render controller", () => {
     expect(showError).toHaveBeenCalledWith("restarted");
     // The new worker knows no cached preview, so the old blocks must go.
     expect(preview.childElementCount).toBe(0);
+  });
+
+  it("AC-PERF-02: schedule, dispatch, and response fire the render phase marks", async () => {
+    const document = item();
+    const { instance } = await controller(() => document);
+    for (const mark of ["preview-scheduled", "preview-dispatch", "preview-response"]) {
+      performance.clearMarks(mark);
+    }
+
+    instance.start();
+    // Fake timers swap in a no-op performance object, so assert the marks
+    // with the real performance restored.
+    vi.useRealTimers();
+    try {
+      instance.schedule();
+      workers[0]?.onmessage?.({
+        data: { op: "resync", id: 1, docId: "doc", epoch: 1, version: 1 },
+      } as MessageEvent<RenderResponse>);
+      expect(performance.getEntriesByName("preview-scheduled", "mark").length)
+        .toBeGreaterThan(0);
+      expect(performance.getEntriesByName("preview-dispatch", "mark").length)
+        .toBeGreaterThan(0);
+      expect(performance.getEntriesByName("preview-response", "mark").length)
+        .toBeGreaterThan(0);
+    } finally {
+      vi.useFakeTimers();
+    }
   });
 
   it("AC-R1-07: an epoch resync attaches only the current document", async () => {
@@ -189,8 +230,9 @@ describe("render controller", () => {
       fillToken: 4,
       complete: true,
     } } as unknown as MessageEvent<RenderResponse>);
-    // Fill acknowledgements are paced to the next animation frame.
+    // Fill acknowledgements yield after the next frame so edits go first.
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(worker?.messages).toContainEqual({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 4,
     });
