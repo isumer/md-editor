@@ -24,7 +24,7 @@ interface BufferedResync {
 interface CachedRender {
   state: IncrementalRenderState;
   request: RenderRequest | null;
-  fillNotBefore: number;
+  fillDeferredByEdit: boolean;
   fillToken: number;
   fillTimer: ReturnType<typeof setTimeout> | undefined;
 }
@@ -173,7 +173,7 @@ export class RenderWorkerHandler {
       message.toVersion,
       message.changes,
     );
-    cache.fillNotBefore = Date.now() + EDIT_FILL_DELAY_MS;
+    cache.fillDeferredByEdit = true;
   }
 
   private render(request: RenderRequest): void {
@@ -190,8 +190,13 @@ export class RenderWorkerHandler {
     cache.request = request;
     try {
       this.cancelFill(cache);
-      this.postResponse(this.resultFor(cache.state, request));
-      this.scheduleFill(cache);
+      const result = this.resultFor(cache.state, request);
+      this.postResponse(result);
+      this.scheduleFill(
+        cache,
+        cache.fillDeferredByEdit ? EDIT_FILL_DELAY_MS : FILL_DELAY_MS,
+      );
+      cache.fillDeferredByEdit = false;
     } catch (error) {
       // A failed patch or fill may already have advanced the cache (rendered
       // chunks, moved cursor) without delivering their blocks. Rebuild the
@@ -227,7 +232,7 @@ export class RenderWorkerHandler {
         this.renderText,
       ),
       request: null,
-      fillNotBefore: 0,
+      fillDeferredByEdit: false,
       fillToken: 0,
       fillTimer: undefined,
     };
@@ -267,7 +272,7 @@ export class RenderWorkerHandler {
     };
   }
 
-  private scheduleFill(cache: CachedRender): void {
+  private scheduleFill(cache: CachedRender, delay = FILL_DELAY_MS): void {
     if (cache.state.complete || cache.request === null) {
       return;
     }
@@ -275,7 +280,6 @@ export class RenderWorkerHandler {
       return;
     }
     const token = cache.fillToken;
-    const delay = Math.max(FILL_DELAY_MS, cache.fillNotBefore - Date.now());
     cache.fillTimer = setTimeout(() => this.fillBatch(cache, token), delay);
   }
 
@@ -285,7 +289,6 @@ export class RenderWorkerHandler {
       return;
     }
     cache.fillTimer = undefined;
-    cache.fillNotBefore = 0;
     try {
       const batch = cache.state.fill();
       this.postResponse({

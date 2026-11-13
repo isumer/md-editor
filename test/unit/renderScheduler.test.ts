@@ -82,6 +82,17 @@ describe("RenderScheduler", () => {
     expect(testHarness.requests).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
+  it("AC-PERF-02: dispatches immediately when the caller already coalesces edits", () => {
+    const requests: ScheduledRender[] = [];
+    const scheduler = new RenderScheduler((request) => requests.push(request), {
+      dispatchImmediately: true,
+    });
+
+    scheduler.schedule();
+
+    expect(requests).toEqual([{ id: 1 }]);
+  });
+
   it("AC-R1-02: dispatches the last edit within the maximum wait when frames stall", () => {
     const testHarness = harness();
 
