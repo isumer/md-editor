@@ -4,6 +4,10 @@ import {
   type ReleaseCheckFailure,
 } from "./releaseFeed";
 import { shouldCheckForUpdates } from "../../shared/update/updatePolicy";
+import type {
+  ReleaseInfo,
+  UpdateAction,
+} from "../../shared/update/updatePolicy";
 import type { Settings } from "../../shared/settings/settings";
 
 export interface UpdateMessage {
@@ -25,6 +29,13 @@ export interface UpdateCheckDependencies {
   openExternal(url: string): Promise<void>;
   readSettings(): Promise<Settings>;
   writeSettings(settings: Settings): Promise<void>;
+  update: UpdateLifecycle | null;
+}
+
+export interface UpdateLifecycle {
+  resolveAction(): Promise<UpdateAction>;
+  stage(release: ReleaseInfo): Promise<void>;
+  requestRestart(): void;
 }
 
 interface UpdateAnswer {
@@ -128,6 +139,11 @@ async function runUpdateCheck(
     ));
     return;
   }
+  const update = dependencies.update;
+  if (update !== null && await update.resolveAction() === "install") {
+    await offerInstallableUpdate(dependencies, update, result.release);
+    return;
+  }
   const answer = await showUpdateMessage(dependencies, {
     type: "info",
     title: "Update available",
@@ -139,6 +155,47 @@ async function runUpdateCheck(
   });
   if (answer.response === 0) {
     await dependencies.openExternal(result.release.url);
+  }
+}
+
+async function offerInstallableUpdate(
+  dependencies: UpdateCheckDependencies,
+  update: UpdateLifecycle,
+  release: ReleaseInfo,
+): Promise<void> {
+  const consent = await showUpdateMessage(dependencies, {
+    type: "info",
+    title: "Update available",
+    message: `SolidMD ${release.version} is available.`,
+    detail: release.notes,
+    buttons: ["Download Update", "Later"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (consent.response !== 0) {
+    return;
+  }
+  try {
+    await update.stage(release);
+  } catch {
+    await showUpdateMessage(dependencies, singleButtonMessage(
+      "error",
+      "The update failed.",
+      "Nothing was installed. Try again later.",
+    ));
+    return;
+  }
+  const timing = await showUpdateMessage(dependencies, {
+    type: "info",
+    title: "Update ready",
+    message: `SolidMD ${release.version} is ready to install.`,
+    detail: "Restart now, or install the update when SolidMD next quits.",
+    buttons: ["Restart now", "Install on Quit"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (timing.response === 0) {
+    update.requestRestart();
   }
 }
 

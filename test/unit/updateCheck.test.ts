@@ -25,6 +25,7 @@ function dependencies(feedText: string, response = 1): {
         status: 200,
         text: async () => feedText,
       })),
+      update: null,
       openExternal,
       readSettings: async () => {
         throw new Error("settings unavailable");

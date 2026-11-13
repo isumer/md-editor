@@ -27,6 +27,18 @@ export type ReleaseCheck =
   | { readonly kind: "current" }
   | { readonly kind: "failed"; readonly reason: ReleaseCheckFailure };
 
+function projectReleaseFields(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const fields = value as Record<string, unknown>;
+  return {
+    tag_name: fields["tag_name"],
+    html_url: fields["html_url"],
+    body: fields["body"],
+  };
+}
+
 export async function checkReleaseFeed(input: {
   readonly currentVersion: string;
   readonly fetchFeed: FetchFeed;
@@ -62,7 +74,7 @@ export async function checkReleaseFeed(input: {
     } catch {
       return { kind: "failed", reason: "bad-feed" };
     }
-    const release = parseReleaseFeed(parsed);
+    const release = parseReleaseFeed(projectReleaseFields(parsed));
     if (release === null) {
       return { kind: "failed", reason: "bad-feed" };
     }

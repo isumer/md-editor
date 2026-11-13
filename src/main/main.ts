@@ -51,6 +51,12 @@ import {
   createUpdateCheck,
   scheduleStartupUpdateCheck,
 } from "./update/updateCheck";
+import {
+  applyStagedUpdate,
+  launchUpdate,
+  resolveUpdateTarget,
+  UpdateManager,
+} from "./update/updateInstall";
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 import type { Settings } from "../shared/settings/settings";
 
@@ -95,6 +101,32 @@ function writeUpdateSettings(settings: Settings): Promise<void> {
     : settingsStore.write(settings);
 }
 
+const updateManager = new UpdateManager({
+  currentVersion: () => app.getVersion(),
+  resolveTarget: (version) => resolveUpdateTarget({
+    ...(process.env.APPIMAGE ? { appImagePath: process.env.APPIMAGE } : {}),
+    arch: process.arch,
+    executablePath: process.execPath,
+    packaged: app.isPackaged,
+    platform: process.platform,
+    stageDirectory: app.getPath("temp"),
+    version,
+  }),
+  fetchUpdate: (url) => net.fetch(url),
+  apply: (update, restart) => applyStagedUpdate(update, restart, launchUpdate),
+  quit: () => app.quit(),
+  exit: () => app.exit(),
+  reportFailure: async () => {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Update failed",
+      message: "The update could not be installed.",
+      detail: "The running version is unchanged. Try again later.",
+      buttons: ["OK"],
+    });
+  },
+});
+
 const checkForUpdates = createUpdateCheck({
   currentVersion: () => app.getVersion(),
   fetchFeed: (url) => net.fetch(url),
@@ -106,6 +138,7 @@ const checkForUpdates = createUpdateCheck({
   openExternal: (url) => shell.openExternal(url),
   readSettings: readUpdateSettings,
   writeSettings: writeUpdateSettings,
+  update: updateManager,
 });
 const checkForStartupUpdates = createStartupUpdateCheck({
   check: checkForUpdates,
@@ -140,6 +173,8 @@ const closeRequests = new CloseRequestBroker(
     await sessionStore.write({ documents, version: SESSION_VERSION });
   },
 );
+
+app.on("will-quit", (event) => updateManager.handleQuit(event));
 
 function requireWindow(windowId: number): BrowserWindow | null {
   const windows = BrowserWindow.getAllWindows()

@@ -49,7 +49,7 @@ When the app starts
 Then no request is made in either case; after 24 h with checks on, one request is made off the UI thread and startup is not delayed
 
 ### AC-R9-09 — Installer and AppImage builds update themselves
-status: planned
+status: implemented
 Given a Windows NSIS install or a Linux AppImage, a newer release, and the user accepts the update
 When the download completes
 Then the file is verified against the release's checksum, the update installs on "Restart now" or at the next quit, unsaved documents go through the quit prompt first (AC-R4-06), and the app starts in the new version with the session restored
@@ -61,7 +61,7 @@ When an update is found
 Then the app offers to open the release page and never replaces its own files; when the macOS build is signed, it follows AC-R9-09 instead
 
 ### AC-R9-11 — A bad or tampered download never installs
-status: planned
+status: implemented
 Given an update download that fails, is cut short, or does not match the release checksum
 When the download ends
 Then nothing is installed, the running version is unchanged, the partial file is removed, and the app says the update failed and can retry later

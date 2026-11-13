@@ -45,6 +45,24 @@ describe("release feed check", () => {
     expect(fetchFeed).toHaveBeenCalledWith(RELEASE_FEED_URL);
   });
 
+  it("AC-R9-09: accepts the extra metadata in GitHub's release response", async () => {
+    const body = JSON.stringify({
+      assets: [],
+      body: "...",
+      draft: false,
+      html_url: RELEASE_URL,
+      tag_name: "v1.4.2",
+    });
+
+    await expect(checkReleaseFeed({
+      currentVersion: "1.4.1",
+      fetchFeed: async () => response(200, body),
+    })).resolves.toEqual({
+      kind: "newer",
+      release: { version: "v1.4.2", url: RELEASE_URL, notes: "..." },
+    });
+  });
+
   it("AC-R9-07: returns current for an equal version", async () => {
     const fetchFeed = vi.fn(async () => response(200, feedText()));
 

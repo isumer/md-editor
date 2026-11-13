@@ -1,9 +1,14 @@
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  readAcceptanceTests,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -96,6 +101,43 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("reads passing performance tests from the split JUnit report", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
+    const content = [
+      "### AC-PERF-01 — Fast startup\nstatus: implemented\nGiven an app\n",
+      "### AC-PERF-02 — Fast keystrokes\nstatus: implemented\nGiven a file\n",
+    ].join("\n");
+    try {
+      await fs.mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+      await fs.mkdir(path.join(root, "reports"), { recursive: true });
+      await fs.writeFile(
+        path.join(root, "docs", "acceptance", "PERF.md"),
+        content,
+      );
+      await fs.writeFile(
+        path.join(root, "reports", "e2e-junit.xml"),
+        '<testcase name="AC-PERF-01: starts quickly" />',
+      );
+      await fs.writeFile(
+        path.join(root, "reports", "perf-e2e-junit.xml"),
+        '<testcase name="AC-PERF-02: stays responsive" />',
+      );
+
+      const tests = await readAcceptanceTests(root);
+      const report = buildAcceptanceReport(
+        parseCriterionFiles([{ path: "PERF.md", content }]),
+        tests,
+      );
+
+      expect(report.ok).toBe(true);
+      expect(report.markdown).toContain(
+        "| AC-PERF-02 | implemented | AC-PERF-02: stays responsive | pass |",
+      );
+    } finally {
+      await fs.rm(root, { force: true, recursive: true });
+    }
   });
 
 });
