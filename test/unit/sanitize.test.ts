@@ -5,6 +5,20 @@ import { describe, expect, it } from "vitest";
 import { sanitizeRenderedHtml } from "../../src/renderer/features/preview/sanitize";
 
 describe("sanitizeRenderedHtml", () => {
+  it("AC-PERF-08: keeps a generated plain-text block byte-identical", () => {
+    const html = '<h1 data-line="12">Safe &amp; fast</h1>\n';
+
+    expect(sanitizeRenderedHtml(html)).toBe(html);
+  });
+
+  it("AC-SEC-04: sanitises active markup inside a generated block shape", () => {
+    const result = sanitizeRenderedHtml(
+      '<p data-line="12"><img src="safe.png" onerror="bad()"><script>bad()</script></p>\n',
+    );
+
+    expect(result).toBe('<p data-line="12"><img src="safe.png"></p>\n');
+  });
+
   it("AC-SEC-04: removes active document elements and event handlers", () => {
     const result = sanitizeRenderedHtml(`
       <script>bad()</script>

@@ -151,6 +151,21 @@ describe("render controller", () => {
     expect(preview.childElementCount).toBe(0);
   });
 
+  it("AC-R1-12: a restart releases an in-flight render request", async () => {
+    const document = item();
+    const { instance } = await controller(() => document);
+
+    instance.start();
+    expect(workers[0]?.messages).toContainEqual({
+      op: "render", id: 1, docId: "doc", epoch: 1, version: 1,
+    });
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(workers[1]?.messages).toContainEqual({
+      op: "render", id: 2, docId: "doc", epoch: 1, version: 1,
+    });
+  });
+
   it("AC-PERF-02: schedule, dispatch, and response fire the render phase marks", async () => {
     const document = item();
     const { instance } = await controller(() => document);
@@ -176,6 +191,23 @@ describe("render controller", () => {
     } finally {
       vi.useFakeTimers();
     }
+  });
+
+  it("AC-PERF-03: an empty startup render does not block the opened document", async () => {
+    let document: DocumentRecord | null = null;
+    const { instance } = await controller(() => document);
+
+    instance.start();
+    document = item();
+    instance.schedule();
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "render",
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+    });
   });
 
   it("AC-R1-07: an epoch resync attaches only the current document", async () => {
