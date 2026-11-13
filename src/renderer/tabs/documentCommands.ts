@@ -4,6 +4,7 @@ import { compareMenu } from "../../shared/ipc/menu/compare";
 import { composeMenuItems } from "../../shared/ipc/menu/compose";
 import { fileMenu } from "../../shared/ipc/menu/file";
 import { mergeMenu } from "../../shared/ipc/menu/merge";
+import { viewMenu } from "../../shared/ipc/menu/view";
 import {
   type MenuCommandMessage,
   type MenuContribution,
@@ -33,15 +34,32 @@ export function selectFocusedDocument<T>(
 
 // The renderer composes its own item list; main composes the same list
 // from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
-export const menuItems = composeMenuItems([fileMenu, compareMenu, mergeMenu]);
+export const menuItems = composeMenuItems([
+  fileMenu,
+  compareMenu,
+  mergeMenu,
+  viewMenu,
+]);
 
-export function menuContribution(): MenuContribution {
+function accelerator(
+  item: (typeof menuItems)[number],
+  platform: "darwin" | "linux" | "win32",
+): string {
+  return platform === "darwin" && "darwinAccelerator" in item
+    ? item.darwinAccelerator
+    : item.accelerator;
+}
+
+export function menuContribution(
+  platform: "darwin" | "linux" | "win32" = platformName(navigator.platform),
+): MenuContribution {
   return {
     fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
+    viewMenuTitle: formatMessage(viewMenu.menuTitleKey, {}),
     items: menuItems.map((item) => ({
       id: item.id,
       title: formatMessage(item.titleKey, {}),
-      accelerator: item.accelerator,
+      accelerator: accelerator(item, platform),
     })),
   };
 }
@@ -51,12 +69,14 @@ export interface DocumentCommandsOptions {
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   compare(): void;
+  featureCommand(commandId: string): void;
   merge(): void;
   open(): Promise<void>;
   otherView?(target: string, action: "clone" | "move"): void;
   redo?(): void;
   save(saveAs: boolean): Promise<void>;
   undo?(): void;
+  toggleFullScreen(): Promise<void>;
 }
 
 export class DocumentCommands {
@@ -133,6 +153,15 @@ export class DocumentCommands {
       titleKey: "tab.cloneToOtherView",
       run: (_context, _args, target) => this.runOtherView(target, "clone"),
     });
+    for (const item of viewMenu.items) {
+      this.commands.register({
+        id: item.commandId,
+        titleKey: item.titleKey,
+        run: item.commandId === "view.toggleFullScreen"
+          ? this.options.toggleFullScreen
+          : () => this.options.featureCommand(item.commandId),
+      });
+    }
   }
 
   private editor(): EditorView {

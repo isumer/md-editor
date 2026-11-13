@@ -52,6 +52,7 @@ import {
   onSessionCloseRequest,
   readyForOpenRequests,
   sendChanges,
+  toggleFullScreen,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands, selectFocusedDocument } from "./tabs/documentCommands";
@@ -669,6 +670,7 @@ lifecycle = new DocumentLifecycle({
 documentCommands = new DocumentCommands({
   compare: () => installedFeatures.runCommand("file.compareOpen"),
   editor: () => editorTwo.hasFocus ? editorTwo : editor,
+  featureCommand: (commandId) => installedFeatures.runCommand(commandId),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
@@ -685,6 +687,9 @@ documentCommands = new DocumentCommands({
     }
   },
   undo: () => runHistory("undo"),
+  toggleFullScreen: async () => {
+    valueOrStatus(await toggleFullScreen());
+  },
 });
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));

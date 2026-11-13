@@ -131,6 +131,7 @@ const asShape = (template: MenuItemConstructorOptions[]): TemplateShape[] =>
 
 const contribution: MenuContribution = {
   fileMenuTitle: "File",
+  viewMenuTitle: "View",
   items: [
     { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
     { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
@@ -247,7 +248,7 @@ describe("contributed menu template", () => {
     const template = buildContributionTemplate(
       "linux",
       "SolidMD",
-      { fileMenuTitle: "File", items: [] },
+      { fileMenuTitle: "File", viewMenuTitle: "View", items: [] },
       vi.fn(),
     );
     expect(fileSubmenu(template)).toEqual([{ role: "quit" }]);
@@ -273,6 +274,7 @@ describe("menu patch in place", () => {
     );
     const patched: MenuContribution = {
       fileMenuTitle: "Documents",
+      viewMenuTitle: "View",
       items: [
         { id: "file-open", title: "Open file", accelerator: "CmdOrCtrl+O", enabled: false },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
@@ -350,6 +352,7 @@ describe("menu controller", () => {
 
     const stateOnly: MenuContribution = {
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: contribution.items.map((entry) => ({ ...entry, enabled: false })),
     };
     expect(menu.applyContribution(stateOnly)).toBe("patched");
@@ -359,13 +362,18 @@ describe("menu controller", () => {
 
     expect(menu.applyContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: contribution.items.slice(0, 2),
     })).toBe("rebuilt");
     expect(buildFromTemplate).toHaveBeenCalledTimes(3);
 
     const reordered = [contribution.items[1], contribution.items[0], contribution.items[2]]
       .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
-    expect(menu.applyContribution({ fileMenuTitle: "File", items: reordered }))
+    expect(menu.applyContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: reordered,
+    }))
       .toBe("rebuilt");
     expect(buildFromTemplate).toHaveBeenCalledTimes(4);
   });
@@ -399,6 +407,7 @@ describe("menu IPC contributions in main", () => {
 
     applyMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: contribution.items.map((entry, index) => ({
         ...entry,
         enabled: index !== 0,
@@ -426,44 +435,65 @@ describe("menu:contribute contract", () => {
   const item = { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" };
 
   it("AC-SEC-07: accepts exactly the valid shapes", () => {
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [] })).toBe(true);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [item] })).toBe(true);
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [] }))
+      .toBe(true);
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [item] }))
+      .toBe(true);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [{ ...item, enabled: true, checked: false }],
     })).toBe(true);
   });
 
   it("AC-SEC-07: rejects unknown ids, wrong types and extra keys", () => {
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, id: "file-quit" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, id: "file-quit" }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, title: 42 }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, title: 42 }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, title: "" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, title: "" }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, title: "a\u0000b" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, title: "a\u0000b" }] }))
       .toBe(false);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [{ ...item, accelerator: "Ctrl+O;rm" }],
     })).toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, extra: true }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, extra: true }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, enabled: "yes" }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, enabled: "yes" }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [{ ...item, checked: 1 }] }))
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: [{ ...item, checked: 1 }] }))
       .toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: null, items: [] })).toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: "none" })).toBe(false);
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [], extra: true })).toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [{ id: "file-open", accelerator: "CmdOrCtrl+O", enabled: true }],
+    })).toBe(false);
+    expect(isMenuContribution({ fileMenuTitle: null, viewMenuTitle: "View", items: [] }))
+      .toBe(false);
+    expect(isMenuContribution({ fileMenuTitle: "File", viewMenuTitle: "View", items: "none" }))
+      .toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+      extra: true,
+    })).toBe(false);
     expect(isMenuContribution(null)).toBe(false);
     expect(isMenuContribution([])).toBe(false);
   });
 
   it("AC-SEC-07: rejects duplicate ids and more items than the contract allows", () => {
-    expect(isMenuContribution({ fileMenuTitle: "File", items: [item, item] })).toBe(false);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [item, item],
+    })).toBe(false);
+    expect(isMenuContribution({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [
         item,
         { ...item, id: "file-save" },
@@ -475,19 +505,35 @@ describe("menu:contribute contract", () => {
   });
 
   it("AC-SEC-07: rejects hostile own prototype keys, getters and proxies", () => {
-    expect(isMenuContribution(withOwnProto({ fileMenuTitle: "File", items: [] })))
+    expect(isMenuContribution(withOwnProto({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    })))
       .toBe(false);
-    expect(isMenuContribution(withOwnProto({ fileMenuTitle: "File", items: [item] })))
+    expect(isMenuContribution(withOwnProto({
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [item],
+    })))
       .toBe(false);
 
-    const getter = { fileMenuTitle: "File", items: [] } as Record<string, unknown>;
+    const getter = {
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    } as Record<string, unknown>;
     Object.defineProperty(getter, "items", {
       enumerable: true,
       get: () => [],
     });
     expect(isMenuContribution(getter)).toBe(false);
 
-    const symbol = { fileMenuTitle: "File", items: [] } as Record<PropertyKey, unknown>;
+    const symbol = {
+      fileMenuTitle: "File",
+      viewMenuTitle: "View",
+      items: [],
+    } as Record<PropertyKey, unknown>;
     symbol[Symbol("extra")] = true;
     expect(isMenuContribution(symbol)).toBe(false);
 

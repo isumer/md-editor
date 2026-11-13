@@ -48,6 +48,7 @@ import type {
   WORKSPACE_CHANNELS as SharedWorkspaceChannels,
   WorkspacePathRequest,
 } from "../shared/ipc/workspace";
+import type { WINDOW_CHANNELS as SharedWindowChannels } from "../shared/ipc/window";
 
 const FILE_CHANNELS = {
   openFile: "file:open",
@@ -81,6 +82,9 @@ const WORKSPACE_CHANNELS = {
   listChildren: "workspace:list-children",
   openFile: "workspace:open-file",
 } as const satisfies typeof SharedWorkspaceChannels;
+const WINDOW_CHANNELS = {
+  toggleFullScreen: "window:toggle-full-screen",
+} as const satisfies typeof SharedWindowChannels;
 
 interface RendererPort {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -320,6 +324,7 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  toggleFullScreen(): Promise<Result<void>>;
 }
 
 const openRequestListeners = new Set<(request: Result<DocumentReference>) => void>();
@@ -432,6 +437,10 @@ const api: Api = {
   contributeMenu: (request) => ipcRenderer.invoke(
     MENU_CHANNELS.contribute,
     request,
+  ) as Promise<Result<void>>,
+  toggleFullScreen: () => ipcRenderer.invoke(
+    WINDOW_CHANNELS.toggleFullScreen,
+    {},
   ) as Promise<Result<void>>,
   onOpenRequest: (listener) => {
     const handler = (
