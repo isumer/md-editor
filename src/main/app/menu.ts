@@ -8,7 +8,7 @@ import {
   type MenuItemId,
 } from "../../shared/ipc/menu";
 import { getMainWindow } from "./window";
-import { shellMenu } from "./menu/registry";
+import { menuItems, shellMenu } from "./menu/registry";
 import type { ShellMenuActions } from "./menu/shell";
 
 export interface MenuEntry {
@@ -21,6 +21,7 @@ export interface MenuEntry {
 export interface ApplicationMenuLike {
   readonly items: readonly MenuEntry[];
   getMenuItemById(id: string): MenuEntry | null;
+  insert?(position: number, item: unknown): void;
 }
 
 export interface MenuHost {
@@ -70,6 +71,22 @@ function fileMenuIndex(platform: string): number {
   return platform === "darwin" ? 1 : 0;
 }
 
+function viewMenuIndex(platform: string): number {
+  return platform === "darwin" ? 3 : 2;
+}
+
+function contributionItems(
+  contribution: MenuContribution,
+  send: (id: MenuItemId) => void,
+  menu: "file" | "view",
+): MenuItemConstructorOptions[] {
+  return menuItems.flatMap((declaration) => {
+    const inMenu = declaration.id.startsWith(`${menu}-`);
+    const item = contribution.items.find((candidate) => candidate.id === declaration.id);
+    return inMenu && item ? [contributedMenuItem(item, send)] : [];
+  });
+}
+
 export function buildContributionTemplate(
   platform: string,
   appName: string,
@@ -78,21 +95,26 @@ export function buildContributionTemplate(
   shellActions: ShellMenuActions = { checkForUpdates: () => undefined },
 ): MenuItemConstructorOptions[] {
   const template = buildSkeletonTemplate(platform, appName, shellActions);
-  const items = contribution.items.map((item) => contributedMenuItem(item, send));
+  const fileItems = contributionItems(contribution, send, "file");
+  const viewItems = contributionItems(contribution, send, "view");
   if (platform === "darwin") {
     template.splice(fileMenuIndex(platform), 0, {
       label: contribution.fileMenuTitle,
-      submenu: items,
+      submenu: fileItems,
     });
-    return template;
-  }
-  const fileMenu = template[fileMenuIndex(platform)];
-  if (fileMenu) {
-    fileMenu.label = contribution.fileMenuTitle;
-    fileMenu.submenu = items.length > 0
-      ? [...items, { type: "separator" }, { role: "quit" }]
+  } else {
+    const fileMenu = template[fileMenuIndex(platform)];
+    if (fileMenu) {
+      fileMenu.label = contribution.fileMenuTitle;
+      fileMenu.submenu = fileItems.length > 0
+        ? [...fileItems, { type: "separator" }, { role: "quit" }]
       : [{ role: "quit" }];
+    }
   }
+  template.splice(viewMenuIndex(platform), 0, {
+    label: contribution.viewMenuTitle,
+    submenu: viewItems,
+  });
   return template;
 }
 
@@ -107,6 +129,10 @@ export function patchContribution(
   const fileMenu = menu.items[fileMenuIndex(platform)];
   if (fileMenu) {
     fileMenu.label = contribution.fileMenuTitle;
+  }
+  const viewMenu = menu.items[viewMenuIndex(platform)];
+  if (viewMenu) {
+    viewMenu.label = contribution.viewMenuTitle;
   }
   for (const item of contribution.items) {
     const entry = menu.getMenuItemById(item.id);
@@ -186,5 +212,6 @@ export function createMenu(checkForUpdates: () => void = () => undefined): void 
 }
 
 export function applyMenuContribution(contribution: MenuContribution): void {
-  menuController?.applyContribution(contribution);
+  if (menuController === null) return;
+  menuController.applyContribution(contribution);
 }

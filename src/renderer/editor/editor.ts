@@ -6,6 +6,7 @@ import {
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, redo, undo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import {
   bracketMatching,
   defaultHighlightStyle,
@@ -18,6 +19,7 @@ import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
   EditorState,
+  Compartment,
   type ChangeSet,
   type Extension,
   type Text,
@@ -41,7 +43,6 @@ import type { DocumentState } from "../core/document";
 export interface EditorCallbacks {
   onDocumentChanged(): void;
   onChanges(changes: ChangeSet, state: EditorState): void;
-  updateTitle(): void;
   onStateChanged?(state: EditorState): void;
 }
 
@@ -59,7 +60,6 @@ const editorSetup = [
   dropCursor(),
   EditorState.allowMultipleSelections.of(true),
   indentOnInput(),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   bracketMatching(),
   closeBrackets(),
   autocompletion(),
@@ -89,6 +89,24 @@ function plainTextRunEnd(text: string, start: number): number {
   return end;
 }
 
+// The highlight palette follows the theme, so dark text never sits on a dark surface.
+const highlightCompartment = new Compartment();
+let darkHighlight = false;
+
+function highlightExtension(): Extension {
+  return darkHighlight
+    ? [EditorView.darkTheme.of(true), syntaxHighlighting(oneDarkHighlightStyle)]
+    : syntaxHighlighting(defaultHighlightStyle, { fallback: true });
+}
+
+export function setEditorDarkTheme(view: EditorView, dark: boolean): void {
+  if (darkHighlight === dark) {
+    return;
+  }
+  darkHighlight = dark;
+  view.dispatch({ effects: highlightCompartment.reconfigure(highlightExtension()) });
+}
+
 // Plain word runs contain no Markdown delimiters, so parse them in one step.
 const markdownSupport = markdown({
   extensions: {
@@ -115,21 +133,30 @@ export function dispatchRedo(view: EditorView): void {
   redo(view);
 }
 
+// The marks let performance tests attribute keystroke latency per phase
+// (docs/dev/briefs/perf-slow-machine-tail.md F2); they stay quiet on green.
 export function handleDocumentUpdate(
   update: DocumentUpdate,
   documentState: DocumentState,
   callbacks: EditorCallbacks,
 ): void {
+  performance.mark("editor-update-start");
+  performance.mark("editor-state-hooks-start");
   callbacks.onStateChanged?.(update.state);
+  performance.mark("editor-state-hooks-end");
   if (!update.docChanged) {
+    performance.mark("editor-update-end");
     return;
   }
   if (!documentState.applyingDocument) {
-    documentState.dirty = !update.state.doc.eq(documentState.saved);
-    callbacks.updateTitle();
+    performance.mark("editor-change-hooks-start");
     callbacks.onChanges(update.changes, update.state);
+    performance.mark("editor-change-hooks-end");
   }
+  performance.mark("editor-document-hooks-start");
   callbacks.onDocumentChanged();
+  performance.mark("editor-document-hooks-end");
+  performance.mark("editor-update-end");
 }
 
 export function createEditorState(
@@ -142,6 +169,7 @@ export function createEditorState(
     doc: document,
     extensions: [
       editorSetup,
+      highlightCompartment.of(highlightExtension()),
       extension,
       ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,

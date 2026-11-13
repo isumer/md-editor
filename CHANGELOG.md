@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A workspace sidebar: choose a folder with Open Folder and browse its subfolders and Markdown files. A folder loads its contents when you expand it, a filter narrows the list by name, and clicking a file opens it in a tab.
 - The app and its Windows, macOS and Linux packages now show the SolidMD icon instead of the default Electron icon.
 - Help > Check for Updates tells you what it found: a new version with its release notes, that you are up to date, or why the check failed. A new version opens the download page only after you agree. The app also checks once a day at startup, and you can turn that off from the update dialog.
+- A View menu switches between side by side, editor only and preview only (Ctrl+1, Ctrl+2, Ctrl+3; Cmd on macOS), and Full Screen uses the window's own full-screen state. Drag the divider to set the pane widths; double-click it to go back to half and half. The app keeps the divider position and your scroll place when you switch modes, and a wide preview keeps a 900-pixel text column.
 
 ### Changed
 
@@ -49,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - If the background file service crashes and restarts, a save you make after the crash now waits for it and writes the file. Before, it could fail with "the file service restarted".
 - When two tabs save under the same new file name at the same moment, the second save now refuses with a message instead of overwriting the first save's content.
 - Opening a file, or restoring a draft, while another tab is still saving that same file now shows a message and does not open a second tab for that file.
+- Text is readable in the light and dark themes in every view: the workspace sidebar, tabs, status line, compare and merge views, and the editor now take their colours from the current theme. In dark mode the sidebar text no longer sits on a light background.
+- The editor's code colours now follow the theme, so Markdown markers and code stay readable in dark mode.
 
 ### Security
 

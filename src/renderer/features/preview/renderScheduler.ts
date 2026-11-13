@@ -9,6 +9,7 @@ export type TimerRequest = (callback: () => void, milliseconds: number) => numbe
 export type TimerCancel = (handle: number) => void;
 
 export interface RenderSchedulerOptions {
+  dispatchImmediately?: boolean;
   now?: TimeSource;
   maximumWaitMilliseconds?: number;
   requestFrame?: FrameRequest;
@@ -19,6 +20,7 @@ export interface RenderSchedulerOptions {
 }
 
 interface ResolvedOptions {
+  dispatchImmediately: boolean;
   now: TimeSource;
   maximumWaitMilliseconds: number;
   requestFrame: FrameRequest;
@@ -30,8 +32,9 @@ interface ResolvedOptions {
 
 function resolve(options: RenderSchedulerOptions): ResolvedOptions {
   return {
+    dispatchImmediately: options.dispatchImmediately ?? false,
     now: options.now ?? (() => performance.now()),
-    maximumWaitMilliseconds: options.maximumWaitMilliseconds ?? 100,
+    maximumWaitMilliseconds: options.maximumWaitMilliseconds ?? 16,
     requestFrame: options.requestFrame ??
       ((callback) => requestAnimationFrame(callback)),
     cancelFrame: options.cancelFrame ?? ((handle) => cancelAnimationFrame(handle)),
@@ -62,8 +65,14 @@ export class RenderScheduler {
 
   schedule(): void {
     const currentTime = this.options.now();
-    this.pendingSince ??= currentTime;
+    if (this.pendingSince === undefined) {
+      this.pendingSince = currentTime;
+    }
     if (this.frame !== undefined || this.timer !== undefined) {
+      return;
+    }
+    if (this.options.dispatchImmediately) {
+      this.dispatch();
       return;
     }
     this.frame = this.options.requestFrame(() => this.dispatch());

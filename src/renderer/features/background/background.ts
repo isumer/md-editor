@@ -55,7 +55,7 @@ function applyBackground(
 export function applyBackgrounds(
   settings: BackgroundSettings,
   theme: "light" | "dark",
-): void {
+): string {
   const defaults = getThemeDefaults(theme);
   const editorResult = resolveColor(settings.editor, defaults.editor);
   const previewResult = resolveColor(settings.preview, defaults.preview);
@@ -72,9 +72,10 @@ export function applyBackgrounds(
   document.documentElement.style.setProperty("--preview-background", previewResult.color);
   document.documentElement.style.setProperty("--editor-text-color", editorText);
   document.documentElement.style.setProperty("--preview-text-color", previewText);
+  return editorText;
 }
 
-export function resetToThemeDefaults(theme: "light" | "dark"): void {
+export function resetToThemeDefaults(theme: "light" | "dark"): string {
   const defaults = getThemeDefaults(theme);
   const editor = document.querySelector<HTMLElement>(EDITOR_SELECTOR);
   const preview = document.querySelector<HTMLElement>(PREVIEW_SELECTOR);
@@ -92,6 +93,7 @@ export function resetToThemeDefaults(theme: "light" | "dark"): void {
   document.documentElement.style.setProperty("--preview-background", defaults.preview);
   document.documentElement.style.setProperty("--editor-text-color", defaults.text);
   document.documentElement.style.setProperty("--preview-text-color", defaults.text);
+  return defaults.text;
 }
 
 export function resolveSystemTheme(

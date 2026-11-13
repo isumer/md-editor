@@ -11,6 +11,11 @@ export const MENU_ITEM_IDS = [
   "file-save-as",
   "file-compare-open",
   "file-merge-open",
+  "view-split",
+  "view-editor",
+  "view-preview",
+  "view-focus-mode",
+  "view-full-screen",
 ] as const;
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
 
@@ -21,6 +26,11 @@ export const MENU_COMMAND_IDS = [
   "file.saveAs",
   "file.compareOpen",
   "file.mergeOpen",
+  "view.split",
+  "view.editor",
+  "view.preview",
+  "view.focusMode",
+  "view.toggleFullScreen",
 ] as const;
 export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
 
@@ -34,6 +44,7 @@ export interface MenuContributionItem {
 
 export interface MenuContribution {
   fileMenuTitle: string;
+  viewMenuTitle: string;
   items: readonly MenuContributionItem[];
 }
 
@@ -102,9 +113,10 @@ export function isMenuContributionItem(
 }
 
 export function isMenuContribution(value: unknown): value is MenuContribution {
-  const contribution = exactData(value, ["fileMenuTitle", "items"]);
+  const contribution = exactData(value, ["fileMenuTitle", "viewMenuTitle", "items"]);
   if (contribution === null ||
     !validText(contribution["fileMenuTitle"]) ||
+    !validText(contribution["viewMenuTitle"]) ||
     !Array.isArray(contribution["items"])) {
     return false;
   }

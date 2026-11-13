@@ -48,6 +48,11 @@ describe("tab modules", () => {
       "file-save-as",
       "file-compare-open",
       "file-merge-open",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-focus-mode",
+      "view-full-screen",
     ]);
   });
 
