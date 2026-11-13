@@ -49,7 +49,16 @@ const PAGE_BLOCK_LIMIT = 20;
 const SECTION_PAGE_LIMIT = 5;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
+const PREVIEW_PHASE_MARKS = [
+  "preview-sanitize-start",
+  "preview-sanitize-end",
+  "preview-rewrite-start",
+  "preview-rewrite-end",
+  "preview-dom-start",
+  "preview-dom-end",
+] as const;
 let appendMeasureCount = 0;
+let measureNextPreviewBlock = false;
 // Worker fills have at most eight blocks; only the larger initial batch is
 // frame-paced.
 const APPEND_FRAME_BLOCK_THRESHOLD = 8;
@@ -98,6 +107,24 @@ function createBlock(
   return element;
 }
 
+function updateSingleTextElement(element: HTMLDivElement, html: string): boolean {
+  const match = /^<(h[1-6]|p) data-line="(\d+)">([^<]*)<\/\1>\n$/.exec(html);
+  const current = element.firstElementChild;
+  if (match === null || current === null || element.childElementCount !== 1 ||
+    current.localName !== match[1] || current.getAttribute("data-line") !== match[2] ||
+    current.getAttributeNames().length !== 1 || current.childElementCount !== 0) {
+    return false;
+  }
+  current.innerHTML = match[3] ?? "";
+  return true;
+}
+
+function updateBlockHtml(element: HTMLDivElement, html: string): void {
+  if (!updateSingleTextElement(element, html)) {
+    element.innerHTML = html;
+  }
+}
+
 function updateBlock(
   element: HTMLDivElement,
   block: RenderBlock,
@@ -108,7 +135,25 @@ function updateBlock(
   element.dataset["line"] = String(block.startLine);
   element.dataset["version"] = String(version);
   recordShiftTable(element, wiring.preview, shifts);
-  element.innerHTML = wiring.rewriteHtml(sanitizeRenderedHtml(block.html));
+  const measurePhases = measureNextPreviewBlock;
+  measureNextPreviewBlock = false;
+  if (measurePhases) {
+    performance.mark("preview-sanitize-start");
+  }
+  const sanitized = sanitizeRenderedHtml(block.html);
+  if (measurePhases) {
+    performance.mark("preview-sanitize-end");
+    performance.mark("preview-rewrite-start");
+  }
+  const rewritten = wiring.rewriteHtml(sanitized);
+  if (measurePhases) {
+    performance.mark("preview-rewrite-end");
+    performance.mark("preview-dom-start");
+  }
+  updateBlockHtml(element, rewritten);
+  if (measurePhases) {
+    performance.mark("preview-dom-end");
+  }
 }
 
 function appendBlocks(
@@ -153,6 +198,9 @@ function replaceBlocks(
   elements.clear();
   wiring.preview.replaceChildren();
   resetLayout(layout);
+  // Record only the first block. Per-block marks would add work to large fills.
+  for (const mark of PREVIEW_PHASE_MARKS) performance.clearMarks(mark);
+  measureNextPreviewBlock = blocks.length > 0;
   return appendBlocks(blocks, version, shifts, wiring, elements, layout, budget);
 }
 
@@ -503,16 +551,20 @@ export function wireRenderWorker(
   function handleResponse(response: RenderResponse): void {
     const current = wiring.currentVersion();
     if ("op" in response) {
-      if (response.op === "resync" &&
-        response.docId === current.docId && response.epoch === current.epoch) {
-        wiring.onResync(response);
+      if (response.op === "resync") {
+        if (response.docId === current.docId && response.epoch === current.epoch) {
+          wiring.onResync(response);
+        }
+        wiring.scheduler.discardResult(response.id);
       }
       return;
     }
     if (response.docId !== current.docId || response.epoch !== current.epoch) {
+      wiring.scheduler.discardResult(response.id);
       return;
     }
     if (response.version > current.version) {
+      wiring.scheduler.discardResult(response.id);
       return;
     }
     if (shown !== null && shown.docId === response.docId &&

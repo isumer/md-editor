@@ -156,6 +156,8 @@ export class RenderController {
     if (document) {
       performance.mark("preview-dispatch");
       this.worker.postMessage({ op: "render", id, ...document.replication.current() });
+    } else {
+      this.scheduler.discardResult(id);
     }
   }
 
@@ -175,6 +177,7 @@ export class RenderController {
     }
     this.worker = this.createWorker();
     this.installHandlers();
+    this.scheduler.dispose();
     this.previews?.reset();
     this.options.showError(this.options.restartMessage);
     const document = this.options.current();
