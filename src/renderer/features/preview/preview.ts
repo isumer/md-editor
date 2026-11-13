@@ -46,7 +46,7 @@ const BLOCK_CLASS = "preview-block";
 // re-checking containing elements grows with their count, so a flat list of
 // one wrapper per block makes scrolling slower as the document gets larger.
 const PAGE_BLOCK_LIMIT = 20;
-const SECTION_PAGE_LIMIT = 5;
+const SECTION_PAGE_LIMIT = 20;
 const APPEND_TASK_BUDGET_MS = 4;
 const APPEND_MEASURE_INTERVAL = 64;
 const PREVIEW_PHASE_MARKS = [
@@ -65,10 +65,48 @@ const APPEND_FRAME_BLOCK_THRESHOLD = 8;
 // Keep the first screens responsive, then avoid an extra task per fill once a
 // document has enough cached content for extended scrolling.
 const DEFERRED_FILL_BLOCK_LIMIT = 512;
-// A section also bounds the layout work when it becomes visible: 100 blocks
-// keep each layout task short, at the cost of more containment elements.
+const completionTokens = new WeakMap<HTMLElement, number>();
+const pendingCompletions = new WeakSet<HTMLElement>();
+// A section groups 400 blocks so a long document has few containment checks;
+// its pages still bound the layout work that becomes visible.
 // Patches insert into and remove from existing pages, so later pages can be
 // uneven: content-visibility needs a bounded page size, not an even one.
+
+function settleDisplayedRender(
+  host: HTMLElement,
+  complete: boolean,
+  changed: boolean,
+): void {
+  if (!complete) {
+    completionTokens.set(host, (completionTokens.get(host) ?? 0) + 1);
+    pendingCompletions.delete(host);
+    if (host.dataset["renderComplete"] !== "false") {
+      host.dataset["renderComplete"] = "false";
+    }
+    return;
+  }
+  if (pendingCompletions.has(host)) {
+    host.dataset["renderComplete"] = "false";
+    return;
+  }
+  if (!changed) return;
+  const token = (completionTokens.get(host) ?? 0) + 1;
+  completionTokens.set(host, token);
+  pendingCompletions.add(host);
+  host.dataset["renderComplete"] = "false";
+  requestAnimationFrame(() => {
+    if (completionTokens.get(host) === token) {
+      pendingCompletions.delete(host);
+      host.dataset["renderComplete"] = "true";
+    }
+  });
+}
+
+function changesPreview(response: RenderResult & { ok: true }): boolean {
+  if (response.mode !== "patch") return response.blocks.length > 0;
+  return response.blocks.length > 0 || response.removed.length > 0 ||
+    (response.lineShifts?.length ?? 0) > 0;
+}
 
 function placeBlock(
   element: HTMLDivElement,
@@ -398,13 +436,13 @@ function requestNextFill(
       token: response.fillToken,
     } satisfies RenderFillReadyMessage);
   };
-  requestAnimationFrame(() => {
-    if (deferToTask) {
+  if (deferToTask) {
+    requestAnimationFrame(() => {
       window.setTimeout(postFillReady, 0);
-    } else {
-      postFillReady();
-    }
-  });
+    });
+    return;
+  }
+  postFillReady();
 }
 
 export function wireRenderWorker(
@@ -489,6 +527,11 @@ export function wireRenderWorker(
       documentPreview.version = response.version;
       if (display) {
         previews.display(documentPreview);
+        settleDisplayedRender(
+          wiring.preview,
+          documentPreview.container.dataset["renderComplete"] === "true",
+          changesPreview(response),
+        );
         shown = {
           docId: response.docId,
           epoch: response.epoch,

@@ -523,6 +523,8 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 #preview {
   padding: 24px 32px;
   overflow: auto;
+  contain: layout paint;
+  will-change: scroll-position;
   line-height: 1.55;
   background: var(--custom-background, var(--preview-background));
   color: var(--custom-text-color, var(--preview-text-color));
@@ -536,8 +538,8 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 /* Off-screen regions skip layout and paint but keep their space. Blocks are
    grouped into pages and pages into sections: content-visibility checks scale
    with the number of contained elements, so one wrapper per block makes
-   scrolling worse as the document grows. A section holds 5 pages of 20
-   blocks, so its estimate is 12,000px and a page's is 2,400px. */
+   scrolling worse as the document grows. A section holds 20 pages of 20
+   blocks, so its estimate is 48,000px and a page's is 2,400px. */
 .preview-page {
   content-visibility: auto;
   contain-intrinsic-size: auto 2400px;
@@ -545,7 +547,7 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 
 .preview-section {
   content-visibility: auto;
-  contain-intrinsic-size: auto 12000px;
+  contain-intrinsic-size: auto 48000px;
 }
 
 #preview pre {

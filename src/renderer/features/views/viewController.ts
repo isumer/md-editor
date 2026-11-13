@@ -73,6 +73,7 @@ export class ViewController {
   private editorScrollTop = 0;
   private previewScrollTop = 0;
   private restoreGeneration = 0;
+  private scrollRestorePending = false;
   private resizeTimer: number | null = null;
   private readonly enterFullScreen: () => Promise<void>;
   private readonly leaveFullScreen: () => Promise<void>;
@@ -105,16 +106,20 @@ export class ViewController {
   }
 
   setMode(mode: ViewMode): void {
-    this.captureScroll();
+    // A pane can report transient layout-adjusted scroll while the prior mode settles.
+    if (!this.scrollRestorePending) this.captureScroll();
     this.mode = mode;
     this.options.workspace.dataset["viewMode"] = mode;
+    this.scrollRestorePending = true;
     this.restoreScroll();
     const generation = ++this.restoreGeneration;
     requestAnimationFrame(() => {
       if (generation !== this.restoreGeneration) return;
       this.restoreScroll();
       requestAnimationFrame(() => {
-        if (generation === this.restoreGeneration) this.restoreScroll();
+        if (generation !== this.restoreGeneration) return;
+        this.restoreScroll();
+        this.scrollRestorePending = false;
       });
     });
     if (mode === "split") this.refreshPaneWidths();
