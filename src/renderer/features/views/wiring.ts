@@ -10,6 +10,7 @@ export const viewsFeature: FeatureRegistration = {
       divider,
       editorScroll: context.editor.scrollDOM,
       preview: context.preview,
+      skipInitialMeasurement: true,
       workspace: context.workspace,
     });
     const focusMode = (): void => {

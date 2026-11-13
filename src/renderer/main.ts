@@ -163,6 +163,24 @@ const renderController = new RenderController({
   workerUrl: new URL(renderWorkerUrl, window.location.href),
 });
 
+let renderFrame = 0;
+let renderPending = false;
+
+function scheduleRender(): void {
+  if (renderFrame !== 0) {
+    renderPending = true;
+    return;
+  }
+  renderController.schedule();
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = 0;
+    if (renderPending) {
+      renderPending = false;
+      scheduleRender();
+    }
+  });
+}
+
 interface PendingDocumentChange {
   readonly changes: ChangeSet;
   readonly document: DocumentRecord;
@@ -202,7 +220,7 @@ function flushDocumentChanges(): void {
     dirtyFrame.changed(change.document);
   }
   if (pending.some((change) => change.document === activeDocument)) {
-    renderController.schedule();
+    scheduleRender();
   }
 }
 

@@ -52,6 +52,7 @@ export class RenderScheduler {
   private frame: number | undefined;
   private timer: number | undefined;
   private pendingSince: number | undefined;
+  private activeRequestId: number | undefined;
   private readonly dispatchedAt = new Map<number, number>();
   private nextRequestId = 1;
   private newestAppliedId = 0;
@@ -69,6 +70,9 @@ export class RenderScheduler {
       this.pendingSince = currentTime;
     }
     if (this.frame !== undefined || this.timer !== undefined) {
+      return;
+    }
+    if (this.options.dispatchImmediately && this.activeRequestId !== undefined) {
       return;
     }
     if (this.options.dispatchImmediately) {
@@ -89,16 +93,33 @@ export class RenderScheduler {
     const startedAt = this.dispatchedAt.get(id);
     this.dispatchedAt.delete(id);
     apply(result);
+    this.finishRequest(id);
     if (startedAt !== undefined) {
       this.options.onApplied?.(this.options.now() - startedAt);
     }
     return true;
   }
 
+  discardResult(id: number): void {
+    this.dispatchedAt.delete(id);
+    this.finishRequest(id);
+  }
+
   dispose(): void {
     this.cancelScheduled();
     this.pendingSince = undefined;
+    this.activeRequestId = undefined;
     this.dispatchedAt.clear();
+  }
+
+  private schedulePending(): void {
+    this.dispatch();
+  }
+
+  private finishRequest(id: number): void {
+    if (id !== this.activeRequestId) return;
+    this.activeRequestId = undefined;
+    if (this.pendingSince !== undefined) this.schedulePending();
   }
 
   private cancelScheduled(): void {
@@ -122,6 +143,9 @@ export class RenderScheduler {
     this.cancelScheduled();
     const id = this.nextRequestId;
     this.nextRequestId += 1;
+    if (this.options.dispatchImmediately) {
+      this.activeRequestId = id;
+    }
     this.dispatchedAt.set(id, startedAt);
     this.requestRender({ id });
   }

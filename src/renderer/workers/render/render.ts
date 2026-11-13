@@ -1,6 +1,10 @@
 import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
 
+const HIGHLIGHT_CACHE_LIMIT = 64;
+const HIGHLIGHT_CACHE_SOURCE_LIMIT = 64 * 1024;
+const highlightCache = new Map<string, string>();
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -9,21 +13,37 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
+function highlightCode(source: string, language: string): string {
+  if (!language || !hljs.getLanguage(language)) {
+    return `<pre><code class="hljs">${escapeHtml(source)}</code></pre>`;
+  }
+  const key = source.length <= HIGHLIGHT_CACHE_SOURCE_LIMIT
+    ? `${language}\0${source}`
+    : undefined;
+  if (key !== undefined) {
+    const cached = highlightCache.get(key);
+    if (cached !== undefined) return cached;
+  }
+  const value = `<pre><code class="hljs language-${escapeHtml(language)}">${
+    hljs.highlight(source, { language, ignoreIllegals: true }).value
+  }</code></pre>`;
+  // Large blocks stay one-shot so the renderer cannot retain unbounded source.
+  if (key !== undefined) {
+    if (highlightCache.size >= HIGHLIGHT_CACHE_LIMIT) {
+      const oldest = highlightCache.keys().next().value as string;
+      highlightCache.delete(oldest);
+    }
+    highlightCache.set(key, value);
+  }
+  return value;
+}
+
 function createMarkdownRenderer() {
   const markdown = new MarkdownIt({
     html: true,
     linkify: true,
     typographer: false,
-    highlight(source, language) {
-      if (language && hljs.getLanguage(language)) {
-        const highlighted = hljs.highlight(source, {
-          language,
-          ignoreIllegals: true,
-        }).value;
-        return `<pre><code class="hljs language-${escapeHtml(language)}">${highlighted}</code></pre>`;
-      }
-      return `<pre><code class="hljs">${escapeHtml(source)}</code></pre>`;
-    },
+    highlight: highlightCode,
   });
 
   markdown.core.ruler.after("block", "source-lines", (state) => {
@@ -73,6 +93,21 @@ function createMarkdownRenderer() {
 
 const markdown = createMarkdownRenderer();
 
+function renderPlainHeading(
+  source: string,
+  env: RenderEnvironment,
+): string | null {
+  const match = /^(#{1,6}) ([A-Za-z0-9]+(?: [A-Za-z0-9]+)*)\n{0,2}$/.exec(source);
+  const hashes = match?.[1];
+  const text = match?.[2];
+  if (hashes === undefined || text === undefined) return null;
+  const prefix = typeof env["dataLinePrefix"] === "string"
+    ? env["dataLinePrefix"]
+    : "";
+  const level = String(hashes.length);
+  return `<h${level} data-line="${prefix}0">${text}</h${level}>\n`;
+}
+
 export interface ReferenceDefinition {
   title: string;
   href: string;
@@ -87,7 +122,7 @@ export interface RenderEnvironment {
 }
 
 export function renderMarkdown(source: string, env: RenderEnvironment = {}): string {
-  return markdown.render(source, env);
+  return renderPlainHeading(source, env) ?? markdown.render(source, env);
 }
 
 export function collectReferences(source: string): Record<string, ReferenceDefinition> {
