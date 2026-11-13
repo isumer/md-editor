@@ -233,6 +233,17 @@ describe("marker merge state", () => {
     expect(large.expectedReads()).toBe(1);
   });
 
+  it("an edit after every merge chunk reuses the position index", () => {
+    const large = createLargeMerge(200);
+    const before = markerMergeState(large.view.state)?.positions;
+
+    large.view.dispatch({
+      changes: { from: large.view.state.doc.length, insert: "x" },
+    });
+
+    expect(markerMergeState(large.view.state)?.positions).toBe(before);
+  });
+
   it("an active merge keystroke update stays below 16 ms at p95", () => {
     const large = createLargeMerge(200);
     const samples: number[] = [];

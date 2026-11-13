@@ -2,6 +2,7 @@ import { ChangeSet, Text } from "@codemirror/state";
 
 import type {
   RenderAttachMessage,
+  RenderBlock,
   RenderChangeMessage,
   RenderChangeSetJson,
   RenderFillReadyMessage,
@@ -35,6 +36,7 @@ type RenderText = (source: string, env?: RenderEnvironment) => string;
 // loop between batches instead of flooding the main thread with appends. The
 // preview acknowledges each applied batch, so at most one batch is in flight.
 const FILL_DELAY_MS = 1;
+// Restart progressive fill only after a typing burst stops competing with it.
 const EDIT_FILL_DELAY_MS = 250;
 
 function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
@@ -43,6 +45,15 @@ function applyChanges(document: Text, changes: RenderChangeSetJson): Text {
 
 function text(value: string): Text {
   return Text.of(value.split("\n"));
+}
+
+function completedBlocks(blocks: readonly RenderBlock[]): readonly RenderBlock[] {
+  return blocks.map(({ id, startLine, endLine, html }) => ({
+    id,
+    startLine,
+    endLine,
+    html,
+  }));
 }
 
 export class RenderWorkerHandler {
@@ -242,7 +253,7 @@ export class RenderWorkerHandler {
         version: request.version,
         ok: true,
         mode: "replace",
-        blocks: batch.blocks,
+        blocks: batch.complete ? completedBlocks(batch.blocks) : batch.blocks,
         complete: batch.complete,
       };
     }

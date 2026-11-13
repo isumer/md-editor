@@ -73,7 +73,7 @@ interface ChangedRange {
 // Only the first screen is sent in the initial replace. The rest arrives in
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
-const FILL_BATCH_SIZE = 8;
+const FILL_BATCH_SIZE = 32;
 export const RENDER_BATCH_BYTE_LIMIT = 256 * 1024;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
 // A fill task runs to its time budget so a keystroke's render request waits at
@@ -252,7 +252,8 @@ export class IncrementalRenderState {
     // Every block is rendered from the current document, so any shift that
     // accumulated before the first publish is already reflected in its lines.
     this.pendingLineShifts = [];
-    const blocks = this.nextBatch(INITIAL_CHUNK_COUNT);
+    // Large documents publish one block before costly later syntax highlighting.
+    const blocks = this.nextBatch(this.progressive ? 1 : INITIAL_CHUNK_COUNT);
     this.published = true;
     return { blocks, complete: this.complete };
   }
@@ -675,6 +676,7 @@ export class IncrementalRenderState {
         startLine,
         endLine,
         html: shiftChunkDataLines(html, startLine),
+        ...(!/[<>]/u.test(source) ? { trusted: true as const } : {}),
       },
       html,
       labels: referenceLabels(source),

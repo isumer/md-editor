@@ -172,6 +172,11 @@ export class ChunkPositions {
 
   map(changes: ChangeDesc): MappedChunkPositions {
     if (this.root === null || changes.empty) return { changed: [], positions: this };
+    let changesExistingPosition = false;
+    changes.iterChangedRanges((fromA) => {
+      changesExistingPosition ||= fromA < (this.root as PositionNode).maxHigh;
+    }, true);
+    if (!changesExistingPosition) return { changed: [], positions: this };
     const touched = new Set<number>();
     const shifts: { readonly from: number; readonly delta: number }[] = [];
     changes.iterChangedRanges((fromA, toA, fromB, toB) => {
