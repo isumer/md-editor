@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
+  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -20,6 +25,22 @@ Given a fixture
 When it runs
 Then it passes
 `;
+
+async function acceptanceRepository(e2e: string, perf: string): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), "solidmd-acceptance-"));
+  await mkdir(path.join(root, "docs", "acceptance"), { recursive: true });
+  await mkdir(path.join(root, "reports"));
+  await writeFile(
+    path.join(root, "docs", "acceptance", "PERF.md"),
+    "### AC-PERF-07 — Fast preview\nstatus: implemented\nGiven a large document\n",
+  );
+  await Promise.all([
+    writeFile(path.join(root, "reports", "e2e-junit.xml"), e2e),
+    writeFile(path.join(root, "reports", "unit-junit.xml"), "<testsuites />"),
+    writeFile(path.join(root, "reports", "perf-e2e-junit.xml"), perf),
+  ]);
+  return root;
+}
 
 describe("acceptance report", () => {
   it("maps passing JUnit tests to criteria from Markdown fixtures", () => {
@@ -96,6 +117,44 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
+  });
+
+  it("reads passing performance tests from their split JUnit report", async () => {
+    const root = await acceptanceRepository(
+      "<testsuites />",
+      '<testsuite><testcase name="fast preview @AC-PERF-07" /></testsuite>',
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const report = await runAcceptanceCheck(root);
+
+      expect(report.ok).toBe(true);
+      expect(report.markdown).toContain("| AC-PERF-07 | implemented | fast preview @AC-PERF-07 | pass |");
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a current E2E failure when a split report has a stale pass", async () => {
+    const root = await acceptanceRepository(
+      '<testsuite><testcase name="fast preview @AC-PERF-07"><failure /></testcase></testsuite>',
+      '<testsuite><testcase name="fast preview @AC-PERF-07" /></testsuite>',
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const report = await runAcceptanceCheck(root);
+
+      expect(report.ok).toBe(false);
+      expect(report.missing).toEqual(["AC-PERF-07"]);
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
 });
