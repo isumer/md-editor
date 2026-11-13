@@ -100,6 +100,225 @@ interface LongAnimationScript {
   sourceURL: string;
 }
 
+const KEYSTROKE_MARKS = [
+  "keystroke-start",
+  "editor-update-start",
+  "editor-state-hooks-start",
+  "editor-state-hooks-end",
+  "editor-change-hooks-start",
+  "editor-change-hooks-end",
+  "editor-document-hooks-start",
+  "editor-document-hooks-end",
+  "editor-update-end",
+  "dirty-state-start",
+  "dirty-state-end",
+  "preview-scheduled",
+  "preview-dispatch",
+  "preview-response",
+  "preview-apply-start",
+  "preview-apply-end",
+] as const;
+
+type KeystrokeMark = typeof KEYSTROKE_MARKS[number];
+type KeystrokeTimeline = Partial<Record<KeystrokeMark, number>>;
+
+interface KeystrokeDiagnostics {
+  readonly frames: LongAnimationFrame[];
+  readonly timelines: KeystrokeTimeline[];
+}
+
+async function installKeystrokeMarkProbe(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.addEventListener("keydown", () => {
+      performance.mark("keystroke-start");
+    }, { capture: true });
+  });
+}
+
+function phaseDurations(
+  timelines: readonly KeystrokeTimeline[],
+  start: KeystrokeMark,
+  end: KeystrokeMark,
+): number[] {
+  return timelines.flatMap((timeline) => {
+    const phaseStart = timeline[start];
+    const phaseEnd = timeline[end];
+    return phaseStart === undefined || phaseEnd === undefined
+      ? []
+      : [Math.max(0, phaseEnd - phaseStart)];
+  });
+}
+
+function reportKeystrokeDiagnostics(diagnostics: KeystrokeDiagnostics): void {
+  const phases = [
+    ["editor-transaction", "keystroke-start", "editor-update-start"],
+    ["state-hooks", "editor-state-hooks-start", "editor-state-hooks-end"],
+    ["change-hooks", "editor-change-hooks-start", "editor-change-hooks-end"],
+    ["document-hooks", "editor-document-hooks-start", "editor-document-hooks-end"],
+    ["deferred-dirty-state", "dirty-state-start", "dirty-state-end"],
+    ["preview-schedule", "preview-scheduled", "preview-dispatch"],
+    ["render-worker", "preview-dispatch", "preview-response"],
+    ["preview-apply", "preview-apply-start", "preview-apply-end"],
+  ] as const;
+  for (const [label, start, end] of phases) {
+    report(`AC-PERF-02 phase ${label}`, phaseDurations(diagnostics.timelines, start, end));
+  }
+  const windows = diagnostics.timelines.flatMap((timeline) => {
+    const start = timeline["keystroke-start"];
+    const end = timeline["preview-apply-end"];
+    return start === undefined || end === undefined ? [] : [{ start, duration: end - start }];
+  });
+  const frames = diagnostics.frames.filter((frame) => windows.some((window) =>
+    frame.start < window.start + window.duration &&
+    frame.start + frame.duration > window.start));
+  const frameText = frames.map((frame) => frameDiagnostics(frame, [frame])).join("; ");
+  console.log(`AC-PERF-02 LoAF: n=${String(frames.length)} frames=[${frameText}]`);
+}
+
+interface KeystrokeProbe {
+  renders: { id: number; start: number }[];
+  responses: { id: number; start: number }[];
+  longtasks: { start: number; duration: number }[];
+  frames: LongAnimationFrame[];
+}
+
+interface MacProcess {
+  pid: number;
+  parentPid: number;
+  cpu: number;
+  memory: number;
+  state: string;
+  command: string;
+}
+
+let previousMacProcesses: MacProcess[] = [];
+
+function processLine(line: string): MacProcess | null {
+  const match = /^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+(\S+)\s+(.+)$/u.exec(line);
+  if (match === null) {
+    return null;
+  }
+  const [, pid = "", parentPid = "", cpu = "", memory = "", state = "", command = ""] = match;
+  return {
+    pid: Number(pid),
+    parentPid: Number(parentPid),
+    cpu: Number(cpu),
+    memory: Number(memory),
+    state,
+    command,
+  };
+}
+
+async function macProcesses(): Promise<MacProcess[]> {
+  if (process.platform !== "darwin") {
+    return [];
+  }
+  const { stdout } = await run("ps", [
+    "-axo", "pid=,ppid=,%cpu=,%mem=,state=,comm=",
+  ]);
+  return stdout.split("\n").map(processLine).filter(
+    (process): process is MacProcess => process !== null,
+  );
+}
+
+async function rememberMacProcessTree(rootPid: number | undefined): Promise<void> {
+  if (rootPid === undefined || process.platform !== "darwin") {
+    return;
+  }
+  const processes = await macProcesses();
+  const processIds = new Set([rootPid]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const candidate of processes) {
+      if (processIds.has(candidate.parentPid) && !processIds.has(candidate.pid)) {
+        processIds.add(candidate.pid);
+        changed = true;
+      }
+    }
+  }
+  previousMacProcesses = processes.filter((candidate) => processIds.has(candidate.pid));
+}
+
+async function reportMacProcessLoad(): Promise<void> {
+  if (process.platform !== "darwin") {
+    return;
+  }
+  const current = await macProcesses();
+  const previousByPid = new Map(previousMacProcesses.map((entry) => [entry.pid, entry]));
+  const survivors = current.filter((entry) =>
+    previousByPid.get(entry.pid)?.command === entry.command);
+  const summary = survivors.map((entry) =>
+    `${String(entry.pid)}:${entry.command} cpu=${entry.cpu.toFixed(1)}% ` +
+    `mem=${entry.memory.toFixed(1)}% state=${entry.state}`).join("; ");
+  console.log(
+    `AC-PERF-02 macOS start: previous=${String(previousMacProcesses.length)} ` +
+    `survivors=${String(survivors.length)} load=${os.loadavg().map((load) =>
+      load.toFixed(2)).join(",")} cores=${String(os.cpus().length)} ` +
+    `processes=[${summary}]`,
+  );
+}
+
+// Runs on the live page through launchEditor's onPage hook, before the argv
+// document applies, so no reload is needed on the shipped open path.
+async function installKeystrokeProbe(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const probe: KeystrokeProbe = { renders: [], responses: [], longtasks: [], frames: [] };
+    (window as unknown as { __keystrokeProbe?: KeystrokeProbe }).__keystrokeProbe = probe;
+    const NativeWorker = window.Worker;
+    window.Worker = new Proxy(NativeWorker, {
+      construct(Target, argumentsList) {
+        const worker = Reflect.construct(Target, argumentsList) as Worker;
+        const nativePostMessage = worker.postMessage;
+        worker.postMessage = new Proxy(nativePostMessage, {
+          apply(postMessage, receiver, messageArguments) {
+            const message = messageArguments[0] as { id?: unknown; op?: unknown } | undefined;
+            if (message?.op === "render" && typeof message.id === "number") {
+              probe.renders.push({ id: message.id, start: performance.now() });
+            }
+            return Reflect.apply(postMessage, receiver, messageArguments) as void;
+          },
+        });
+        worker.addEventListener("message", (event: MessageEvent<unknown>) => {
+          const message = event.data as { id?: unknown; op?: unknown } | null;
+          if (message !== null && typeof message === "object" &&
+            message.op !== "pong" && typeof message.id === "number") {
+            probe.responses.push({ id: message.id, start: performance.now() });
+          }
+        });
+        return worker;
+      },
+    });
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.entryType === "longtask") {
+          probe.longtasks.push({ start: entry.startTime, duration: entry.duration });
+        } else if (entry.entryType === "long-animation-frame") {
+          const frame = entry as PerformanceEntry & {
+            blockingDuration: number;
+            renderStart: number;
+            styleAndLayoutStart: number;
+            scripts: LongAnimationScript[];
+          };
+          probe.frames.push({
+            start: frame.startTime,
+            duration: frame.duration,
+            blockingDuration: frame.blockingDuration,
+            renderStart: frame.renderStart,
+            styleAndLayoutStart: frame.styleAndLayoutStart,
+            scripts: frame.scripts.map((script) => ({
+              duration: script.duration,
+              forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+              invoker: script.invoker,
+              sourceFunctionName: script.sourceFunctionName,
+              sourceURL: script.sourceURL,
+            })),
+          });
+        }
+      }
+    }).observe({ entryTypes: ["longtask", "long-animation-frame"] });
+  });
+}
 async function installLongTaskProbe(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const probe: LongTaskProbe = { longtasks: [], marks: [], frames: [] };
@@ -257,6 +476,7 @@ test("AC-PERF-10: opening a 20 MB document keeps every main-thread task under 10
       `AC-PERF-10 open task failed. ${diagnostics}`,
     ).toEqual([]);
   } finally {
+    await rememberMacProcessTree(application.process().pid);
     await closeEditor(application, page);
   }
 });
@@ -272,6 +492,8 @@ async function placeCaretInFirstLine(page: Page): Promise<void> {
 async function measureKeystrokes(
   page: Page,
   measureName: "preview-latency" | "preview-patch",
+  diagnostics?: KeystrokeDiagnostics,
+  diagnoseSlowSamples = false,
 ): Promise<number[]> {
   const heading = page.getByTestId("preview").locator("h1").first();
   await placeCaretInFirstLine(page);
@@ -282,34 +504,156 @@ async function measureKeystrokes(
     await page.keyboard.type(character);
     await expect(heading).toContainText(suffix, { timeout: 10_000 });
   }
-  await page.evaluate((name) => performance.clearMeasures(name), measureName);
+  await page.evaluate(({ name, names }) => {
+    performance.clearMeasures(name);
+    for (const markName of names) performance.clearMarks(markName);
+  }, { name: measureName, names: KEYSTROKE_MARKS });
 
   const samples: number[] = [];
   for (let index = 0; index < SAMPLES; index += 1) {
     const character = String.fromCharCode(97 + (index % 26));
     suffix += character;
-    await page.evaluate((name) => performance.clearMeasures(name), measureName);
+    await page.evaluate(({ name, names }) => {
+      performance.clearMeasures(name);
+      for (const markName of names) performance.clearMarks(markName);
+    }, { name: measureName, names: KEYSTROKE_MARKS });
+    if (diagnoseSlowSamples) {
+      await resetKeystrokeProbe(page);
+    }
     await page.keyboard.type(character);
     await expect(heading).toContainText(suffix, { timeout: 10_000 });
-    const durations = await page.evaluate((name) =>
-      performance.getEntriesByName(name, "measure").map((entry) => entry.duration),
-    measureName);
+    const result = await page.evaluate(({ collect, name, names }) => ({
+      durations: performance.getEntriesByName(name, "measure")
+        .map((entry) => entry.duration),
+      timeline: collect ? Object.fromEntries(names.flatMap((markName) => {
+        const entry = performance.getEntriesByName(markName, "mark").at(-1);
+        return entry === undefined ? [] : [[markName, entry.startTime]];
+      })) : {},
+    }), {
+      collect: diagnostics !== undefined,
+      name: measureName,
+      names: KEYSTROKE_MARKS,
+    });
+    const { durations } = result;
     expect(durations.length).toBeGreaterThanOrEqual(1);
-    samples.push(durations.at(-1) ?? 0);
+    const duration = durations.at(-1) ?? 0;
+    samples.push(duration);
+    if (diagnostics !== undefined) {
+      diagnostics.timelines.push(result.timeline);
+    }
+    if (diagnoseSlowSamples && duration >= 50) {
+      await reportSlowKeystroke(page, index + 1);
+    }
+  }
+  if (diagnostics !== undefined) {
+    diagnostics.frames.push(...await page.evaluate(() =>
+      performance.getEntriesByType("long-animation-frame").map((entry) => {
+        const frame = entry as PerformanceEntry & {
+          blockingDuration: number;
+          renderStart: number;
+          styleAndLayoutStart: number;
+          scripts: LongAnimationScript[];
+        };
+        return {
+          start: frame.startTime,
+          duration: frame.duration,
+          blockingDuration: frame.blockingDuration,
+          renderStart: frame.renderStart,
+          styleAndLayoutStart: frame.styleAndLayoutStart,
+          scripts: frame.scripts.map((script) => ({
+            duration: script.duration,
+            forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+            invoker: script.invoker,
+            sourceFunctionName: script.sourceFunctionName,
+            sourceURL: script.sourceURL,
+          })),
+        };
+      })));
   }
   return samples;
+}
+
+async function resetKeystrokeProbe(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const probe = (window as unknown as { __keystrokeProbe?: KeystrokeProbe })
+      .__keystrokeProbe;
+    if (probe !== undefined) {
+      probe.renders.length = 0;
+      probe.responses.length = 0;
+      probe.longtasks.length = 0;
+      probe.frames.length = 0;
+    }
+  });
+}
+
+async function reportSlowKeystroke(page: Page, sample: number): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  }));
+  const timing = await page.evaluate(() => {
+    const probe = (window as unknown as { __keystrokeProbe?: KeystrokeProbe })
+      .__keystrokeProbe;
+    const entry = performance.getEntriesByName("preview-latency", "measure").at(-1);
+    const applyStart = performance.getEntriesByName("preview-apply-start", "mark").at(-1);
+    const applyEnd = performance.getEntriesByName("preview-apply-end", "mark").at(-1);
+    const measure = entry === undefined
+      ? undefined
+      : { start: entry.startTime, duration: entry.duration };
+    return { probe, measure, applyStart: applyStart?.startTime, applyEnd: applyEnd?.startTime };
+  });
+  if (timing.measure === undefined) {
+    return;
+  }
+  const render = timing.probe?.renders.at(-1);
+  const response = timing.probe?.responses.find((entry) => entry.id === render?.id);
+  const start = timing.measure.start;
+  const end = start + timing.measure.duration;
+  const scheduler = render === undefined ? 0 : render.start - start;
+  const worker = render === undefined || response === undefined ? 0 : response.start - render.start;
+  const apply = timing.applyStart === undefined || timing.applyEnd === undefined
+    ? 0
+    : timing.applyEnd - timing.applyStart;
+  const longtasks = timing.probe?.longtasks.filter((entry) =>
+    entry.start < end && entry.start + entry.duration > start) ?? [];
+  const frames = timing.probe?.frames.filter((entry) =>
+    entry.start < end && entry.start + entry.duration > start) ?? [];
+  const known = scheduler + worker + apply;
+  console.log(
+    `AC-PERF-02 slow sample ${String(sample)}: total=${timing.measure.duration.toFixed(1)}ms ` +
+    `scheduler=${scheduler.toFixed(1)}ms worker=${worker.toFixed(1)}ms ` +
+    `rendererApply=${apply.toFixed(1)}ms unattributed=${Math.max(0, timing.measure.duration - known).toFixed(1)}ms ` +
+    `longtasks=[${distribution(longtasks.map((entry) => entry.duration))}] ` +
+    `loaf=[${frameDiagnostics({ start, duration: timing.measure.duration }, frames)}]`,
+  );
 }
 
 test("AC-PERF-02: 50 KB document keystroke latency p95 stays under 50 ms", {
   tag: "@AC-PERF-02",
   annotation: { type: "AC-PERF-02" },
 }, async () => {
-  const { application, page } = await launchEditor(large50);
+  await reportMacProcessLoad();
+  let probeInstalled: Promise<void> = Promise.resolve();
+  const { application, page } = await launchEditor(large50, {
+    // The probe must exist before the argv open creates the render worker.
+    onPage: ({ page: startupPage }) => {
+      probeInstalled = installKeystrokeProbe(startupPage);
+    },
+  });
   try {
+    // Diagnostics only; the measurement works without the probe.
+    await probeInstalled.catch(() => undefined);
+    await installKeystrokeMarkProbe(page);
     await openPreview(page, await fs.readFile(large50, "utf8").then((text) =>
       text.split("\n")[0] ?? ""));
-    const samples = await measureKeystrokes(page, "preview-latency");
+    const diagnostics: KeystrokeDiagnostics = { frames: [], timelines: [] };
+    const samples = await measureKeystrokes(
+      page,
+      "preview-latency",
+      diagnostics,
+      true,
+    );
     report("AC-PERF-02 preview-latency", samples);
+    reportKeystrokeDiagnostics(diagnostics);
     expect(samples).toHaveLength(SAMPLES);
     expect(percentile(samples, 0.95)).toBeLessThan(50);
   } finally {

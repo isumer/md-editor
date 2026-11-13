@@ -177,6 +177,29 @@ describe("line diff", () => {
     ]);
   });
 
+  it("groups consecutive anchors without consuming a changed line", () => {
+    const left = [
+      ...Array.from({ length: 300 }, (_, index) => `left-before-${index}`),
+      "anchor-one",
+      "anchor-two",
+      ...Array.from({ length: 300 }, (_, index) => `left-after-${index}`),
+    ];
+    const right = [
+      ...Array.from({ length: 300 }, (_, index) => `right-before-${index}`),
+      "anchor-one",
+      "anchor-two",
+      ...Array.from({ length: 300 }, (_, index) => `right-after-${index}`),
+    ];
+
+    const result = diffLines(left, right, {});
+
+    expect(result.hunks.filter((hunk) => hunk.kind === "unchanged")).toEqual([
+      { kind: "unchanged", leftStart: 301, rightStart: 301, lineCount: 2 },
+    ]);
+    expect(rebuild(result.hunks, left, "left")).toEqual(left);
+    expect(rebuild(result.hunks, right, "right")).toEqual(right);
+  });
+
   it("boundary: returns no hunks for two empty inputs", () => {
     expect(lineHunks([], [])).toEqual([]);
   });

@@ -40,10 +40,12 @@ describe("document commands", () => {
     const save = vi.fn(async () => undefined);
     const compare = vi.fn();
     const featureCommand = vi.fn();
+    const merge = vi.fn();
     const toggleFullScreen = vi.fn(async () => undefined);
     const onResult = vi.fn();
     const commands = new DocumentCommands({
       compare,
+      merge,
       editor,
       featureCommand,
       onError: vi.fn(),
@@ -66,6 +68,11 @@ describe("document commands", () => {
           title: "Compare Open Files",
           accelerator: "CmdOrCtrl+Shift+C",
         },
+        {
+          id: "file-merge-open",
+          title: "Merge Open Files",
+          accelerator: "CmdOrCtrl+Shift+M",
+        },
         { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
         { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
         { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
@@ -81,6 +88,7 @@ describe("document commands", () => {
     menuListener?.("file-save");
     menuListener?.("file-save-as");
     menuListener?.("file-compare-open");
+    menuListener?.("file-merge-open");
     menuListener?.("view-editor");
     menuListener?.("view-focus-mode");
     menuListener?.("view-full-screen");
@@ -90,6 +98,7 @@ describe("document commands", () => {
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
     expect(compare).toHaveBeenCalledOnce();
+    expect(merge).toHaveBeenCalledOnce();
     expect(featureCommand).toHaveBeenCalledWith("view.editor");
     expect(featureCommand).toHaveBeenCalledWith("view.focusMode");
     expect(toggleFullScreen).toHaveBeenCalledOnce();
@@ -126,6 +135,7 @@ describe("document commands", () => {
       "file-save",
       "file-save-as",
       "file-compare-open",
+      "file-merge-open",
       "view-split",
       "view-editor",
       "view-preview",
@@ -146,6 +156,7 @@ describe("document commands", () => {
       compare: vi.fn(),
       editor,
       featureCommand: vi.fn(),
+      merge: vi.fn(),
       onError,
       onResult: vi.fn(),
       open: vi.fn(async () => undefined),

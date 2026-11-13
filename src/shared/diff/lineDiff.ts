@@ -3,26 +3,22 @@ export interface LineDiffOptions {
   readonly ignoreCase?: boolean;
   readonly ignoreLineEndings?: boolean;
 }
-
 export interface UnchangedHunk {
   readonly kind: "unchanged";
   readonly leftStart: number;
   readonly rightStart: number;
   readonly lineCount: number;
 }
-
 export interface DeletedLine {
   readonly kind: "deleted";
   readonly leftLineNumber: number;
   readonly left: string;
 }
-
 export interface AddedLine {
   readonly kind: "added";
   readonly rightLineNumber: number;
   readonly right: string;
 }
-
 export interface ModifiedLine {
   readonly kind: "modified";
   readonly leftLineNumber: number;
@@ -30,21 +26,16 @@ export interface ModifiedLine {
   readonly left: string;
   readonly right: string;
 }
-
 export type ChangedLine = DeletedLine | AddedLine | ModifiedLine;
-
 export interface ChangeHunk {
   readonly kind: "change";
   readonly lines: readonly ChangedLine[];
 }
-
 export type DiffHunk = UnchangedHunk | ChangeHunk;
-
 export interface LineDiffResult {
   readonly hunks: readonly DiffHunk[];
   readonly limited: boolean;
 }
-
 type Edit =
   | { readonly kind: "same"; readonly left: number; readonly right: number }
   | { readonly kind: "deleted"; readonly left: number }
@@ -349,14 +340,24 @@ function appendMiddle(
   let leftStart = middle[0][0];
   let rightStart = middle[1][0];
   let limited = false;
-  for (const anchor of anchors) {
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index] as Anchor;
     limited = appendGap(hunks, input, [
       [leftStart, anchor[0]],
       [rightStart, anchor[1]],
     ]) || limited;
-    appendUnchanged(hunks, anchor[0] + 1, anchor[1] + 1, 1);
-    leftStart = anchor[0] + 1;
-    rightStart = anchor[1] + 1;
+    let run = 1;
+    while (index + run < anchors.length) {
+      const next = anchors[index + run] as Anchor;
+      if (next[0] !== anchor[0] + run || next[1] !== anchor[1] + run) {
+        break;
+      }
+      run += 1;
+    }
+    appendUnchanged(hunks, anchor[0] + 1, anchor[1] + 1, run);
+    leftStart = anchor[0] + run;
+    rightStart = anchor[1] + run;
+    index += run - 1;
   }
   return appendGap(hunks, input, [
     [leftStart, middle[0][1]],

@@ -14,6 +14,7 @@ import {
 import { compareMenu } from "../../src/shared/ipc/menu/compare";
 import { composeMenuItems } from "../../src/shared/ipc/menu/compose";
 import { fileMenu } from "../../src/shared/ipc/menu/file";
+import { mergeMenu } from "../../src/shared/ipc/menu/merge";
 import { viewMenu } from "../../src/shared/ipc/menu/view";
 
 interface TemplateShape {
@@ -45,6 +46,11 @@ const contribution: MenuContribution = {
       id: "file-compare-open",
       title: "Compare Open Files",
       accelerator: "CmdOrCtrl+Shift+C",
+    },
+    {
+      id: "file-merge-open",
+      title: "Merge Open Files",
+      accelerator: "CmdOrCtrl+Shift+M",
     },
     { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
     { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
@@ -108,8 +114,9 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "0.1|file-save|Save|-|-|CmdOrCtrl+S|false|true|false",
           "0.2|file-save-as|Save As|-|-|CmdOrCtrl+Shift+S|false|false|true",
           "0.3|file-compare-open|Compare Open Files|-|-|CmdOrCtrl+Shift+C|false|true|false",
-          "0.4|-|-|-|separator|-|-|-|-",
-          "0.5|-|-|quit|-|-|-|-|-",
+          "0.4|file-merge-open|Merge Open Files|-|-|CmdOrCtrl+Shift+M|false|true|false",
+          "0.5|-|-|-|separator|-|-|-|-",
+          "0.6|-|-|quit|-|-|-|-|-",
           "1|-|Edit|-|-|-|-|-|-",
           "1.0|-|-|cut|-|-|-|-|-",
           "1.1|-|-|copy|-|-|-|-|-",
@@ -144,6 +151,7 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "1.1|file-save|Save|-|-|CmdOrCtrl+S|false|true|false",
           "1.2|file-save-as|Save As|-|-|CmdOrCtrl+Shift+S|false|false|true",
           "1.3|file-compare-open|Compare Open Files|-|-|CmdOrCtrl+Shift+C|false|true|false",
+          "1.4|file-merge-open|Merge Open Files|-|-|CmdOrCtrl+Shift+M|false|true|false",
           "2|-|Edit|-|-|-|-|-|-",
           "2.0|-|-|cut|-|-|-|-|-",
           "2.1|-|-|copy|-|-|-|-|-",
@@ -165,7 +173,12 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
 });
 
 it("fails when a declaration drifts from the literal id unions", () => {
-  const declaredItems = composeMenuItems([fileMenu, compareMenu, viewMenu]);
+  const declaredItems = composeMenuItems([
+    fileMenu,
+    compareMenu,
+    mergeMenu,
+    viewMenu,
+  ]);
 
   expect(declaredItems.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
   expect(declaredItems.map((item) => item.commandId))
@@ -173,7 +186,12 @@ it("fails when a declaration drifts from the literal id unions", () => {
 });
 
 it("sorts menu declarations by order", () => {
-  const declaredItems = composeMenuItems([viewMenu, compareMenu, fileMenu]);
+  const declaredItems = composeMenuItems([
+    mergeMenu,
+    viewMenu,
+    compareMenu,
+    fileMenu,
+  ]);
 
   expect(declaredItems.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
 });
@@ -181,9 +199,11 @@ it("sorts menu declarations by order", () => {
 it("keeps import order when menu declaration orders are equal", () => {
   const first = { ...fileMenu, order: 0 } as const;
   const second = { ...compareMenu, order: 0 } as const;
+  const third = { ...mergeMenu, order: 0 } as const;
+  const fourth = { ...viewMenu, order: 0 } as const;
 
-  expect(composeMenuItems([first, second]).map((item) => item.id))
-    .toEqual([...fileMenu.items, ...compareMenu.items].map((item) => item.id));
+  expect(composeMenuItems([first, second, third, fourth]).map((item) => item.id))
+    .toEqual([...MENU_ITEM_IDS]);
 });
 
 it("keeps the type union and runtime validator on the same registry", () => {
@@ -197,6 +217,7 @@ it("keeps the type union and runtime validator on the same registry", () => {
     | "file-save"
     | "file-save-as"
     | "file-compare-open"
+    | "file-merge-open"
     | "view-split"
     | "view-editor"
     | "view-preview"
