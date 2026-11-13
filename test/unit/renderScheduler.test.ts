@@ -93,6 +93,21 @@ describe("RenderScheduler", () => {
     expect(requests).toEqual([{ id: 1 }]);
   });
 
+  it("AC-PERF-03: coalesces edits while an immediate render is in flight", () => {
+    const requests: ScheduledRender[] = [];
+    const scheduler = new RenderScheduler((request) => requests.push(request), {
+      dispatchImmediately: true,
+    });
+
+    scheduler.schedule();
+    scheduler.schedule();
+    scheduler.schedule();
+    expect(requests).toEqual([{ id: 1 }]);
+
+    scheduler.applyResult(1, "result", () => undefined);
+    expect(requests).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
   it("AC-R1-02: dispatches the last edit within the maximum wait when frames stall", () => {
     const testHarness = harness();
 

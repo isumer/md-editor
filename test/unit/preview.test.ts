@@ -662,6 +662,121 @@ describe("preview render flow", () => {
     clearMarks.mockRestore();
   });
 
+  it("AC-PERF-11: marks each first-preview main-thread phase", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      complete: true,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-sanitize-start",
+      "preview-sanitize-end",
+      "preview-rewrite-start",
+      "preview-rewrite-end",
+      "preview-dom-start",
+      "preview-dom-end",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
+  it("AC-PERF-11: marks only the first block of a replace", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [
+        { id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        { id: "b2", startLine: 1, endLine: 2, html: "<p>two</p>" },
+      ],
+      complete: true,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-sanitize-start",
+      "preview-sanitize-end",
+      "preview-rewrite-start",
+      "preview-rewrite-end",
+      "preview-dom-start",
+      "preview-dom-end",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
+  it("AC-PERF-11: clears each previous first-preview phase mark", () => {
+    const clearMarks = vi.spyOn(performance, "clearMarks");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+      ok: true,
+      mode: "replace",
+      blocks: [{ id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" }],
+      complete: true,
+    });
+
+    expect(clearMarks.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+      "preview-sanitize-start",
+      "preview-sanitize-end",
+      "preview-rewrite-start",
+      "preview-rewrite-end",
+      "preview-dom-start",
+      "preview-dom-end",
+    ]);
+    clearMarks.mockRestore();
+  });
+
+  it("AC-PERF-11: an empty replace does not mark a later patch as first preview", () => {
+    const mark = vi.spyOn(performance, "mark");
+    const { worker } = wiring();
+
+    send(worker, {
+      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "replace", blocks: [], complete: true,
+    });
+    send(worker, {
+      id: 2, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "patch",
+      blocks: [{
+        block: { id: "b1", startLine: 0, endLine: 1, html: "<p>one</p>" },
+        after: null,
+      }],
+      removed: [],
+      complete: true,
+    });
+
+    expect(mark.mock.calls.map(([name]) => name)).toEqual([
+      "preview-apply-start",
+      "preview-apply-end",
+      "preview-apply-start",
+      "preview-apply-end",
+    ]);
+    mark.mockRestore();
+  });
+
   it("AC-PERF-10: samples one append timing in every 64 batches", () => {
     const clearMeasures = vi.spyOn(performance, "clearMeasures");
     const measure = vi.spyOn(performance, "measure");
@@ -997,6 +1112,37 @@ describe("preview render flow", () => {
     expect(blocks(preview)[2]?.textContent).toBe("three edited");
     expect(blocks(preview)[0]?.textContent).toBe("one");
     expect(blocks(preview)[1]?.textContent).toBe("two");
+  });
+
+  it("AC-PERF-08: updates a generated text element without replacing it", () => {
+    const { worker, preview } = wiring();
+    send(worker, {
+      id: 1, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "replace",
+      blocks: [{
+        id: "b1", startLine: 4, endLine: 5,
+        html: '<p data-line="4">before</p>\n',
+      }],
+      complete: true,
+    });
+    const paragraph = preview.querySelector("p");
+
+    send(worker, {
+      id: 2, docId: "doc", epoch: 1, version: 1, ok: true,
+      mode: "patch",
+      blocks: [{
+        block: {
+          id: "b1", startLine: 4, endLine: 5,
+          html: '<p data-line="4">after</p>\n',
+        },
+        after: null,
+      }],
+      removed: [],
+      complete: true,
+    });
+
+    expect(preview.querySelector("p")).toBe(paragraph);
+    expect(paragraph?.textContent).toBe("after");
   });
 
   it("AC-R1-09: inserts a new block after its anchor and removes deleted blocks", () => {

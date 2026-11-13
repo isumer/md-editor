@@ -38,6 +38,39 @@ describe("view controller", () => {
     document.body.className = "";
   });
 
+  it("AC-PERF-03: startup defers pane geometry until after first paint", () => {
+    const { divider, workspace } = fixture();
+    const editor = document.querySelector<HTMLElement>("#editor");
+    const preview = document.querySelector<HTMLElement>("#preview");
+    if (editor === null || preview === null) throw new Error("Missing pane fixture");
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.spyOn(editor, "getBoundingClientRect").mockReturnValue(rect(220, 390));
+    const measurePreview = vi.spyOn(preview, "getBoundingClientRect");
+    measurePreview.mockReturnValue(rect(610, 390));
+
+    new ViewController({
+      divider,
+      preview,
+      skipInitialMeasurement: true,
+      workspace,
+    });
+
+    try {
+      expect(workspace.dataset["viewMode"]).toBe("split");
+      expect(measurePreview).not.toHaveBeenCalled();
+      frames[0]?.(0);
+      expect(measurePreview).not.toHaveBeenCalled();
+      frames[1]?.(16);
+      expect(workspace.dataset["stablePaneWidths"]).toBe("true");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("AC-R2-01: switches modes without replacing pane elements", () => {
     const { divider, workspace } = fixture();
     const editor = document.querySelector("#editor");
