@@ -3,6 +3,7 @@ import { Text, Transaction, type ChangeSet, type EditorState } from "@codemirror
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
+import { parseHexColor, relativeLuminance } from "../shared/settings/appearance";
 import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
@@ -24,6 +25,7 @@ import {
   dispatchRedo,
   dispatchUndo,
   editorCallbacksEffect,
+  setEditorDarkTheme,
   type EditorCallbacks,
 } from "./editor/editor";
 import type { InstalledFeatures } from "./editor/featureWiring";
@@ -685,14 +687,16 @@ window.addEventListener("drop", (event) => {
 async function loadBackgroundSettings(): Promise<void> {
   const settingsResult = await loadSettings();
   const applyTheme = (theme: ResolvedTheme): void => {
-    if (settingsResult.ok) {
-      applyBackgrounds(
+    const editorText = settingsResult.ok
+      ? applyBackgrounds(
         { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
         theme,
-      );
-    } else {
-      resetToThemeDefaults(theme);
-    }
+      )
+      : resetToThemeDefaults(theme);
+    const colour = parseHexColor(editorText);
+    const dark = colour !== null && relativeLuminance(colour) > 0.5;
+    setEditorDarkTheme(editor, dark);
+    setEditorDarkTheme(editorTwo, dark);
   };
   applyTheme(resolveSystemTheme());
   watchSystemTheme(applyTheme);
