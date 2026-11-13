@@ -1,3 +1,4 @@
+/* eslint-disable complexity, max-depth, max-lines-per-function -- Browser helpers stay in the isolated page closure. */
 import path from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
@@ -163,6 +164,23 @@ async function contrastFailures(page: Page): Promise<ContrastFailure[]> {
           ratio: value,
           required,
         });
+      }
+    }
+    for (const row of Array.from(document.querySelectorAll(".compare-selected"))) {
+      const outline = parseColor(getComputedStyle(row).outlineColor);
+      for (const cell of Array.from(row.querySelectorAll(":scope > .compare-cell"))) {
+        const background = effectiveBackground(cell);
+        const visibleOutline = outline.a < 1 ? blend(outline, background) : outline;
+        const value = ratio(visibleOutline, background);
+        if (value < 3) {
+          failures.push({
+            element: `${describe(row)} outline on ${describe(cell)}`,
+            colour: format(visibleOutline),
+            background: format(background),
+            ratio: value,
+            required: 3,
+          });
+        }
       }
     }
     return failures;
