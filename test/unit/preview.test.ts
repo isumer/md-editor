@@ -959,7 +959,7 @@ describe("preview render flow", () => {
     expect(showError).toHaveBeenLastCalledWith();
   });
 
-  it("AC-R1-09: patches only the changed block and keeps other blocks' DOM nodes", () => {
+  it("AC-R1-09 AC-R1-11: patches only the changed block and keeps other blocks' DOM nodes", () => {
     const { worker, preview } = wiring();
 
     send(worker, {
