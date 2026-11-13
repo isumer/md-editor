@@ -8,8 +8,13 @@ export const compareFeature: FeatureRegistration = {
     let controller: CompareController | null = null;
     const open = (): void => {
       controller ??= new CompareController({
+        applyRight: (text) => context.editor.dispatch({
+          changes: { from: 0, to: context.editor.state.doc.length, insert: text },
+          userEvent: "input.compare",
+        }),
         documents: context.documents,
         editor: context.editorHost,
+        isActive: context.isActive,
         preview: context.preview,
         showStatus: context.showStatus,
         workspace: context.workspace,

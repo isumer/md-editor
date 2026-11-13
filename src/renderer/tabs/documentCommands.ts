@@ -52,6 +52,7 @@ export class DocumentCommands {
   private readonly contextKeys = createContextKeys();
   private readonly commandContext = { contextKeys: this.contextKeys };
   private readonly commands = createCommandRegistry();
+  private pendingOpen: Promise<boolean> | null = null;
   constructor(private readonly options: DocumentCommandsOptions) {
     this.register();
     onMenuCommand((item) => this.runMenu(item));
@@ -78,7 +79,11 @@ export class DocumentCommands {
   }
 
   private register(): void {
-    this.commands.register({ id: "file.open", titleKey: "menu.open", run: this.options.open });
+    this.commands.register({
+      id: "file.open",
+      titleKey: "menu.open",
+      run: () => this.open(),
+    });
     this.commands.register({
       id: "file.save",
       titleKey: "menu.save",
@@ -92,12 +97,12 @@ export class DocumentCommands {
     this.commands.register({
       id: "file.compareOpen",
       titleKey: "menu.compareOpen",
-      run: this.options.compare,
+      run: () => this.afterOpen(this.options.compare),
     });
     this.commands.register({
       id: "file.mergeOpen",
       titleKey: "menu.mergeOpen",
-      run: this.options.merge,
+      run: () => this.afterOpen(this.options.merge),
     });
     this.commands.register({
       id: "undo",
@@ -109,6 +114,23 @@ export class DocumentCommands {
       titleKey: "menu.redo",
       run: () => dispatchRedo(this.options.editor),
     });
+  }
+
+  private async open(): Promise<void> {
+    const operation = this.options.open();
+    const tracked = operation.then(() => true, () => false);
+    this.pendingOpen = tracked;
+    try {
+      await operation;
+    } finally {
+      if (this.pendingOpen === tracked) this.pendingOpen = null;
+    }
+  }
+
+  private async afterOpen(command: () => void): Promise<void> {
+    const pending = this.pendingOpen;
+    if (pending !== null && !await pending) return;
+    command();
   }
 
   private runMenu(menuItemId: MenuCommandMessage): void {

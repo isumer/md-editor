@@ -76,12 +76,13 @@ describe("document commands", () => {
     menuListener?.("file-compare-open");
     menuListener?.("file-merge-open");
     (menuListener as ((command: string) => void) | null)?.("unknown");
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(compare).toHaveBeenCalledOnce();
+      expect(merge).toHaveBeenCalledOnce();
+    });
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
-    expect(compare).toHaveBeenCalledOnce();
-    expect(merge).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
@@ -145,6 +146,80 @@ describe("document commands", () => {
     await vi.waitFor(() => {
       expect(onError).toHaveBeenCalledWith(new Error("save stopped"));
     });
+    editor.destroy();
+  });
+
+  it("compare waits for an open command already in flight", async () => {
+    const { DocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    let finishOpen: (() => void) | undefined;
+    const open = vi.fn(() => new Promise<void>((resolve) => {
+      finishOpen = resolve;
+    }));
+    const compare = vi.fn();
+    new DocumentCommands({
+      compare,
+      editor,
+      merge: vi.fn(),
+      onError: vi.fn(),
+      onResult: vi.fn(),
+      open,
+      save: vi.fn(async () => undefined),
+    });
+    await Promise.resolve();
+
+    menuListener?.("file-open");
+    menuListener?.("file-compare-open");
+    await Promise.resolve();
+    expect(compare).not.toHaveBeenCalled();
+
+    finishOpen?.();
+    await vi.waitFor(() => expect(compare).toHaveBeenCalledOnce());
+    editor.destroy();
+  });
+
+  it("compare stays closed when the latest overlapping open fails", async () => {
+    const { DocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    const operations: Array<{
+      reject(error: Error): void;
+      resolve(): void;
+    }> = [];
+    const open = vi.fn(() => new Promise<void>((resolve, reject) => {
+      operations.push({ resolve, reject });
+    }));
+    const compare = vi.fn();
+    const onError = vi.fn();
+    new DocumentCommands({
+      compare,
+      editor,
+      merge: vi.fn(),
+      onError,
+      onResult: vi.fn(),
+      open,
+      save: vi.fn(async () => undefined),
+    });
+    await Promise.resolve();
+
+    menuListener?.("file-open");
+    menuListener?.("file-open");
+    menuListener?.("file-compare-open");
+    operations[1]?.reject(new Error("open stopped"));
+
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledOnce();
+      expect(compare).not.toHaveBeenCalled();
+    });
+    operations[0]?.resolve();
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     editor.destroy();
   });
 });
