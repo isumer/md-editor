@@ -61,9 +61,20 @@ function leaveBrowserFullScreen(): Promise<void> {
 }
 
 function visiblePreviewBlock(preview: HTMLElement): HTMLElement | null {
-  const top = preview.getBoundingClientRect().top;
-  return [...preview.querySelectorAll<HTMLElement>(".preview-block")]
-    .find((block) => block.getBoundingClientRect().bottom > top) ?? null;
+  const bounds = preview.getBoundingClientRect();
+  const pages = preview.querySelectorAll<HTMLElement>(".preview-page");
+  let low = 0;
+  let high = pages.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const page = pages.item(middle);
+    if (page === null || page.getBoundingClientRect().bottom > bounds.top) high = middle;
+    else low = middle + 1;
+  }
+  const page = pages.item(low);
+  const container = page ?? preview;
+  return [...container.querySelectorAll<HTMLElement>(".preview-block")]
+    .find((block) => block.getBoundingClientRect().bottom > bounds.top) ?? null;
 }
 
 export class ViewController {
@@ -239,13 +250,20 @@ export class ViewController {
     const preview = this.options.preview;
     if (!(editor instanceof HTMLElement) || preview === undefined) return;
     const anchor = this.capturePreviewAnchor();
-    delete this.options.workspace.dataset["stablePaneWidths"];
-    const editorWidth = editor.getBoundingClientRect().width;
-    const previewWidth = preview.getBoundingClientRect().width;
+    const workspaceWidth = this.options.workspace.getBoundingClientRect().width;
+    const panesWidth = workspaceWidth - (this.focusMode ? 0 : SIDEBAR_WIDTH);
+    const editorWidth = panesWidth > 0
+      ? panesWidth * this.share
+      : editor.getBoundingClientRect().width;
+    const previewWidth = panesWidth > 0
+      ? panesWidth - editorWidth
+      : preview.getBoundingClientRect().width;
     if (editorWidth > 0 && previewWidth > 0) {
       this.options.workspace.style.setProperty("--editor-resize-width", `${String(editorWidth)}px`);
       this.options.workspace.style.setProperty("--preview-resize-width", `${String(previewWidth)}px`);
       this.options.workspace.dataset["stablePaneWidths"] = "true";
+      // Flush the single track change before reading the anchor's new position.
+      editor.getBoundingClientRect();
     }
     this.restorePreviewAnchor(anchor);
   }
