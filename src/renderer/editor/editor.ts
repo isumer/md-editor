@@ -156,6 +156,10 @@ export function handleDocumentUpdate(
   callbacks: EditorCallbacks,
 ): void {
   performance.mark("editor-update-start");
+  if (documentState.applyingDocument) {
+    performance.mark("editor-update-end");
+    return;
+  }
   if (!update.docChanged) {
     performance.mark("editor-state-hooks-start");
     callbacks.onStateChanged?.(update.state);
@@ -163,11 +167,9 @@ export function handleDocumentUpdate(
     performance.mark("editor-update-end");
     return;
   }
-  if (!documentState.applyingDocument) {
-    performance.mark("editor-change-hooks-start");
-    callbacks.onChanges(update.changes, update.state);
-    performance.mark("editor-change-hooks-end");
-  }
+  performance.mark("editor-change-hooks-start");
+  callbacks.onChanges(update.changes, update.state);
+  performance.mark("editor-change-hooks-end");
   performance.mark("editor-document-hooks-start");
   callbacks.onDocumentChanged();
   performance.mark("editor-document-hooks-end");

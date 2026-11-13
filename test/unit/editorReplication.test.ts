@@ -97,6 +97,26 @@ describe("editor replication performance", () => {
     expect(calls).toEqual(["clone", "observer"]);
   });
 
+  it("mirrored document changes skip callback work", () => {
+    const state = EditorState.create({ doc: "before" });
+    const transaction = state.update({ changes: { from: 0, insert: "x" } });
+    const documentState = createDocumentState();
+    const onChanges = vi.fn();
+    const onDocumentChanged = vi.fn();
+    const onStateChanged = vi.fn();
+    documentState.applyingDocument = true;
+
+    handleDocumentUpdate({
+      docChanged: transaction.docChanged,
+      state: transaction.state,
+      changes: transaction.changes,
+    }, documentState, { onChanges, onDocumentChanged, onStateChanged });
+
+    expect(onChanges).not.toHaveBeenCalled();
+    expect(onDocumentChanged).not.toHaveBeenCalled();
+    expect(onStateChanged).not.toHaveBeenCalled();
+  });
+
   it("AC-PERF-05: a one-character edit of 20 MB never flattens the document", () => {
     const initial = Text.of(["x".repeat(20 * 1024 * 1024)]);
     const state = EditorState.create({ doc: initial });

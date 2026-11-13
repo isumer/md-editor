@@ -361,7 +361,9 @@ function syncPeerEditor(
 
 function runHistory(event: "redo" | "undo"): void {
   const secondary = editorTwo.hasFocus;
-  hydrateEditor(secondary ? 2 : 1);
+  const view = secondary ? 2 : 1;
+  const document = secondary ? secondaryDocument : activeDocument;
+  if (document && stateViews.get(document.id) !== view) hydrateEditor(view);
   const activeEditor = secondary ? editorTwo : editor;
   if (event === "undo") dispatchUndo(activeEditor);
   else dispatchRedo(activeEditor);
