@@ -74,6 +74,8 @@ export class ViewController {
   private previewScrollTop = 0;
   private restoreGeneration = 0;
   private resizeTimer: number | null = null;
+  private resizeDeadline = 0;
+  private enteringFocusMode = false;
   private readonly enterFullScreen: () => Promise<void>;
   private readonly leaveFullScreen: () => Promise<void>;
 
@@ -114,7 +116,11 @@ export class ViewController {
       if (generation !== this.restoreGeneration) return;
       this.restoreScroll();
       requestAnimationFrame(() => {
-        if (generation === this.restoreGeneration) this.restoreScroll();
+        if (generation !== this.restoreGeneration) return;
+        this.restoreScroll();
+        requestAnimationFrame(() => {
+          if (generation === this.restoreGeneration) this.restoreScroll();
+        });
       });
     });
     if (mode === "split") this.refreshPaneWidths();
@@ -123,11 +129,14 @@ export class ViewController {
   async enterFocusMode(): Promise<void> {
     if (this.focusMode) return;
     document.body.classList.add("focus-mode");
+    this.enteringFocusMode = true;
     try {
       await this.enterFullScreen();
     } catch (error) {
       document.body.classList.remove("focus-mode");
       throw error;
+    } finally {
+      this.enteringFocusMode = false;
     }
     if (!this.focusMode) {
       await this.leaveFullScreen();
@@ -174,19 +183,28 @@ export class ViewController {
   };
 
   private readonly resize = (): void => {
-    if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
-    this.resizeTimer = window.setTimeout(this.finishResize, RESIZE_SETTLE_MS);
+    this.resizeDeadline = performance.now() + RESIZE_SETTLE_MS;
+    this.resizeTimer ??= window.setTimeout(this.finishResize, RESIZE_SETTLE_MS);
   };
 
   private readonly fullScreenChanged = (): void => {
     // The OS can leave full screen by itself; focus mode must follow it.
-    if (document.fullscreenElement === null && this.focusMode) {
+    if (
+      !this.enteringFocusMode &&
+      document.fullscreenElement === null &&
+      this.focusMode
+    ) {
       document.body.classList.remove("focus-mode");
       this.refreshPaneWidths();
     }
   };
 
   private readonly finishResize = (): void => {
+    const remaining = this.resizeDeadline - performance.now();
+    if (remaining > 0) {
+      this.resizeTimer = window.setTimeout(this.finishResize, remaining);
+      return;
+    }
     this.resizeTimer = null;
     if (this.mode === "split") this.refreshPaneWidths();
   };

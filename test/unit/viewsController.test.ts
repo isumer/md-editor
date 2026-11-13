@@ -228,6 +228,27 @@ describe("view controller", () => {
     expect(editorScroll.scrollTop).toBe(120);
   });
 
+  it("AC-R2-01: restores pane scroll after a third-frame editor measurement", () => {
+    const { divider, workspace } = fixture();
+    const editorScroll = document.createElement("div");
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    editorScroll.scrollTop = 120;
+    const controller = new ViewController({ divider, editorScroll, workspace });
+    const before = frames.length;
+
+    controller.setMode("editor");
+    frames[before]?.(0);
+    frames[before + 1]?.(16);
+    editorScroll.scrollTop = 0;
+    frames[before + 2]?.(32);
+
+    expect(editorScroll.scrollTop).toBe(120);
+  });
+
   it("AC-R2-01: discards a stale second-frame scroll restoration", () => {
     const { divider, workspace } = fixture();
     const editorScroll = document.createElement("div");
@@ -390,6 +411,78 @@ describe("view controller", () => {
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(document, "fullscreenElement");
       else Object.defineProperty(document, "fullscreenElement", descriptor);
+    }
+  });
+
+  it("AC-R2-04: a full-screen entry event keeps focus mode active", async () => {
+    const { divider, workspace } = fixture();
+    const addEventListener = vi.spyOn(document, "addEventListener");
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      "fullscreenElement",
+    );
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: null,
+    });
+    let completeEntry = (): void => undefined;
+    const entering = new Promise<void>((resolve) => {
+      completeEntry = resolve;
+    });
+    const controller = new ViewController({
+      divider,
+      enterFullScreen: () => entering,
+      workspace,
+    });
+
+    try {
+      const transition = controller.enterFocusMode();
+      const listener = addEventListener.mock.calls.find(
+        ([type]) => type === "fullscreenchange",
+      )?.[1];
+      if (typeof listener !== "function") throw new Error("Missing full-screen listener");
+      (listener as EventListener)(new Event("fullscreenchange"));
+
+      expect(controller.focusMode).toBe(true);
+      completeEntry();
+      await transition;
+    } finally {
+      if (fullScreenDescriptor === undefined) {
+        Reflect.deleteProperty(document, "fullscreenElement");
+      } else {
+        Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      }
+    }
+  });
+
+  it("AC-R2-05: continuous resize uses one trailing timer", () => {
+    vi.useFakeTimers();
+    try {
+      const { divider, workspace } = fixture();
+      const addEventListener = vi.spyOn(window, "addEventListener");
+      new ViewController({ divider, workspace });
+      const schedule = vi.spyOn(window, "setTimeout");
+      const calls = addEventListener.mock.calls as unknown as readonly (
+        readonly [string, EventListenerOrEventListenerObject]
+      )[];
+      const listener = calls.find(([type]) => type === "resize")?.[1];
+      if (typeof listener !== "function") throw new Error("Missing resize listener");
+      const resize = (): void => {
+        (listener as EventListener)(new Event("resize"));
+      };
+
+      resize();
+      resize();
+      resize();
+
+      expect(schedule).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(250);
+      resize();
+      vi.advanceTimersByTime(250);
+      expect(schedule).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(250);
+    } finally {
+      vi.useRealTimers();
     }
   });
 
