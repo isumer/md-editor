@@ -178,17 +178,14 @@ export class RenderWorkerHandler {
     const cache = this.cachedRender(request, document);
     cache.request = request;
     try {
-      const fillDeferredByEdit = cache.fillDeferredByEdit;
       this.cancelFill(cache);
       const result = this.resultFor(cache.state, request);
-      cache.fillDeferredByEdit = false;
       this.postResponse(result);
       this.scheduleFill(
         cache,
-        result.ok && result.mode === "patch" && fillDeferredByEdit
-          ? EDIT_FILL_DELAY_MS
-          : FILL_DELAY_MS,
+        cache.fillDeferredByEdit ? EDIT_FILL_DELAY_MS : FILL_DELAY_MS,
       );
+      cache.fillDeferredByEdit = false;
     } catch (error) {
       // A failed patch or fill may already have advanced the cache (rendered
       // chunks, moved cursor) without delivering their blocks. Rebuild the

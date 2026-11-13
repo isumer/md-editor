@@ -292,17 +292,6 @@ body {
   contain-intrinsic-size: auto 12000px;
 }
 
-/* Lay out the initial fling before a huge preview reports that it is ready. */
-.preview-large-ready > .preview-section:first-child,
-.preview-large-ready > .preview-section:first-child > .preview-page {
-  content-visibility: visible;
-}
-
-.preview-eager-layout .preview-page,
-.preview-eager-layout .preview-section {
-  content-visibility: visible;
-}
-
 #preview pre {
   overflow: auto;
   padding: 12px;

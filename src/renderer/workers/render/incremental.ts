@@ -74,7 +74,6 @@ interface ChangedRange {
 // acknowledged fill batches so no single main-thread task is large.
 export const INITIAL_CHUNK_COUNT = 12;
 const FILL_BATCH_SIZE = 8;
-const PROGRESSIVE_CHUNKS_PER_BLOCK = 16;
 export const RENDER_BATCH_BYTE_LIMIT = 256 * 1024;
 const PROGRESSIVE_BYTES = 2 * 1024 * 1024;
 // A fill task runs to its time budget so a keystroke's render request waits at
@@ -177,7 +176,6 @@ export class IncrementalRenderState {
   private segments: LineSegment[] = [{ start: 0, base: 0 }];
   private nextId = 1;
   private lineWrites = 0;
-  private initialEndLine: number | null = null;
 
   // Counts chunk line-field writes so a test can assert that a keystroke does
   // not touch every chunk after the change.
@@ -200,7 +198,6 @@ export class IncrementalRenderState {
     // Split only the first screen. The fill pass extends the chunk list as it
     // consumes it, which keeps a 20 MB open off the critical path.
     this.ensureChunks(INITIAL_CHUNK_COUNT);
-    this.initialEndLine = this.splitCursor;
     this.refreshReferences();
   }
 
@@ -219,7 +216,7 @@ export class IncrementalRenderState {
     const lines = textReader(this.document);
     let candidate = false;
     while (this.chunks.length < count) {
-      const range = this.nextRenderRange(lines, this.splitCursor);
+      const range = nextChunk(lines, this.splitCursor);
       if (!range) {
         this.fullySplit = true;
         break;
@@ -237,20 +234,6 @@ export class IncrementalRenderState {
     if (candidate) {
       this.refreshReferences();
     }
-  }
-
-  private nextRenderRange(lines: LineReader, from: number): LineRange | null {
-    const first = nextChunk(lines, from);
-    if (first === null) return null;
-    const grouped = this.progressive && this.initialEndLine !== null &&
-      from >= this.initialEndLine;
-    let endLine = first.endLine;
-    for (let count = 1; grouped && count < PROGRESSIVE_CHUNKS_PER_BLOCK; count += 1) {
-      const next = nextChunk(lines, endLine);
-      if (next === null) break;
-      endLine = next.endLine;
-    }
-    return { startLine: first.startLine, endLine };
   }
 
   // The change handlers compare against the old chunk list, so the list must
@@ -359,9 +342,6 @@ export class IncrementalRenderState {
 
     const changed = this.changedLines(before, bounds);
     const lineDelta = after.lines - before.lines;
-    if (this.initialEndLine !== null && changed.startOld < this.initialEndLine) {
-      this.initialEndLine += lineDelta;
-    }
     // Old chunks after the change are the only reuse candidates, so split
     // until one exists. The scan stays proportional to the change's position.
     this.splitThrough(changed.endOld);
@@ -380,7 +360,7 @@ export class IncrementalRenderState {
     let stop = -1;
     let from = reparseStart;
     while (from < after.lines) {
-      const range = this.nextRenderRange(lines, from);
+      const range = nextChunk(lines, from);
       if (!range) {
         break;
       }

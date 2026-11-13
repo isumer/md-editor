@@ -335,9 +335,9 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(["new-1", "new-2", "new-3"]);
-    expect(frames).toHaveLength(0);
+    expect(frames).toHaveLength(1);
     expect(worker.postMessage).not.toHaveBeenCalled();
-    vi.runOnlyPendingTimers();
+    frames[0]?.(16);
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 5,
     });
@@ -806,102 +806,6 @@ describe("preview render flow", () => {
     expect(preview.innerHTML).toBe("<p>current preview</p>");
     expect(showStatus).not.toHaveBeenCalled();
     expect(onResync).not.toHaveBeenCalled();
-  });
-
-  it("AC-PERF-09: a completed medium preview uses eager layout", () => {
-    const { worker, preview, documents } = wiring();
-    const documentPreview = documents.getOrCreate("doc", 1);
-    const placeholder = document.createElement("div");
-    for (let index = 0; index < 4_095; index += 1) {
-      documentPreview.elements.set(`existing-${String(index)}`, placeholder);
-    }
-
-    send(worker, {
-      id: 1,
-      docId: "doc",
-      epoch: 1,
-      version: 1,
-      ok: true,
-      mode: "append",
-      blocks: [{ id: "last", startLine: 4_095, endLine: 4_096, html: "<p>last</p>" }],
-      fillToken: 1,
-      complete: true,
-    });
-
-    expect(preview.querySelector(".preview-document")?.classList
-      .contains("preview-eager-layout")).toBe(true);
-  });
-
-  it("AC-PERF-09: a completed very large preview keeps lazy layout", () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frames.push(callback);
-      return frames.length;
-    });
-    vi.stubGlobal("cancelAnimationFrame", () => undefined);
-    const { worker, preview, documents } = wiring();
-    const documentPreview = documents.getOrCreate("doc", 1);
-    const placeholder = document.createElement("div");
-    for (let index = 0; index < 4_096; index += 1) {
-      documentPreview.elements.set(`existing-${String(index)}`, placeholder);
-    }
-
-    send(worker, {
-      id: 1,
-      docId: "doc",
-      epoch: 1,
-      version: 1,
-      ok: true,
-      mode: "append",
-      blocks: [{ id: "last", startLine: 4_096, endLine: 4_097, html: "<p>last</p>" }],
-      fillToken: 1,
-      complete: true,
-    });
-
-    expect(preview.querySelector(".preview-document")?.classList
-      .contains("preview-eager-layout")).toBe(false);
-    expect(preview.dataset["renderComplete"]).toBe("false");
-    frames[0]?.(16);
-    expect(preview.dataset["renderComplete"]).toBe("false");
-    frames[1]?.(32);
-    expect(preview.dataset["renderComplete"]).toBe("true");
-    vi.unstubAllGlobals();
-  });
-
-  it("AC-PERF-08: a patch keeps pages lazy until editing is idle", () => {
-    vi.useFakeTimers();
-    const { worker, preview } = wiring();
-    send(worker, {
-      id: 1,
-      docId: "doc",
-      epoch: 1,
-      version: 1,
-      ok: true,
-      mode: "replace",
-      blocks: [{ id: "block", startLine: 0, endLine: 1, html: "<p>before</p>" }],
-      complete: true,
-    });
-    send(worker, {
-      id: 2,
-      docId: "doc",
-      epoch: 1,
-      version: 1,
-      ok: true,
-      mode: "patch",
-      blocks: [{
-        after: null,
-        block: { id: "block", startLine: 0, endLine: 1, html: "<p>after</p>" },
-      }],
-      removed: [],
-      complete: true,
-    });
-    const documentPreview = preview.querySelector(".preview-document");
-
-    expect(documentPreview?.classList.contains("preview-eager-layout")).toBe(false);
-    vi.advanceTimersByTime(249);
-    expect(documentPreview?.classList.contains("preview-eager-layout")).toBe(false);
-    vi.advanceTimersByTime(1);
-    expect(documentPreview?.classList.contains("preview-eager-layout")).toBe(true);
   });
 
   it("AC-R1-07: ignores a result older than the version already shown", () => {
