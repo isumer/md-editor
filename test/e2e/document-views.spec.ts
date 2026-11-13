@@ -320,13 +320,90 @@ test("AC-R4-11: an inactive clone reconnects to the authoritative text", {
   }
 });
 
+test("closing a cloned tab in view two keeps the view one tab", async () => {
+  const { directory, alpha } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await editor(page, 1).click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("-UNDO-TEST");
+    await clickMenuItem(application, "file-save");
+    await expect.poll(() => fs.readFile(alpha, "utf8")).toContain("-UNDO-TEST");
+    await cloneAlpha(page);
+
+    await tabIn(page, "tabs-two", "alpha.md").getByTestId("tab-close").click();
+
+    await expect(tabIn(page, "tabs", "alpha.md")).toBeVisible();
+    await expect(page.getByTestId("close-prompt")).toBeHidden();
+    await expect(page.getByTestId("document-view-two")).toBeHidden();
+    await expect(editor(page, 1)).toContainText("-UNDO-TEST");
+    await editor(page, 1).click();
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
+    await expect(editor(page, 1)).not.toContainText("-UNDO-TEST");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("closing a cloned tab in view one keeps the dirty view two clone", async () => {
+  const { directory, alpha } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await editor(page, 1).click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("-DIRTY");
+    await cloneAlpha(page);
+
+    await tabIn(page, "tabs", "alpha.md").getByTestId("tab-close").click();
+
+    await expect(page.getByTestId("close-prompt")).toBeHidden();
+    await expect(tabIn(page, "tabs-two", "alpha.md")).toBeVisible();
+    await expect(tabIn(page, "tabs-two", "alpha.md").getByTestId("tab-dirty"))
+      .toBeVisible();
+    await expect(editor(page, 2)).toContainText("-DIRTY");
+
+    await clickMenuItem(application, "file-save");
+    await expect.poll(() => fs.readFile(alpha, "utf8")).toContain("-DIRTY");
+
+    await editor(page, 2).focus();
+    await page.keyboard.press(`${PRIMARY_MODIFIER}+z`);
+    await expect(editor(page, 2)).not.toContainText("-DIRTY");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("closing the last tab of a dirty document still prompts", async () => {
+  const { directory, alpha } = await copyFixtures();
+  const { application, page } = await launchEditor(alpha);
+  try {
+    await editor(page, 1).click();
+    await page.keyboard.press(DOCUMENT_END);
+    await page.keyboard.type("-LAST-TAB");
+    const prompt = page.getByTestId("close-prompt");
+
+    await tabIn(page, "tabs", "alpha.md").getByTestId("tab-close").click();
+
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole("button", { name: "Cancel" }).click();
+    await expect(prompt).toBeHidden();
+    await expect(tabIn(page, "tabs", "alpha.md")).toBeVisible();
+    await expect(editor(page, 1)).toContainText("-LAST-TAB");
+  } finally {
+    await closeEditor(application, page);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 function percentile(values: readonly number[], fraction: number): number {
   const sorted = [...values].sort((left, right) => left - right);
   return sorted[Math.ceil(sorted.length * fraction) - 1] ?? Number.POSITIVE_INFINITY;
 }
 
 test("AC-R4-11: cloned-view keystroke updates stay under 16 ms at p95", {
-  tag: "@AC-R4-11",
+  tag: ["@AC-R4-11", "@AC-PERF-12"],
   annotation: { type: "AC-R4-11" },
 }, async () => {
   const { directory, alpha } = await copyFixtures();
@@ -337,27 +414,56 @@ test("AC-R4-11: cloned-view keystroke updates stay under 16 ms at p95", {
     await page.keyboard.press(DOCUMENT_START);
     const measured: number[] = [];
     let prefix = "";
+    // TEMP F1 attribution: count long tasks and time the page-side work
+    // separately from the Playwright/CDP round trip.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __lt?: { start: number; dur: number; attr: string }[];
+      };
+      w.__lt = [];
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          w.__lt?.push({
+            start: entry.startTime,
+            dur: entry.duration,
+            attr: entry.attribution.map((a) => a.name).join("|"),
+          });
+        }
+      }).observe({ entryTypes: ["longtask"] });
+    });
     for (let index = 0; index < SAMPLES + WARM_UP_SAMPLES; index += 1) {
       const value = String(index % 10);
       prefix += value;
-      const duration = await page.evaluate(async (input) => {
+      const roundTrip = performance.now();
+      const probe = await page.evaluate((input) => {
         const peer = document.querySelector("#editor-two .cm-content");
         if (!peer) {
           throw new Error("The cloned editor is missing.");
         }
-        return new Promise<number>((resolve) => {
+        const w = window as unknown as {
+          __lt?: { start: number; dur: number; attr: string }[];
+        };
+        return new Promise<{ pageMs: number; execMs: number; t0: number; lts: string[] }>((resolve) => {
+          const ltIndex = (w.__lt ?? []).length;
           const started = performance.now();
           const observer = new MutationObserver(() => {
             if (peer.textContent?.startsWith(input.expected)) {
               observer.disconnect();
-              resolve(performance.now() - started);
+              const pageMs = performance.now() - started;
+              const lts = (w.__lt ?? [])
+                .slice(ltIndex)
+                .map((task) => `${task.start.toFixed(0)}+${task.dur.toFixed(0)}:${task.attr}`);
+              resolve({ pageMs, execMs, t0: started, lts });
             }
           });
           observer.observe(peer, { characterData: true, childList: true, subtree: true });
           document.execCommand("insertText", false, input.value);
+          const execMs = performance.now() - started;
         });
       }, { expected: prefix, value });
-      measured.push(duration);
+      const cdpMs = performance.now() - roundTrip;
+      console.log(`F1 sample ${String(index)}: cdp=${cdpMs.toFixed(1)}ms page=${probe.pageMs.toFixed(1)}ms exec=${probe.execMs.toFixed(1)}ms t0=${probe.t0.toFixed(0)} lts=[${probe.lts.join(" ; ")}]`);
+      measured.push(probe.pageMs);
     }
     const samples = measured.slice(WARM_UP_SAMPLES);
     const p95 = percentile(samples, 0.95);

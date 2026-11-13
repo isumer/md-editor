@@ -68,6 +68,11 @@ export class DocumentViews {
     }
   }
 
+  removeFromView(documentId: string, view: DocumentViewId): void {
+    this.removeFrom(documentId, view);
+    this.states[view].delete(documentId);
+  }
+
   private removeFrom(documentId: string, view: DocumentViewId): void {
     const documents = this.members[view];
     const index = documents.indexOf(documentId);

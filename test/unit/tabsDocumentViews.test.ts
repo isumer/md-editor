@@ -43,6 +43,21 @@ describe("document views", () => {
     ]);
   });
 
+  it("AC-R4-11: removeFromView drops only one view's membership and state", () => {
+    const views = new DocumentViews(["alpha"]);
+    const state = { scrollTop: 20, selection: EditorSelection.single(2) };
+    views.clone("alpha", 1);
+    views.saveState("alpha", 1, state);
+    views.saveState("alpha", 2, state);
+
+    views.removeFromView("alpha", 2);
+
+    expect(views.documents(1)).toEqual(["alpha"]);
+    expect(views.documents(2)).toEqual([]);
+    expect(views.state("alpha", 1)).toEqual(state);
+    expect(views.state("alpha", 2)).toBeUndefined();
+  });
+
   it("AC-R4-10: adding is idempotent and removing clears both views and states", () => {
     const views = new DocumentViews();
     const state = { scrollTop: 20, selection: EditorSelection.single(2) };

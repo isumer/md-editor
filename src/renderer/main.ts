@@ -388,9 +388,7 @@ const dirtyFrame = new FrameCoalescer<DocumentRecord>({
 const prompt = new DocumentClosePrompt(closePrompt, closePromptMessage);
 const tabStrip = new TabStrip({
   active: () => activeDocument,
-  close: (document) => {
-    void lifecycle.closeTab(document).catch(showUnexpectedError);
-  },
+  close: (document) => closeTabInView(document, 1),
   documents: () => documentViews.documents(1)
     .map((id) => registry.get(id)).filter((value): value is DocumentRecord => value !== undefined),
   host: tabsHost,
@@ -400,7 +398,7 @@ const tabStrip = new TabStrip({
 });
 const tabStripTwo = new TabStrip({
   active: () => secondaryDocument,
-  close: (document) => { void lifecycle.closeTab(document).catch(showUnexpectedError); },
+  close: (document) => closeTabInView(document, 2),
   documents: () => documentViews.documents(2)
     .map((id) => registry.get(id)).filter((value): value is DocumentRecord => value !== undefined),
   host: tabsTwoHost,
@@ -460,6 +458,23 @@ function changeDocumentView(
 ): void {
   if (action === "clone") documentViews.clone(document.id, from);
   else documentViews.move(document.id, from);
+  reconcileDocumentViews(document);
+}
+
+// Closing one tab of a document that lives in both views drops only that
+// view's membership; the document, text, history, grant and drafts stay.
+function closeTabInView(document: DocumentRecord, view: DocumentViewId): void {
+  const inBothViews = documentViews.documents(1).includes(document.id)
+    && documentViews.documents(2).includes(document.id);
+  if (!inBothViews) {
+    void lifecycle.closeTab(document).catch(showUnexpectedError);
+    return;
+  }
+  documentViews.removeFromView(document.id, view);
+  reconcileDocumentViews(document);
+}
+
+function reconcileDocumentViews(document: DocumentRecord): void {
   const secondaryIds = documentViews.documents(2);
   viewTwoHost.hidden = secondaryIds.length === 0;
   workspace.classList.toggle("has-document-view-two", !viewTwoHost.hidden);
