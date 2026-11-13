@@ -104,6 +104,7 @@ describe("IPC contracts", () => {
     expect(isMenuItemId("unknown")).toBe(false);
     expect(isMenuContribution({
       fileMenuTitle: "File",
+      viewMenuTitle: "View",
       items: [{ id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" }],
     })).toBe(true);
   });

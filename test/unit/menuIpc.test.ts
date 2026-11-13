@@ -29,6 +29,7 @@ const CHANNEL = "menu:contribute";
 
 const valid: MenuContribution = {
   fileMenuTitle: "File",
+  viewMenuTitle: "View",
   items: [
     { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
     { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S", enabled: false, checked: true },

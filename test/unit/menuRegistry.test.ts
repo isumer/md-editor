@@ -15,6 +15,7 @@ import { compareMenu } from "../../src/shared/ipc/menu/compare";
 import { composeMenuItems } from "../../src/shared/ipc/menu/compose";
 import { fileMenu } from "../../src/shared/ipc/menu/file";
 import { mergeMenu } from "../../src/shared/ipc/menu/merge";
+import { viewMenu } from "../../src/shared/ipc/menu/view";
 
 interface TemplateShape {
   id?: string;
@@ -30,6 +31,7 @@ interface TemplateShape {
 
 const contribution: MenuContribution = {
   fileMenuTitle: "File",
+  viewMenuTitle: "View",
   items: [
     { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
     { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
@@ -50,6 +52,11 @@ const contribution: MenuContribution = {
       title: "Merge Open Files",
       accelerator: "CmdOrCtrl+Shift+M",
     },
+    { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
+    { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
+    { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
+    { id: "view-focus-mode", title: "Focus Mode", accelerator: "CmdOrCtrl+Shift+F" },
+    { id: "view-full-screen", title: "Full Screen", accelerator: "F11" },
   ],
 };
 
@@ -81,10 +88,17 @@ function templateSnapshot(
 }
 
 function buildSnapshot(platform: string): string[] {
+  const platformContribution: MenuContribution = {
+    ...contribution,
+    items: contribution.items.map((item) => item.id === "view-full-screen" &&
+        platform === "darwin"
+      ? { ...item, accelerator: "Ctrl+Command+F" }
+      : item),
+  };
   const template = buildContributionTemplate(
     platform,
     "MD Editor",
-    contribution,
+    platformContribution,
     vi.fn(),
   );
   return templateSnapshot(template as unknown as TemplateShape[]);
@@ -109,9 +123,15 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "1.2|-|-|paste|-|-|-|-|-",
           "1.3|-|-|-|separator|-|-|-|-",
           "1.4|-|-|selectAll|-|-|-|-|-",
-          "2|-|-|windowMenu|-|-|-|-|-",
-          "3|-|-|help|-|-|-|-|-",
-          "3.0|help-check-updates|Check for Updates|-|-|-|-|-|-",
+          "2|-|View|-|-|-|-|-|-",
+          "2.0|view-split|Split View|-|-|CmdOrCtrl+1|false|true|false",
+          "2.1|view-editor|Editor Only|-|-|CmdOrCtrl+2|false|true|false",
+          "2.2|view-preview|Preview Only|-|-|CmdOrCtrl+3|false|true|false",
+          "2.3|view-focus-mode|Focus Mode|-|-|CmdOrCtrl+Shift+F|false|true|false",
+          "2.4|view-full-screen|Full Screen|-|-|F11|false|true|false",
+          "3|-|-|windowMenu|-|-|-|-|-",
+          "4|-|-|help|-|-|-|-|-",
+          "4.0|help-check-updates|Check for Updates|-|-|-|-|-|-",
         ],
         "macOS": [
           "0|-|MD Editor|-|-|-|-|-|-",
@@ -138,16 +158,27 @@ it("keeps every menu label, accelerator, role, order and command id", () => {
           "2.2|-|-|paste|-|-|-|-|-",
           "2.3|-|-|-|separator|-|-|-|-",
           "2.4|-|-|selectAll|-|-|-|-|-",
-          "3|-|-|windowMenu|-|-|-|-|-",
-          "4|-|-|help|-|-|-|-|-",
-          "4.0|help-check-updates|Check for Updates|-|-|-|-|-|-",
+          "3|-|View|-|-|-|-|-|-",
+          "3.0|view-split|Split View|-|-|CmdOrCtrl+1|false|true|false",
+          "3.1|view-editor|Editor Only|-|-|CmdOrCtrl+2|false|true|false",
+          "3.2|view-preview|Preview Only|-|-|CmdOrCtrl+3|false|true|false",
+          "3.3|view-focus-mode|Focus Mode|-|-|CmdOrCtrl+Shift+F|false|true|false",
+          "3.4|view-full-screen|Full Screen|-|-|Ctrl+Command+F|false|true|false",
+          "4|-|-|windowMenu|-|-|-|-|-",
+          "5|-|-|help|-|-|-|-|-",
+          "5.0|help-check-updates|Check for Updates|-|-|-|-|-|-",
         ],
       }
     `);
 });
 
 it("fails when a declaration drifts from the literal id unions", () => {
-  const declaredItems = composeMenuItems([fileMenu, compareMenu, mergeMenu]);
+  const declaredItems = composeMenuItems([
+    fileMenu,
+    compareMenu,
+    mergeMenu,
+    viewMenu,
+  ]);
 
   expect(declaredItems.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
   expect(declaredItems.map((item) => item.commandId))
@@ -155,7 +186,12 @@ it("fails when a declaration drifts from the literal id unions", () => {
 });
 
 it("sorts menu declarations by order", () => {
-  const declaredItems = composeMenuItems([mergeMenu, compareMenu, fileMenu]);
+  const declaredItems = composeMenuItems([
+    mergeMenu,
+    viewMenu,
+    compareMenu,
+    fileMenu,
+  ]);
 
   expect(declaredItems.map((item) => item.id)).toEqual([...MENU_ITEM_IDS]);
 });
@@ -164,8 +200,9 @@ it("keeps import order when menu declaration orders are equal", () => {
   const first = { ...fileMenu, order: 0 } as const;
   const second = { ...compareMenu, order: 0 } as const;
   const third = { ...mergeMenu, order: 0 } as const;
+  const fourth = { ...viewMenu, order: 0 } as const;
 
-  expect(composeMenuItems([first, second, third]).map((item) => item.id))
+  expect(composeMenuItems([first, second, third, fourth]).map((item) => item.id))
     .toEqual([...MENU_ITEM_IDS]);
 });
 
@@ -176,8 +213,16 @@ it("keeps the type union and runtime validator on the same registry", () => {
   expect(isMenuItemId(itemId)).toBe(true);
   expect(MENU_COMMAND_IDS).toContain(commandId);
   expectTypeOf<MenuItemId>().toEqualTypeOf<
-    "file-open" | "file-save" | "file-save-as" | "file-compare-open" |
-    "file-merge-open"
+    | "file-open"
+    | "file-save"
+    | "file-save-as"
+    | "file-compare-open"
+    | "file-merge-open"
+    | "view-split"
+    | "view-editor"
+    | "view-preview"
+    | "view-focus-mode"
+    | "view-full-screen"
   >();
 });
 
