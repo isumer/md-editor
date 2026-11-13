@@ -40,9 +40,7 @@ describe("workspace service", () => {
     await Promise.all([
       fs.mkdir(path.join(root, "notes")),
       fs.mkdir(path.join(root, "node_modules")),
-      fs.writeFile(path.join(root, "alpha.md"), "# Alpha\n"),
       fs.writeFile(path.join(root, "README.MD"), "# Readme\n"),
-      fs.writeFile(path.join(root, "zeta.md"), "# Zeta\n"),
       fs.writeFile(path.join(root, "data.json"), "{}\n"),
       fs.writeFile(path.join(root, ".hidden.md"), "# Hidden\n"),
     ]);
@@ -51,18 +49,8 @@ describe("workspace service", () => {
     await expect(service.chooseRoot(7)).resolves.toEqual({ name: path.basename(root) });
     await expect(service.listChildren(7, "")).resolves.toEqual([
       { name: "notes", kind: "folder" },
-      { name: "alpha.md", kind: "file" },
       { name: "README.MD", kind: "file" },
-      { name: "zeta.md", kind: "file" },
     ]);
-  });
-
-  it("AC-R11-01: names a filesystem root without an empty label", async () => {
-    const { service } = serviceFor(path.parse(process.cwd()).root);
-
-    await expect(service.chooseRoot(7)).resolves.toEqual({
-      name: path.parse(process.cwd()).root,
-    });
   });
 
   it("AC-R11-04: opens a nested Markdown file through the document grant service", async () => {

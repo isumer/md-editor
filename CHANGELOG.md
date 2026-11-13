@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Documents above 4 MiB now open without Markdown syntax highlighting, Markdown indentation on input and fold markers, so they open without a long freeze. Bracket matching still works.
 - Typing in a large document now updates only the preview blocks you changed. Other blocks stay as they are.
 - The preview keeps up with typing on 50 KB and 500 KB documents. The scroll stays smooth.
-- Typing now checks for unsaved changes at most once per frame instead of on every keystroke, and a document made of one very long plain line no longer needs a full Markdown scan to highlight.
+- Typing now checks for unsaved changes at most once per frame instead of on every keystroke.
 - Opening a 20 MB document shows the first screen quickly. The rest of the preview fills in without freezing the editor.
 - A large preview update now lands in small batches instead of one long step, so the window stays responsive while a big document paints.
 - Opening and scrolling a very large document no longer causes short freezes on slower computers. The preview fills in one step per screen frame.

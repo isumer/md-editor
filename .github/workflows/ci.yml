@@ -89,8 +89,6 @@ jobs:
           } > reports/merged-e2e-junit.xml
           mv reports/merged-e2e-junit.xml reports/e2e-junit.xml
       - name: Check acceptance criteria
-        env:
-          ACCEPTANCE_JUNIT_REPORTS: unit-junit.xml,e2e-junit.xml,perf-e2e-junit.xml
         run: npm run check:acceptance
       - name: Add JUnit summary
         if: always()

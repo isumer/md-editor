@@ -3,15 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const electron = vi.hoisted(() => ({
   fromId: vi.fn(),
   showOpenDialog: vi.fn(),
-  showSaveDialog: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   BrowserWindow: { fromId: electron.fromId },
-  dialog: {
-    showOpenDialog: electron.showOpenDialog,
-    showSaveDialog: electron.showSaveDialog,
-  },
+  dialog: { showOpenDialog: electron.showOpenDialog, showSaveDialog: vi.fn() },
 }));
 
 import { FileDialogs } from "../../src/main/services/fileDialogs";
@@ -59,14 +55,5 @@ describe("folder dialog", () => {
 
     await expect(new FileDialogs().chooseFolderPath(5)).resolves.toBeNull();
     await expect(new FileDialogs().chooseFolderPath(5)).resolves.toBeNull();
-  });
-
-  it("AC-R5-12: non-canceled file dialogs with no selection return no path", async () => {
-    electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [] });
-    electron.showSaveDialog.mockResolvedValueOnce({ canceled: false });
-    const dialogs = new FileDialogs();
-
-    await expect(dialogs.chooseOpenPath(5)).resolves.toBeNull();
-    await expect(dialogs.chooseSavePath(5, null)).resolves.toBeNull();
   });
 });

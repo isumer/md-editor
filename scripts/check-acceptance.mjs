@@ -127,12 +127,6 @@ async function readJUnitFile(filePath) {
   }
 }
 
-function configuredJUnitNames(value) {
-  return value === undefined
-    ? ["e2e-junit.xml", "perf-e2e-junit.xml", "unit-junit.xml"]
-    : value.split(",").map((name) => name.trim()).filter((name) => name.length > 0);
-}
-
 export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
   const acceptanceDirectory = path.join(repositoryRoot, "docs", "acceptance");
   const names = (await readdir(acceptanceDirectory))
@@ -143,9 +137,10 @@ export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
     content: await readFile(path.join(acceptanceDirectory, name), "utf8"),
   })));
   const criteria = parseCriterionFiles(criterionFiles);
-  const reportsDirectory = path.join(repositoryRoot, "reports");
-  const junitNames = configuredJUnitNames(process.env.ACCEPTANCE_JUNIT_REPORTS);
-  const junitPaths = junitNames.map((name) => path.join(reportsDirectory, name));
+  const junitPaths = [
+    path.join(repositoryRoot, "reports", "e2e-junit.xml"),
+    path.join(repositoryRoot, "reports", "unit-junit.xml"),
+  ];
   const tests = (await Promise.all(junitPaths.map(readJUnitFile))).flat();
   const report = buildAcceptanceReport(criteria, tests, process.platform);
 

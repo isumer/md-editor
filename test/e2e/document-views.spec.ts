@@ -414,56 +414,27 @@ test("AC-R4-11: cloned-view keystroke updates stay under 16 ms at p95", {
     await page.keyboard.press(DOCUMENT_START);
     const measured: number[] = [];
     let prefix = "";
-    // TEMP F1 attribution: count long tasks and time the page-side work
-    // separately from the Playwright/CDP round trip.
-    await page.evaluate(() => {
-      const w = window as unknown as {
-        __lt?: { start: number; dur: number; attr: string }[];
-      };
-      w.__lt = [];
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          w.__lt?.push({
-            start: entry.startTime,
-            dur: entry.duration,
-            attr: entry.attribution.map((a) => a.name).join("|"),
-          });
-        }
-      }).observe({ entryTypes: ["longtask"] });
-    });
     for (let index = 0; index < SAMPLES + WARM_UP_SAMPLES; index += 1) {
       const value = String(index % 10);
       prefix += value;
-      const roundTrip = performance.now();
-      const probe = await page.evaluate((input) => {
+      const duration = await page.evaluate(async (input) => {
         const peer = document.querySelector("#editor-two .cm-content");
         if (!peer) {
           throw new Error("The cloned editor is missing.");
         }
-        const w = window as unknown as {
-          __lt?: { start: number; dur: number; attr: string }[];
-        };
-        return new Promise<{ pageMs: number; execMs: number; t0: number; lts: string[] }>((resolve) => {
-          const ltIndex = (w.__lt ?? []).length;
+        return new Promise<number>((resolve) => {
           const started = performance.now();
           const observer = new MutationObserver(() => {
             if (peer.textContent?.startsWith(input.expected)) {
               observer.disconnect();
-              const pageMs = performance.now() - started;
-              const lts = (w.__lt ?? [])
-                .slice(ltIndex)
-                .map((task) => `${task.start.toFixed(0)}+${task.dur.toFixed(0)}:${task.attr}`);
-              resolve({ pageMs, execMs, t0: started, lts });
+              resolve(performance.now() - started);
             }
           });
           observer.observe(peer, { characterData: true, childList: true, subtree: true });
           document.execCommand("insertText", false, input.value);
-          const execMs = performance.now() - started;
         });
       }, { expected: prefix, value });
-      const cdpMs = performance.now() - roundTrip;
-      console.log(`F1 sample ${String(index)}: cdp=${cdpMs.toFixed(1)}ms page=${probe.pageMs.toFixed(1)}ms exec=${probe.execMs.toFixed(1)}ms t0=${probe.t0.toFixed(0)} lts=[${probe.lts.join(" ; ")}]`);
-      measured.push(probe.pageMs);
+      measured.push(duration);
     }
     const samples = measured.slice(WARM_UP_SAMPLES);
     const p95 = percentile(samples, 0.95);
