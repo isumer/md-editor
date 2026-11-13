@@ -6,14 +6,117 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 
 import {
   clickMenuItem,
+  closeCrashedEditor,
   closeEditor,
   dialogCallCount,
+  evaluateInWindow,
   fixturePath,
   launchEditor,
   readTextOrNull,
   stubOpenDialog,
   stubSaveDialog,
 } from "./helpers";
+
+const DOCUMENT_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
+
+const STARTUP_MARKS = [
+  "app-ready",
+  "app-ready-done",
+  "browser-window-constructed",
+  "window-created",
+  "menu-created",
+  "renderer-script-start",
+  "renderer-main-start",
+  "editor-mounted",
+  "file-text-shown",
+  "editor-editable",
+  "first-edit-start",
+  "first-edit-painted",
+] as const;
+
+interface TimelineMark {
+  readonly name: string;
+  readonly startTime: number;
+}
+
+interface StartupFrame {
+  readonly blockingDuration: number;
+  readonly duration: number;
+  readonly scripts: readonly {
+    readonly duration: number;
+    readonly forcedStyleAndLayoutDuration: number;
+    readonly invoker: string;
+    readonly sourceFunctionName: string;
+    readonly sourceURL: string;
+  }[];
+  readonly startTime: number;
+}
+
+interface ProcessTimeline {
+  readonly origin: number;
+  readonly marks: readonly TimelineMark[];
+}
+
+function loafDiagnostics(
+  frames: readonly StartupFrame[],
+  origin: number,
+  startedEpoch: number,
+): readonly object[] {
+  return frames.map((frame) => ({
+    at: Math.round(origin + frame.startTime - startedEpoch),
+    blocking: Math.round(frame.blockingDuration),
+    duration: Math.round(frame.duration),
+    scripts: frame.scripts.map((script) => ({
+      duration: Math.round(script.duration),
+      forcedStyle: Math.round(script.forcedStyleAndLayoutDuration),
+      function: script.sourceFunctionName || script.invoker || "anonymous",
+      source: script.sourceURL.split("/").at(-1) ?? script.sourceURL,
+    })),
+  }));
+}
+
+async function startupDiagnostics(
+  application: ElectronApplication,
+  page: Page,
+  startedEpoch: number,
+): Promise<readonly string[]> {
+  const main = await application.evaluate((): ProcessTimeline => ({
+    origin: performance.timeOrigin,
+    marks: performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+  }));
+  const renderer = await page.evaluate((): ProcessTimeline & {
+    frames: readonly StartupFrame[];
+  } => ({
+    origin: performance.timeOrigin,
+    marks: performance.getEntriesByType("mark").map(({ name, startTime }) => ({
+      name,
+      startTime,
+    })),
+    frames: (window as typeof window & {
+      __startupLongAnimationFrames?: readonly StartupFrame[];
+    }).__startupLongAnimationFrames ?? [],
+  }));
+  const names = new Set<string>(STARTUP_MARKS);
+  const marks = [main, renderer].flatMap((processTimeline) =>
+    processTimeline.marks
+      .filter((mark) => names.has(mark.name))
+      .map((mark) => ({
+        at: Math.round(processTimeline.origin + mark.startTime - startedEpoch),
+        name: mark.name,
+      })))
+    .sort((left, right) => left.at - right.at);
+  const timeline = marks.map((mark, index) => ({
+    ...mark,
+    delta: index === 0 ? 0 : mark.at - (marks[index - 1]?.at ?? mark.at),
+  }));
+  const frames = loafDiagnostics(renderer.frames, renderer.origin, startedEpoch);
+  console.log(`AC-PERF-03 timeline: ${JSON.stringify(timeline)}`);
+  console.log(`AC-PERF-03 LoAF: ${JSON.stringify(frames)}`);
+  return marks.map((mark) => mark.name);
+}
 
 async function ioWorkerPid(application: ElectronApplication): Promise<number | null> {
   return application.evaluate(({ app }) => {
@@ -27,9 +130,51 @@ async function ioWorkerPid(application: ElectronApplication): Promise<number | n
 async function appendEditorText(page: Page, text: string): Promise<void> {
   const editor = page.getByTestId("editor").locator(".cm-content");
   await editor.click();
-  await page.keyboard.press("Control+End");
+  await page.keyboard.press(DOCUMENT_END);
   await page.keyboard.type(text);
 }
+
+test("an edit before a delayed mirror attach survives a renderer crash", {
+  tag: "@AC-R4-07",
+  annotation: { type: "AC-R4-07" },
+}, async () => {
+  const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-attach-"));
+  const currentPath = path.join(temporaryDirectory, "large.md");
+  const originalText = `# Large\n${"a".repeat(2 * 1024 * 1024)}`;
+  await fs.writeFile(currentPath, originalText, "utf8");
+  const { application, page } = await launchEditor();
+  try {
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1_000);
+    await stubOpenDialog(application, currentPath);
+    await clickMenuItem(application, "file-open");
+    await expect(page).toHaveTitle(/large\.md/);
+
+    const edit = "EDIT-BEFORE-ATTACH";
+    await appendEditorText(page, edit);
+    await page.clock.runFor(2_100);
+    await expect.poll(async () => {
+      const listed = await page.evaluate(() => window.api.listDrafts());
+      return listed.ok && listed.value.drafts.some((draft) => draft.text.endsWith(edit));
+    }).toBe(true);
+    await page.clock.resume();
+
+    await application.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer();
+    });
+
+    await expect.poll(
+      () => evaluateInWindow<boolean>(application,
+        "[...document.querySelectorAll('[data-testid=\"tab-dirty\"]')].some((marker) => !marker.hidden)"),
+      { timeout: 10_000 },
+    ).toBe(true);
+    await clickMenuItem(application, "file-save");
+    await expect.poll(() => readTextOrNull(currentPath)).toBe(originalText + edit);
+  } finally {
+    await closeCrashedEditor(application);
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
+});
 
 test("saving succeeds after the io-worker restarts", {
   tag: "@AC-R5-17",
@@ -110,6 +255,7 @@ test("an argv file is editable within the cold-start budget", {
   annotation: { type: "AC-PERF-03" },
 }, async () => {
   const startedAt = performance.now();
+  const startedEpoch = Date.now();
   const { application, page } = await launchEditor(fixturePath);
   try {
     const editor = page.getByTestId("editor").locator(".cm-content");
@@ -118,8 +264,13 @@ test("an argv file is editable within the cold-start budget", {
     await page.keyboard.press("Control+End");
     await page.keyboard.type(" cold-start-ready");
     await expect(editor).toContainText("cold-start-ready");
+    const elapsed = performance.now() - startedAt;
+    expect(elapsed).toBeLessThan(2_000);
 
-    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    await expect.poll(() => page.evaluate(() =>
+      performance.getEntriesByName("first-edit-painted").length)).toBe(1);
+    const markNames = await startupDiagnostics(application, page, startedEpoch);
+    expect([...markNames].sort()).toEqual([...STARTUP_MARKS].sort());
   } finally {
     await closeEditor(application, page);
   }

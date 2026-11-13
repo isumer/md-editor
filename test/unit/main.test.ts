@@ -650,6 +650,7 @@ describe("main process", () => {
         secure: true,
         supportFetchAPI: true,
         allowServiceWorkers: false,
+        codeCache: true,
       },
     }, {
       scheme: "doc-asset",

@@ -6,6 +6,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MenuCommandMessage, MenuContribution } from "../../src/shared/ipc/menu";
 import { menuItems as mainMenuItems } from "../../src/main/app/menu/registry";
+import { createSecondaryDocumentCommands } from
+  "../../src/renderer/tabs/documentCommandsSecondary";
 
 const contributeMenu = vi.fn(async (_request: MenuContribution) =>
   ({ ok: true, value: undefined } as const));
@@ -44,9 +46,8 @@ describe("document commands", () => {
     const toggleFullScreen = vi.fn(async () => undefined);
     const onResult = vi.fn();
     const commands = new DocumentCommands({
-      compare,
-      merge,
       editor,
+      loadSecondary: async () => createSecondaryDocumentCommands({ compare, merge }),
       featureCommand,
       onError: vi.fn(),
       onResult,
@@ -63,16 +64,6 @@ describe("document commands", () => {
         { id: "file-open", title: "Open", accelerator: "CmdOrCtrl+O" },
         { id: "file-save", title: "Save", accelerator: "CmdOrCtrl+S" },
         { id: "file-save-as", title: "Save As", accelerator: "CmdOrCtrl+Shift+S" },
-        {
-          id: "file-compare-open",
-          title: "Compare Open Files",
-          accelerator: "CmdOrCtrl+Shift+C",
-        },
-        {
-          id: "file-merge-open",
-          title: "Merge Open Files",
-          accelerator: "CmdOrCtrl+Shift+M",
-        },
         { id: "view-split", title: "Split View", accelerator: "CmdOrCtrl+1" },
         { id: "view-editor", title: "Editor Only", accelerator: "CmdOrCtrl+2" },
         { id: "view-preview", title: "Preview Only", accelerator: "CmdOrCtrl+3" },
@@ -97,15 +88,33 @@ describe("document commands", () => {
 
     expect(open).toHaveBeenCalledOnce();
     expect(save.mock.calls).toEqual([[false], [true]]);
-    expect(compare).toHaveBeenCalledOnce();
-    expect(merge).toHaveBeenCalledOnce();
+    expect(compare).not.toHaveBeenCalled();
+    expect(merge).not.toHaveBeenCalled();
     expect(featureCommand).toHaveBeenCalledWith("view.editor");
     expect(featureCommand).toHaveBeenCalledWith("view.focusMode");
     expect(toggleFullScreen).toHaveBeenCalledOnce();
+    commands.startSecondaryFeatures();
+    commands.startSecondaryFeatures();
+    await vi.waitFor(() => expect(contributeMenu).toHaveBeenCalledTimes(2));
+    expect(contributeMenu.mock.calls[1]?.[0].items.map((item) => item.id)).toEqual([
+      "file-open",
+      "file-save",
+      "file-save-as",
+      "file-compare-open",
+      "file-merge-open",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-focus-mode",
+      "view-full-screen",
+    ]);
+    menuListener?.("file-compare-open");
+    menuListener?.("file-merge-open");
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, shiftKey: true, key: "c",
     }));
     expect(compare).toHaveBeenCalledTimes(2);
+    expect(merge).toHaveBeenCalledOnce();
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, altKey: true, key: "c",
     }));
@@ -125,12 +134,27 @@ describe("document commands", () => {
   });
 
   it("composes the same ordered item list as the main registry", async () => {
-    const { menuItems } = await import(
+    const { menuContribution, menuItems, menuItemsWithSecondary } = await import(
       "../../src/renderer/tabs/documentCommands"
     );
+    const secondary = createSecondaryDocumentCommands({
+      compare: vi.fn(),
+      merge: vi.fn(),
+    });
+    const combined = menuItemsWithSecondary(secondary.menuItems);
 
-    expect(menuItems).toEqual(mainMenuItems);
     expect(menuItems.map((item) => item.id)).toEqual([
+      "file-open",
+      "file-save",
+      "file-save-as",
+      "view-split",
+      "view-editor",
+      "view-preview",
+      "view-focus-mode",
+      "view-full-screen",
+    ]);
+    expect(combined).toEqual(mainMenuItems);
+    expect(menuContribution(combined).items.map((item) => item.id)).toEqual([
       "file-open",
       "file-save",
       "file-save-as",
@@ -153,10 +177,12 @@ describe("document commands", () => {
     const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
     const onError = vi.fn();
     new DocumentCommands({
-      compare: vi.fn(),
       editor,
+      loadSecondary: async () => createSecondaryDocumentCommands({
+        compare: vi.fn(),
+        merge: vi.fn(),
+      }),
       featureCommand: vi.fn(),
-      merge: vi.fn(),
       onError,
       onResult: vi.fn(),
       open: vi.fn(async () => undefined),

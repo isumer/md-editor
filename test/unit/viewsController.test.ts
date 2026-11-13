@@ -393,6 +393,47 @@ describe("view controller", () => {
     }
   });
 
+  it("AC-R2-04: a full-screen entry event keeps focus mode active", async () => {
+    const { divider, workspace } = fixture();
+    const addEventListener = vi.spyOn(document, "addEventListener");
+    const fullScreenDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      "fullscreenElement",
+    );
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: null,
+    });
+    let completeEntry = (): void => undefined;
+    const entering = new Promise<void>((resolve) => {
+      completeEntry = resolve;
+    });
+    const controller = new ViewController({
+      divider,
+      enterFullScreen: () => entering,
+      workspace,
+    });
+
+    try {
+      const transition = controller.enterFocusMode();
+      const listener = addEventListener.mock.calls.find(
+        ([type]) => type === "fullscreenchange",
+      )?.[1];
+      if (typeof listener !== "function") throw new Error("Missing full-screen listener");
+      (listener as EventListener)(new Event("fullscreenchange"));
+
+      expect(controller.focusMode).toBe(true);
+      completeEntry();
+      await transition;
+    } finally {
+      if (fullScreenDescriptor === undefined) {
+        Reflect.deleteProperty(document, "fullscreenElement");
+      } else {
+        Object.defineProperty(document, "fullscreenElement", fullScreenDescriptor);
+      }
+    }
+  });
+
   it("AC-R2-05: the trailing resize keeps the visible preview block fixed", () => {
     vi.useFakeTimers();
     try {

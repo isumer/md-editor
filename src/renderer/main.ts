@@ -1,5 +1,9 @@
 /* eslint-disable max-lines -- Application composition stays in one entry module. */
-import { Text, type EditorState } from "@codemirror/state";
+import {
+  Text,
+  type EditorState,
+  type Extension,
+} from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
@@ -18,14 +22,15 @@ import { DocumentRegistry } from "./core/documentRegistry";
 import { FrameCoalescer } from "./core/frameCoalescer";
 import {
   DocumentReplication,
+  type ReplicatedVersion,
 } from "./core/replication";
 import {
   createEditor,
   createEditorState,
+  markerMergeExtension,
   setEditorDarkTheme,
   type EditorCallbacks,
 } from "./editor/editor";
-import type { InstalledFeatures } from "./editor/featureWiring";
 import {
   applyBackgrounds,
   resetToThemeDefaults,
@@ -35,11 +40,11 @@ import {
 } from "./features/background/background";
 import { beginStartup } from "./features/background/startup";
 import {
+  type DeferredInstalledFeatures,
   featureEditorExtensions,
   installFeatures,
   rewriteFeatureHtml,
 } from "./features/registry";
-import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import {
   attachDocument,
   clearDraft,
@@ -53,10 +58,23 @@ import {
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
+import { createSecondaryDocumentCommands } from "./tabs/documentCommandsSecondary";
 import { DocumentLifecycle } from "./tabs/documentLifecycle";
 import { RenderController } from "./tabs/renderController";
 import { TabStrip } from "./tabs/tabStrip";
+import renderWorkerUrl from "./workers/render/render.worker.ts?worker&url";
 import "./styles.css";
+
+const startupMarks = new Set<string>();
+
+function markStartup(name: string): void {
+  if (startupMarks.has(name)) return;
+  startupMarks.add(name);
+  performance.mark(name);
+}
+
+markStartup("renderer-script-start");
+markStartup("renderer-main-start");
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -74,6 +92,7 @@ const status = requiredElement<HTMLElement>("#status");
 const tabsHost = requiredElement<HTMLElement>("#tabs");
 const closePrompt = requiredElement<HTMLElement>("#close-prompt");
 const closePromptMessage = requiredElement<HTMLElement>("#close-prompt-message");
+const workspaceOpen = requiredElement<HTMLButtonElement>("#workspace-open");
 const documentState = createDocumentState();
 const registry = new DocumentRegistry();
 let activeDocument: DocumentRecord | null = null;
@@ -82,7 +101,14 @@ let statusFromPreview = false;
 let editor: EditorView;
 let lifecycle: DocumentLifecycle;
 let documentCommands: DocumentCommands | null = null;
-let installedFeatures: InstalledFeatures;
+let installedFeatures: DeferredInstalledFeatures;
+let firstEditQueued = false;
+let workspaceFeatureInstalled = false;
+let workspaceOpenPending = false;
+
+function currentFeatureExtensions(): Extension {
+  return [featureEditorExtensions, markerMergeExtension];
+}
 
 function showStatus(message = ""): void {
   statusFromPreview = false;
@@ -175,6 +201,7 @@ const callbacks: EditorCallbacks = {
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderController.change(message);
+    markFirstEditAfterPaint();
   },
   onStateChanged: (state) => {
     documentCommands?.refresh();
@@ -183,6 +210,7 @@ const callbacks: EditorCallbacks = {
 };
 
 editor = createEditor(editorHost, documentState, callbacks);
+markStartup("editor-mounted");
 installedFeatures = installFeatures({
   documents: () => registry.all(),
   editorHost,
@@ -245,6 +273,9 @@ function activateDocument(document: DocumentRecord): void {
   documentState.applyingDocument = true;
   editor.setState(document.state);
   documentState.applyingDocument = false;
+  if (document.grant !== null) {
+    markStartup("file-text-shown");
+  }
   syncDocumentState(document);
   editor.scrollDOM.scrollTop = document.scrollTop;
   requestAnimationFrame(() => {
@@ -258,6 +289,9 @@ function activateDocument(document: DocumentRecord): void {
   renderController.activate(document);
   installedFeatures.documentActivated(document);
   editor.focus();
+  if (document.grant !== null) {
+    markStartup("editor-editable");
+  }
 }
 
 function newDocument(input: {
@@ -280,7 +314,7 @@ function newDocument(input: {
     input.text,
     documentState,
     callbacks,
-    featureEditorExtensions,
+    currentFeatureExtensions(),
   );
   const document = createDocumentRecord({
     canonicalPath: input.canonicalPath,
@@ -300,9 +334,10 @@ function newDocument(input: {
     renderController.attach(document, text);
   }
   window.setTimeout(() => installedFeatures?.documentCreated(document, text), 0);
-  void attachDocument({ ...version, text }).then((result) => {
-    valueOrStatus(result, document.name);
-  }).catch(showUnexpectedError);
+  if (text.includes("<<<<<<<")) {
+    void installMergeFeature().catch(showUnexpectedError);
+  }
+  attachIoMirror(version, text, document.name);
   return document;
 }
 
@@ -314,6 +349,29 @@ function createUntitled(): DocumentRecord {
     savedText: "",
     text: "",
   });
+}
+
+function attachIoMirror(
+  version: ReplicatedVersion,
+  text: string,
+  fileName: string | null,
+): void {
+  const attach = (): void => {
+    const document = registry.get(version.docId);
+    if (document === undefined) return;
+    const currentVersion = document.replication.current();
+    const currentText = currentVersion.version === version.version
+      ? text
+      : document.state.doc.toString();
+    void attachDocument({ ...currentVersion, text: currentText }).then((result) => {
+      valueOrStatus(result, fileName);
+    }).catch(showUnexpectedError);
+  };
+  if (text.length > 2 * 1024 * 1024) {
+    window.setTimeout(attach, 1_500);
+    return;
+  }
+  attach();
 }
 
 function removePristineUntitled(): void {
@@ -374,7 +432,7 @@ function removeDocument(document: DocumentRecord): void {
         "",
         documentState,
         callbacks,
-        featureEditorExtensions,
+        currentFeatureExtensions(),
       ));
       documentState.applyingDocument = false;
       documentState.currentGrant = null;
@@ -403,20 +461,73 @@ lifecycle = new DocumentLifecycle({
   syncDirty,
 });
 documentCommands = new DocumentCommands({
-  compare: () => installedFeatures.runCommand("file.compareOpen"),
   editor,
+  loadSecondary: () => Promise.resolve(
+    createSecondaryDocumentCommands({
+      compare: () => {
+        void openCompare().catch(showUnexpectedError);
+      },
+      merge: () => {
+        void openMerge().catch(showUnexpectedError);
+      },
+    }),
+  ),
   featureCommand: (commandId) => installedFeatures.runCommand(commandId),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
   },
   open: () => lifecycle.open(),
-  merge: () => installedFeatures.runCommand("file.mergeOpen"),
   save: (saveAs) => lifecycle.saveActive(saveAs),
   toggleFullScreen: async () => {
     valueOrStatus(await toggleFullScreen());
   },
 });
+
+async function openCompare(): Promise<void> {
+  const { compareFeature } = await import("./features/compare/wiring");
+  installedFeatures.installDeferred([compareFeature]);
+  installedFeatures.runCommand("file.compareOpen");
+}
+
+async function installMergeFeature(): Promise<void> {
+  const { mergeFeature } = await import("./features/merge/wiring");
+  installedFeatures.installDeferred([mergeFeature]);
+}
+
+async function openMerge(): Promise<void> {
+  await installMergeFeature();
+  installedFeatures.runCommand("file.mergeOpen");
+}
+
+async function installWorkspaceFeature(): Promise<void> {
+  const { workspaceFeature } = await import(
+    "./features/workspace/workspaceSidebar"
+  );
+  installedFeatures.installDeferred([workspaceFeature]);
+  workspaceFeatureInstalled = true;
+  if (workspaceOpenPending) {
+    workspaceOpenPending = false;
+    workspaceOpen.click();
+  }
+}
+
+workspaceOpen.addEventListener("click", () => {
+  if (workspaceFeatureInstalled) return;
+  workspaceOpenPending = true;
+  void installWorkspaceFeature().catch(showUnexpectedError);
+});
+
+function markFirstEditAfterPaint(): void {
+  if (firstEditQueued) return;
+  firstEditQueued = true;
+  markStartup("first-edit-start");
+  requestAnimationFrame(() => {
+    window.setTimeout(() => {
+      markStartup("first-edit-painted");
+    }, 0);
+  });
+}
 
 onOpenRequest((request) => lifecycle.handleOpenRequest(request));
 onSessionCloseRequest((request) => {
@@ -455,8 +566,8 @@ async function initialize(): Promise<void> {
       button.textContent = formatMessage(`close.${action}`, {});
     }
   }
-  renderController.start();
   installedFeatures.start();
+  renderController.start();
   const readyRequest = beginStartup({
     openInitialDocument: () => {
       const untitled = createUntitled();
@@ -484,6 +595,7 @@ async function initialize(): Promise<void> {
   } catch (error) {
     showStatus(error instanceof Error ? error.message : String(error));
   }
+  documentCommands?.startSecondaryFeatures();
 }
 
 void initialize().catch(showUnexpectedError);

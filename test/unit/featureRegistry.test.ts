@@ -7,6 +7,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDocumentRecord } from "../../src/renderer/core/document";
 import { DocumentReplication } from "../../src/renderer/core/replication";
+import { markerMergeExtension } from "../../src/renderer/editor/editor";
+import type { FeatureRegistration } from "../../src/renderer/editor/featureWiring";
 
 const markedText = [
   "<<<<<<< left",
@@ -84,7 +86,10 @@ async function createHarness(active = true, present = true, missingTree = false)
   }
   const editor = new EditorView({
     parent: elements.editorHost,
-    state: EditorState.create({ doc: markedText, extensions: featureEditorExtensions }),
+    state: EditorState.create({
+      doc: markedText,
+      extensions: [featureEditorExtensions, markerMergeExtension],
+    }),
   });
   views.push(editor);
   const showStatus = vi.fn();
@@ -106,12 +111,68 @@ async function createHarness(active = true, present = true, missingTree = false)
   return { document, documents, editor, installed, showStatus, ...elements };
 }
 
+async function installCompare(
+  harness: Awaited<ReturnType<typeof createHarness>>,
+): Promise<void> {
+  const { compareFeature } = await import("../../src/renderer/features/compare/wiring");
+  harness.installed.installDeferred([compareFeature]);
+}
+
+async function installMerge(
+  harness: Awaited<ReturnType<typeof createHarness>>,
+): Promise<void> {
+  const { mergeFeature } = await import("../../src/renderer/features/merge/wiring");
+  harness.installed.installDeferred([mergeFeature]);
+}
+
+async function installWorkspace(
+  harness: Awaited<ReturnType<typeof createHarness>>,
+): Promise<void> {
+  const { workspaceFeature } = await import(
+    "../../src/renderer/features/workspace/workspaceSidebar"
+  );
+  harness.installed.installDeferred([workspaceFeature]);
+}
+
 describe("renderer feature registry", () => {
-  it("composes each feature extension and HTML rewrite", async () => {
+  it("AC-PERF-03: replays documents into each deferred feature once", async () => {
+    const harness = await createHarness();
+    const created = vi.fn();
+    const activated = vi.fn();
+    const registration = {
+      editorExtensions: [],
+      create: () => ({ documentActivated: activated, documentCreated: created }),
+    } satisfies FeatureRegistration;
+
+    harness.installed.installDeferred([registration]);
+    harness.installed.installDeferred([registration]);
+
+    expect(created).toHaveBeenCalledOnce();
+    expect(created).toHaveBeenCalledWith(harness.document, markedText);
+    expect(activated).toHaveBeenCalledOnce();
+    expect(activated).toHaveBeenCalledWith(harness.document);
+  });
+
+  it("AC-PERF-03: starts a deferred feature once", async () => {
+    const harness = await createHarness();
+    const start = vi.fn();
+    const registration = {
+      editorExtensions: [],
+      create: () => ({ start }),
+    } satisfies FeatureRegistration;
+
+    harness.installed.start();
+    harness.installed.installDeferred([registration]);
+    harness.installed.start();
+
+    expect(start).toHaveBeenCalledOnce();
+  });
+
+  it("AC-PERF-03: keeps deferred extensions off the initial path", async () => {
     const { featureEditorExtensions, rewriteFeatureHtml } = await import(
       "../../src/renderer/features/registry"
     );
-    expect(featureEditorExtensions.length).toBeGreaterThan(0);
+    expect(featureEditorExtensions).toHaveLength(0);
     expect(rewriteFeatureHtml('<img src="asset.png">', {
       grant: "Grant_1",
       windowId: 7,
@@ -120,6 +181,8 @@ describe("renderer feature registry", () => {
 
   it("forwards lifecycle events to each registered feature", async () => {
     const harness = await createHarness();
+    await installMerge(harness);
+    await installWorkspace(harness);
     harness.installed.start();
     harness.installed.documentCreated(harness.document, markedText);
     harness.document.state = harness.editor.state;
@@ -139,6 +202,7 @@ describe("renderer feature registry", () => {
   it("dispatches a registered feature command", async () => {
     vi.stubGlobal("Worker", FeatureWorker);
     const harness = await createHarness();
+    await installCompare(harness);
 
     harness.installed.runCommand("file.compareOpen");
 
@@ -151,6 +215,7 @@ describe("renderer feature registry", () => {
     vi.stubGlobal("Worker", FeatureWorker);
     FeatureWorker.instances.length = 0;
     const harness = await createHarness();
+    await installCompare(harness);
     harness.documents.push(createDocumentRecord({
       replication: new DocumentReplication(),
       savedText: Text.of(["right"]),
@@ -178,6 +243,7 @@ describe("renderer feature registry", () => {
   it("updates an inactive document without changing the active editor", async () => {
     const harness = await createHarness(false);
     const activeState = harness.editor.state;
+    await installMerge(harness);
 
     harness.installed.documentCreated(harness.document, markedText);
 
@@ -188,6 +254,7 @@ describe("renderer feature registry", () => {
   it("ignores merge detection after the document is removed", async () => {
     const harness = await createHarness(true, false);
     const documentState = harness.document.state;
+    await installMerge(harness);
 
     harness.installed.documentCreated(harness.document, markedText);
 
@@ -200,6 +267,8 @@ describe("renderer feature registry", () => {
     harness.document.state = harness.document.state.update({
       changes: { from: 0, to: harness.document.state.doc.length, insert: "changed" },
     }).state;
+    harness.editor.setState(harness.document.state);
+    await installMerge(harness);
 
     harness.installed.documentCreated(harness.document, markedText);
 
@@ -208,7 +277,9 @@ describe("renderer feature registry", () => {
   });
 
   it("names a missing workspace element during feature installation", async () => {
-    await expect(createHarness(true, true, true)).rejects.toThrow(
+    const harness = await createHarness(true, true, true);
+
+    await expect(installWorkspace(harness)).rejects.toThrow(
       "Missing required element: #workspace-tree",
     );
   });

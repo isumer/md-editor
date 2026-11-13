@@ -54,6 +54,8 @@ import {
 import { SESSION_CHANNELS } from "../shared/ipc/session";
 import type { Settings } from "../shared/settings/settings";
 
+performance.mark("main-module-start");
+
 const rendererDirectory = path.join(__dirname, "../renderer");
 // Electron accepts this registration only once, so both schemes go in one call.
 protocol.registerSchemesAsPrivileged([
@@ -175,6 +177,7 @@ function createApplicationWindow(): void {
       },
     },
   );
+  performance.mark("window-created");
   setMainWindow(window);
 }
 
@@ -216,6 +219,7 @@ void initializeApplication(
   () => ioWorker.start(),
   openRequests,
   () => {
+    performance.mark("app-ready");
     sessionStore = new SessionStore(
       path.join(app.getPath("userData"), "session.json"),
       ioWorker,

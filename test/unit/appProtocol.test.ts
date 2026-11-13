@@ -134,6 +134,7 @@ describe("app protocol registration", () => {
         secure: true,
         supportFetchAPI: true,
         allowServiceWorkers: false,
+        codeCache: true,
       },
     }]);
   });

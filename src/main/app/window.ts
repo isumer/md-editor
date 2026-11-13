@@ -84,6 +84,7 @@ export function createWindow(
       webSecurity: true,
     },
   });
+  performance.mark("browser-window-constructed");
   registerTrustedWindow(window, APP_ENTRY_URL);
   wireWindowSecurity(
     window,

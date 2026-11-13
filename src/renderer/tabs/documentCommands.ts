@@ -1,9 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 
-import { compareMenu } from "../../shared/ipc/menu/compare";
 import { composeMenuItems } from "../../shared/ipc/menu/compose";
 import { fileMenu } from "../../shared/ipc/menu/file";
-import { mergeMenu } from "../../shared/ipc/menu/merge";
 import { viewMenu } from "../../shared/ipc/menu/view";
 import {
   type MenuCommandMessage,
@@ -16,6 +14,7 @@ import { createContextKeys } from "../core/contextKeys";
 import { installKeymap } from "../core/keymap";
 import { dispatchRedo, dispatchUndo } from "../editor/editor";
 import { contributeMenu, onMenuCommand } from "../platform/api";
+import type { SecondaryDocumentCommands } from "./documentCommandsSecondary";
 
 export function platformName(platform: string): "darwin" | "linux" | "win32" {
   if (platform.startsWith("Mac")) {
@@ -26,29 +25,37 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
 
 // The renderer composes its own item list; main composes the same list
 // from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
-export const menuItems = composeMenuItems([
-  fileMenu,
-  compareMenu,
-  mergeMenu,
-  viewMenu,
-]);
+const fileMenuItems = composeMenuItems([fileMenu]);
+const viewMenuItems = composeMenuItems([viewMenu]);
+export const menuItems = [...fileMenuItems, ...viewMenuItems];
 
-function accelerator(
-  item: (typeof menuItems)[number],
-  platform: "darwin" | "linux" | "win32",
-): string {
+type SecondaryMenuItem = SecondaryDocumentCommands["menuItems"][number];
+type MenuItem = (typeof menuItems)[number] | SecondaryMenuItem;
+
+type Platform = "darwin" | "linux" | "win32";
+
+export function menuItemsWithSecondary(
+  secondaryItems: readonly SecondaryMenuItem[],
+): readonly MenuItem[] {
+  return [...fileMenuItems, ...secondaryItems, ...viewMenuItems];
+}
+
+function accelerator(item: MenuItem, platform: Platform): string {
   return platform === "darwin" && "darwinAccelerator" in item
     ? item.darwinAccelerator
     : item.accelerator;
 }
 
 export function menuContribution(
-  platform: "darwin" | "linux" | "win32" = platformName(navigator.platform),
+  input: Platform | readonly MenuItem[] = platformName(navigator.platform),
+  itemPlatform: Platform = platformName(navigator.platform),
 ): MenuContribution {
+  const items = typeof input === "string" ? menuItems : input;
+  const platform = typeof input === "string" ? input : itemPlatform;
   return {
     fileMenuTitle: formatMessage(fileMenu.menuTitleKey, {}),
     viewMenuTitle: formatMessage(viewMenu.menuTitleKey, {}),
-    items: menuItems.map((item) => ({
+    items: items.map((item) => ({
       id: item.id,
       title: formatMessage(item.titleKey, {}),
       accelerator: accelerator(item, platform),
@@ -60,9 +67,8 @@ export interface DocumentCommandsOptions {
   editor: EditorView;
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
-  compare(): void;
+  loadSecondary(): Promise<SecondaryDocumentCommands>;
   featureCommand(commandId: string): void;
-  merge(): void;
   open(): Promise<void>;
   save(saveAs: boolean): Promise<void>;
   toggleFullScreen(): Promise<void>;
@@ -72,6 +78,8 @@ export class DocumentCommands {
   private readonly contextKeys = createContextKeys();
   private readonly commandContext = { contextKeys: this.contextKeys };
   private readonly commands = createCommandRegistry();
+  private secondaryMenuItems: readonly SecondaryMenuItem[] = [];
+  private secondaryStarted = false;
   constructor(private readonly options: DocumentCommandsOptions) {
     this.register();
     onMenuCommand((item) => this.runMenu(item));
@@ -110,16 +118,6 @@ export class DocumentCommands {
       run: () => this.options.save(true),
     });
     this.commands.register({
-      id: "file.compareOpen",
-      titleKey: "menu.compareOpen",
-      run: this.options.compare,
-    });
-    this.commands.register({
-      id: "file.mergeOpen",
-      titleKey: "menu.mergeOpen",
-      run: this.options.merge,
-    });
-    this.commands.register({
       id: "undo",
       titleKey: "menu.undo",
       run: () => dispatchUndo(this.options.editor),
@@ -140,14 +138,27 @@ export class DocumentCommands {
     }
   }
 
+  startSecondaryFeatures(): void {
+    if (this.secondaryStarted) return;
+    this.secondaryStarted = true;
+    void this.options.loadSecondary().then((secondary) => {
+      secondary.install(this.commands);
+      this.secondaryMenuItems = secondary.menuItems;
+      return this.publish();
+    }).catch(this.options.onError);
+  }
+
   private runMenu(menuItemId: MenuCommandMessage): void {
-    const item = menuItems.find((candidate) => candidate.id === menuItemId);
+    const item = menuItemsWithSecondary(this.secondaryMenuItems)
+      .find((candidate) => candidate.id === menuItemId);
     if (item === undefined) return;
     void this.commands.run(item.commandId, this.commandContext, undefined, "menu")
       .catch(this.options.onError);
   }
 
   private async publish(): Promise<void> {
-    this.options.onResult(await contributeMenu(menuContribution()));
+    this.options.onResult(await contributeMenu(
+      menuContribution(menuItemsWithSecondary(this.secondaryMenuItems)),
+    ));
   }
 }

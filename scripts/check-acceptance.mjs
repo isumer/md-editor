@@ -139,9 +139,13 @@ export async function runAcceptanceCheck(repositoryRoot = process.cwd()) {
   const criteria = parseCriterionFiles(criterionFiles);
   const junitPaths = [
     path.join(repositoryRoot, "reports", "e2e-junit.xml"),
+    path.join(repositoryRoot, "reports", "perf-e2e-junit.xml"),
     path.join(repositoryRoot, "reports", "unit-junit.xml"),
   ];
-  const tests = (await Promise.all(junitPaths.map(readJUnitFile))).flat();
+  const [e2eTests, perfTests, unitTests] = await Promise.all(junitPaths.map(readJUnitFile));
+  const e2eNames = new Set(e2eTests.map((test) => test.name));
+  const splitPerfTests = perfTests.filter((test) => !e2eNames.has(test.name));
+  const tests = [...e2eTests, ...splitPerfTests, ...unitTests];
   const report = buildAcceptanceReport(criteria, tests, process.platform);
 
   console.log(report.markdown);

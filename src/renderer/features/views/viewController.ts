@@ -74,6 +74,7 @@ export class ViewController {
   private previewScrollTop = 0;
   private restoreGeneration = 0;
   private resizeTimer: number | null = null;
+  private enteringFocusMode = false;
   private readonly enterFullScreen: () => Promise<void>;
   private readonly leaveFullScreen: () => Promise<void>;
 
@@ -123,11 +124,14 @@ export class ViewController {
   async enterFocusMode(): Promise<void> {
     if (this.focusMode) return;
     document.body.classList.add("focus-mode");
+    this.enteringFocusMode = true;
     try {
       await this.enterFullScreen();
     } catch (error) {
       document.body.classList.remove("focus-mode");
       throw error;
+    } finally {
+      this.enteringFocusMode = false;
     }
     if (!this.focusMode) {
       await this.leaveFullScreen();
@@ -180,7 +184,11 @@ export class ViewController {
 
   private readonly fullScreenChanged = (): void => {
     // The OS can leave full screen by itself; focus mode must follow it.
-    if (document.fullscreenElement === null && this.focusMode) {
+    if (
+      !this.enteringFocusMode &&
+      document.fullscreenElement === null &&
+      this.focusMode
+    ) {
       document.body.classList.remove("focus-mode");
       this.refreshPaneWidths();
     }
