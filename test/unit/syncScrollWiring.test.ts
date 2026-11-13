@@ -12,10 +12,14 @@ beforeEach(() => {
 function installSyncScroll() {
   const editorScroll = document.createElement("div");
   const preview = document.createElement("div");
-  document.body.append(editorScroll, preview);
+  const workspace = document.createElement("main");
+  workspace.dataset["viewMode"] = "split";
+  workspace.append(editorScroll, preview);
+  document.body.append(workspace);
   const hooks = syncScrollFeature.create({
     editor: { scrollDOM: editorScroll },
     preview,
+    workspace,
   } as unknown as Parameters<typeof syncScrollFeature.create>[0]);
   return hooks;
 }

@@ -21,7 +21,7 @@ function setup(initial: readonly PageFixture[] = [
   { line: 1, height: 100 },
   { line: 10, height: 200 },
   { line: 20, height: 240 },
-], initialBlockCount = 1) {
+], initialBlockCount = 1, isActive: () => boolean = () => true) {
   document.body.innerHTML = `<div id="editor"></div><div id="preview"></div>`;
   const editorScroll = document.querySelector<HTMLElement>("#editor");
   const preview = document.querySelector<HTMLElement>("#preview");
@@ -84,6 +84,7 @@ function setup(initial: readonly PageFixture[] = [
   const controller = new SyncScrollController({
     blockLine: (element) => Number(element.dataset["line"]),
     editorScroll,
+    isActive,
     preview,
     requestFrame: (callback) => {
       frames.push(callback);
@@ -552,6 +553,63 @@ describe("sync scroll controller", () => {
     state.flush();
 
     expect(state.frameCount()).toBe(0);
+    expect(state.scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(10);
+  });
+
+  it("AC-R2-01: a queued preview sync cannot move the editor after split view closes", () => {
+    let active = true;
+    const state = setup(undefined, 1, () => active);
+    state.preview.scrollTop = 100;
+    state.preview.dispatchEvent(new Event("scroll"));
+
+    active = false;
+    state.flush();
+
+    expect(state.scrollEditorToLine).not.toHaveBeenCalled();
+  });
+
+  it("AC-R2-01: a queued editor sync cannot move the preview after split view closes", () => {
+    let active = true;
+    const state = setup(undefined, 1, () => active);
+    state.setEditorLine(20);
+    state.editorScroll.dispatchEvent(new Event("scroll"));
+
+    active = false;
+    state.flush();
+
+    expect(state.preview.scrollTop).toBe(0);
+  });
+
+  it("AC-R2-01: closing split view cancels a queued preview layout refresh", () => {
+    let active = true;
+    const state = setup(undefined, 1, () => active);
+    const readsBeforeRefresh = state.layoutReads();
+    state.preview.dispatchEvent(new Event("contentvisibilityautostatechange"));
+
+    active = false;
+    state.flush();
+
+    expect(state.layoutReads()).toBe(readsBeforeRefresh);
+  });
+
+  it("AC-R2-01: an editor interaction ignores a non-interactive preview scroll", () => {
+    const state = setup();
+    state.editorScroll.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    state.preview.scrollTop = 100;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+
+    expect(state.scrollEditorToLine).not.toHaveBeenCalled();
+  });
+
+  it("AC-R2-01: a preview interaction restores preview-driven synchronization", () => {
+    const state = setup();
+    state.editorScroll.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    state.preview.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    state.preview.scrollTop = 100;
+    state.preview.dispatchEvent(new Event("scroll"));
+    state.flush();
+
     expect(state.scrollEditorToLine).toHaveBeenCalledExactlyOnceWith(10);
   });
 

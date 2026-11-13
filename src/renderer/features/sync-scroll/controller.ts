@@ -10,6 +10,7 @@ const ENABLED_STORAGE_KEY = "syncScroll.enabled";
 export interface SyncScrollControllerOptions {
   readonly blockLine: (element: HTMLElement) => number;
   readonly editorScroll: HTMLElement;
+  readonly isActive?: () => boolean;
   readonly preview: HTMLElement;
   readonly requestFrame?: (callback: FrameRequestCallback) => number;
   readonly sourceLineAtEditorTop: () => number;
@@ -33,15 +34,22 @@ export class SyncScrollController {
   private previewMaxTop = 0;
   private previewTargetTop: number | null = null;
   private lastPreviewLine: number | null = null;
+  private previewCanDriveEditor = true;
   private readonly requestFrame: (callback: FrameRequestCallback) => number;
+  private readonly isActive: () => boolean;
   private readonly mutationObserver: MutationObserver;
   private readonly resizeObserver: ResizeObserver | null;
 
   constructor(private readonly options: SyncScrollControllerOptions) {
     this.requestFrame = options.requestFrame ?? ((callback) => requestAnimationFrame(callback));
+    this.isActive = options.isActive ?? (() => true);
     this.documentRoot = options.preview.firstElementChild;
     options.editorScroll.addEventListener("scroll", this.onEditorScroll, { passive: true });
+    options.editorScroll.addEventListener("keydown", this.onEditorInput);
+    options.editorScroll.addEventListener("pointerdown", this.onEditorInput, { passive: true });
     options.preview.addEventListener("scroll", this.onPreviewScroll, { passive: true });
+    options.preview.addEventListener("pointerdown", this.onPreviewInput, { passive: true });
+    options.preview.addEventListener("wheel", this.onPreviewInput, { passive: true });
     options.preview.addEventListener(
       "contentvisibilityautostatechange",
       this.onContentVisibilityChange,
@@ -88,7 +96,11 @@ export class SyncScrollController {
 
   dispose(): void {
     this.options.editorScroll.removeEventListener("scroll", this.onEditorScroll);
+    this.options.editorScroll.removeEventListener("keydown", this.onEditorInput);
+    this.options.editorScroll.removeEventListener("pointerdown", this.onEditorInput);
     this.options.preview.removeEventListener("scroll", this.onPreviewScroll);
+    this.options.preview.removeEventListener("pointerdown", this.onPreviewInput);
+    this.options.preview.removeEventListener("wheel", this.onPreviewInput);
     this.options.preview.removeEventListener(
       "contentvisibilityautostatechange",
       this.onContentVisibilityChange,
@@ -100,10 +112,11 @@ export class SyncScrollController {
   }
 
   private readonly onEditorScroll = (): void => {
-    if (!this.enabled || this.editorFrame) return;
+    if (!this.enabled || !this.isActive() || this.editorFrame) return;
     this.editorFrame = true;
     this.requestFrame(() => {
       this.editorFrame = false;
+      if (!this.isActive()) return;
       const line = this.options.sourceLineAtEditorTop();
       if (this.editorTargetLine !== null && Math.abs(line - this.editorTargetLine) <= 1) return;
       this.editorTargetLine = null;
@@ -118,12 +131,21 @@ export class SyncScrollController {
     });
   };
 
+  private readonly onEditorInput = (): void => {
+    this.previewCanDriveEditor = false;
+  };
+
+  private readonly onPreviewInput = (): void => {
+    this.previewCanDriveEditor = true;
+  };
+
   private readonly onPreviewScroll = (): void => {
     if (this.anchorTimer !== null) this.scheduleDelayedRefresh(true, 250);
     const top = this.options.preview.scrollTop;
     if (this.previewWriteTop !== null && Math.abs(top - this.previewWriteTop) <= 1) return;
     this.previewWriteTop = null;
-    if (!this.enabled || this.previewFrame || !this.hasAnchors()) {
+    if (!this.enabled || !this.isActive() || !this.previewCanDriveEditor ||
+      this.previewFrame || !this.hasAnchors()) {
       return;
     }
     this.previewTargetTop = top;
@@ -145,6 +167,10 @@ export class SyncScrollController {
 
   private applyPreviewTarget(skipUnchanged: boolean): void {
     if (!this.enabled || this.previewTargetTop === null || !this.hasAnchors()) return;
+    if (!this.isActive() || !this.previewCanDriveEditor) {
+      this.previewTargetTop = null;
+      return;
+    }
     const anchors = this.anchorsForTop(this.previewTargetTop);
     if (anchors.length === 0) return;
     const line = sourceLineForPreviewTop(anchors, this.previewTargetTop);
@@ -155,6 +181,7 @@ export class SyncScrollController {
   }
 
   private refreshAndReapply(): void {
+    if (!this.isActive()) return;
     this.refreshAnchors();
     this.applyPreviewTarget(true);
   }

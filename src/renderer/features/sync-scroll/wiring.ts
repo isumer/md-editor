@@ -7,6 +7,7 @@ export const syncScrollFeature: FeatureRegistration = {
     const controller = new SyncScrollController({
       blockLine: context.previewBlockLine ?? ((element) => Number(element.dataset["line"] ?? "0")),
       editorScroll: context.editor.scrollDOM,
+      isActive: () => context.workspace.dataset["viewMode"] === "split",
       preview: context.preview,
       sourceLineAtEditorTop: () => context.editor.state.doc.lineAt(
         context.editor.lineBlockAtHeight(Math.max(0, -context.editor.documentTop)).from,
