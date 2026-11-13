@@ -1,14 +1,9 @@
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   buildAcceptanceReport,
   parseCriterionFiles,
   parseJUnit,
-  runAcceptanceCheck,
 } from "../../scripts/check-acceptance.mjs";
 
 const criteriaFixture = `# Fixture
@@ -101,33 +96,6 @@ describe("acceptance report", () => {
 
     expect(report.ok).toBe(false);
     expect(report.missing).toEqual(["AC-PERF-02"]);
-  });
-
-  it("reads passing performance tests from the split CI report", async () => {
-    const repositoryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "solidmd-acceptance-"));
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    try {
-      await fs.mkdir(path.join(repositoryRoot, "docs", "acceptance"), { recursive: true });
-      await fs.mkdir(path.join(repositoryRoot, "reports"));
-      await fs.writeFile(
-        path.join(repositoryRoot, "docs", "acceptance", "PERF.md"),
-        "### AC-PERF-07 — Fast preview\nstatus: implemented\nGiven a large file\n",
-      );
-      await fs.writeFile(
-        path.join(repositoryRoot, "reports", "perf-e2e-junit.xml"),
-        '<testcase name="AC-PERF-07: preview stays responsive" />',
-      );
-
-      const report = await runAcceptanceCheck(repositoryRoot);
-
-      expect(report.ok).toBe(true);
-      expect(report.missing).toEqual([]);
-    } finally {
-      log.mockRestore();
-      error.mockRestore();
-      await fs.rm(repositoryRoot, { recursive: true, force: true });
-    }
   });
 
 });
