@@ -5,6 +5,7 @@ import DOMPurify from "dompurify";
 const ALLOWED_URI =
   /^(?:doc-asset:|(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
 const DOC_ASSET_URL = /^\s*doc-asset:/i;
+const SAFE_TEXT_BLOCK = /^<(h[1-6]|p) data-line="\d+">[^<]*<\/\1>\n$/;
 
 // A private instance configured once, so the hook and settings apply to every
 // call without a config object being re-parsed per preview block.
@@ -30,5 +31,8 @@ purifier.setConfig({
 });
 
 export function sanitizeRenderedHtml(html: string): string {
+  if (SAFE_TEXT_BLOCK.test(html)) {
+    return html;
+  }
   return purifier.sanitize(html);
 }

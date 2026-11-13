@@ -93,6 +93,21 @@ function createMarkdownRenderer() {
 
 const markdown = createMarkdownRenderer();
 
+function renderPlainHeading(
+  source: string,
+  env: RenderEnvironment,
+): string | null {
+  const match = /^(#{1,6}) ([A-Za-z0-9]+(?: [A-Za-z0-9]+)*)\n{0,2}$/.exec(source);
+  const hashes = match?.[1];
+  const text = match?.[2];
+  if (hashes === undefined || text === undefined) return null;
+  const prefix = typeof env["dataLinePrefix"] === "string"
+    ? env["dataLinePrefix"]
+    : "";
+  const level = String(hashes.length);
+  return `<h${level} data-line="${prefix}0">${text}</h${level}>\n`;
+}
+
 export interface ReferenceDefinition {
   title: string;
   href: string;
@@ -107,7 +122,7 @@ export interface RenderEnvironment {
 }
 
 export function renderMarkdown(source: string, env: RenderEnvironment = {}): string {
-  return markdown.render(source, env);
+  return renderPlainHeading(source, env) ?? markdown.render(source, env);
 }
 
 export function collectReferences(source: string): Record<string, ReferenceDefinition> {

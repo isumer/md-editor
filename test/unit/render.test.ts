@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { renderMarkdown } from "../../src/renderer/workers/render/render";
 
 describe("renderMarkdown", () => {
+  it("AC-PERF-02: renders a plain heading without changing Markdown output", () => {
+    expect(renderMarkdown("## Plain heading 42\n\n", { dataLinePrefix: "7:" }))
+      .toBe('<h2 data-line="7:0">Plain heading 42</h2>\n');
+  });
+
   it("AC-R1-04: adds the zero-based source line to a heading", () => {
     expect(renderMarkdown("# Heading")).toContain('<h1 data-line="0">Heading</h1>');
   });

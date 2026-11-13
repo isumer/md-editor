@@ -13,6 +13,7 @@ export interface ViewControllerOptions {
   readonly enterFullScreen?: () => Promise<void>;
   readonly leaveFullScreen?: () => Promise<void>;
   readonly preview?: HTMLElement;
+  readonly skipInitialMeasurement?: boolean;
   readonly workspace: HTMLElement;
 }
 
@@ -83,7 +84,11 @@ export class ViewController {
     this.editorScrollTop = options.editorScroll?.scrollTop ?? 0;
     this.previewScrollTop = options.preview?.scrollTop ?? 0;
     this.applyShare();
-    this.setMode("split");
+    if (options.skipInitialMeasurement === true) {
+      options.workspace.dataset["viewMode"] = "split";
+    } else {
+      this.setMode("split");
+    }
     options.divider.addEventListener("pointerdown", this.startDrag);
     options.divider.addEventListener("dblclick", this.resetDivider);
     window.addEventListener("pointermove", this.drag);
@@ -91,7 +96,6 @@ export class ViewController {
     window.addEventListener("resize", this.resize);
     // Esc can leave the OS full screen without a keydown reaching the page.
     document.addEventListener("fullscreenchange", this.fullScreenChanged);
-    this.refreshPaneWidths();
   }
 
   get focusMode(): boolean {

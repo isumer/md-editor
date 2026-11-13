@@ -178,6 +178,23 @@ describe("render controller", () => {
     }
   });
 
+  it("AC-PERF-03: an empty startup render does not block the opened document", async () => {
+    let document: DocumentRecord | null = null;
+    const { instance } = await controller(() => document);
+
+    instance.start();
+    document = item();
+    instance.schedule();
+
+    expect(workers[0]?.messages).toContainEqual({
+      op: "render",
+      id: 2,
+      docId: "doc",
+      epoch: 1,
+      version: 1,
+    });
+  });
+
   it("AC-R1-07: an epoch resync attaches only the current document", async () => {
     const document = item("doc", 3, 5);
     const { instance } = await controller(() => document);

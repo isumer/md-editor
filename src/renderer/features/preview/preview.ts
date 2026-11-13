@@ -107,6 +107,24 @@ function createBlock(
   return element;
 }
 
+function updateSingleTextElement(element: HTMLDivElement, html: string): boolean {
+  const match = /^<(h[1-6]|p) data-line="(\d+)">([^<]*)<\/\1>\n$/.exec(html);
+  const current = element.firstElementChild;
+  if (match === null || current === null || element.childElementCount !== 1 ||
+    current.localName !== match[1] || current.getAttribute("data-line") !== match[2] ||
+    current.getAttributeNames().length !== 1 || current.childElementCount !== 0) {
+    return false;
+  }
+  current.innerHTML = match[3] ?? "";
+  return true;
+}
+
+function updateBlockHtml(element: HTMLDivElement, html: string): void {
+  if (!updateSingleTextElement(element, html)) {
+    element.innerHTML = html;
+  }
+}
+
 function updateBlock(
   element: HTMLDivElement,
   block: RenderBlock,
@@ -132,7 +150,7 @@ function updateBlock(
     performance.mark("preview-rewrite-end");
     performance.mark("preview-dom-start");
   }
-  element.innerHTML = rewritten;
+  updateBlockHtml(element, rewritten);
   if (measurePhases) {
     performance.mark("preview-dom-end");
   }
@@ -533,16 +551,20 @@ export function wireRenderWorker(
   function handleResponse(response: RenderResponse): void {
     const current = wiring.currentVersion();
     if ("op" in response) {
-      if (response.op === "resync" &&
-        response.docId === current.docId && response.epoch === current.epoch) {
-        wiring.onResync(response);
+      if (response.op === "resync") {
+        if (response.docId === current.docId && response.epoch === current.epoch) {
+          wiring.onResync(response);
+        }
+        wiring.scheduler.discardResult(response.id);
       }
       return;
     }
     if (response.docId !== current.docId || response.epoch !== current.epoch) {
+      wiring.scheduler.discardResult(response.id);
       return;
     }
     if (response.version > current.version) {
+      wiring.scheduler.discardResult(response.id);
       return;
     }
     if (shown !== null && shown.docId === response.docId &&

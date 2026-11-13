@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 import { sanitizeRenderedHtml } from "../../src/renderer/features/preview/sanitize";
 
 describe("sanitizeRenderedHtml", () => {
+  it("AC-PERF-08: keeps a generated plain-text block byte-identical", () => {
+    const html = '<h1 data-line="12">Safe &amp; fast</h1>\n';
+
+    expect(sanitizeRenderedHtml(html)).toBe(html);
+  });
+
   it("AC-SEC-04: removes active document elements and event handlers", () => {
     const result = sanitizeRenderedHtml(`
       <script>bad()</script>
