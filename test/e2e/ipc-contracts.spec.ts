@@ -240,6 +240,7 @@ test("the preload exposes only the fixed named API", {
         "saveDocument",
         "saveSettings",
         "sendChanges",
+        "toggleFullScreen",
       ],
       legacyGlobal: false,
     });

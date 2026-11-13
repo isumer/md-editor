@@ -53,6 +53,7 @@ export class RenderController {
     this.proxy = this.createProxy();
     this.scheduler = new RenderScheduler((request) => this.render(request.id), {
       maximumWaitMilliseconds: 16,
+      dispatchImmediately: true,
       onApplied: (latency) => {
         const end = performance.now();
         performance.measure("preview-latency", { start: end - latency, end });
@@ -111,6 +112,7 @@ export class RenderController {
   }
 
   schedule(): void {
+    performance.mark("preview-scheduled");
     this.scheduler.schedule();
   }
 
@@ -143,6 +145,7 @@ export class RenderController {
         this.heartbeat.pong(event.data.id);
         return;
       }
+      performance.mark("preview-response");
       this.handlers.onmessage?.(event);
     };
     this.worker.onerror = (event) => this.handlers.onerror?.(event);
@@ -151,6 +154,7 @@ export class RenderController {
   private render(id: number): void {
     const document = this.options.current();
     if (document) {
+      performance.mark("preview-dispatch");
       this.worker.postMessage({ op: "render", id, ...document.replication.current() });
     }
   }

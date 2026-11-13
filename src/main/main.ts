@@ -42,6 +42,7 @@ import { registerMenuIpcHandler } from "./ipc/menu";
 import { registerSessionIpcHandler } from "./ipc/session";
 import { registerSettingsIpcHandler } from "./ipc/settings";
 import { registerWorkspaceIpcHandlers } from "./ipc/workspace";
+import { registerWindowIpcHandler } from "./ipc/window";
 import { DocumentGrantService } from "./services/documentGrants";
 import { FileDialogs } from "./services/fileDialogs";
 import { WorkspaceService } from "./services/workspace";
@@ -204,6 +205,7 @@ registerLinkIpcHandler();
 registerOpenRequestIpcHandler(openRequests);
 registerMenuIpcHandler(menuContributions);
 registerWorkspaceIpcHandlers(workspaceService);
+registerWindowIpcHandler();
 const applicationEvents = registerApplicationEvents(
   createApplicationWindow,
   logProcessEvent,

@@ -7,6 +7,7 @@ import {
 import type { EditorView } from "@codemirror/view";
 
 import type { Result } from "../shared/ipc/result";
+import { parseHexColor, relativeLuminance } from "../shared/settings/appearance";
 import { formatMessage } from "./core/messages";
 import { DraftScheduler } from "./core/draftScheduler";
 import {
@@ -27,6 +28,7 @@ import {
   createEditor,
   createEditorState,
   markerMergeExtension,
+  setEditorDarkTheme,
   type EditorCallbacks,
 } from "./editor/editor";
 import {
@@ -52,6 +54,7 @@ import {
   onSessionCloseRequest,
   readyForOpenRequests,
   sendChanges,
+  toggleFullScreen,
 } from "./platform/api";
 import { DocumentClosePrompt } from "./tabs/closePrompt";
 import { DocumentCommands } from "./tabs/documentCommands";
@@ -165,9 +168,11 @@ const callbacks: EditorCallbacks = {
       // Every update, including a selection change, is the tab's view state.
       document.state = editor.state;
       document.scrollTop = editor.scrollDOM.scrollTop;
-      dirtyFrame.changed(document);
     }
     renderController.schedule();
+    if (document) {
+      dirtyFrame.changed(document);
+    }
   },
   onChanges: (changes, state) => {
     const document = activeDocument;
@@ -178,10 +183,8 @@ const callbacks: EditorCallbacks = {
     const message = document.replication.changed(changes);
     sendChanges(message);
     renderController.change(message);
-    dirtyFrame.changed(document);
     markFirstEditAfterPaint();
   },
-  updateTitle,
   onStateChanged: (state) => {
     documentCommands?.refresh();
     installedFeatures.documentStateChanged(activeDocument?.id ?? null, state);
@@ -206,22 +209,25 @@ const drafts = new DraftScheduler({
   onDraft: (docId) => lifecycle.sendDraft(docId),
 });
 
-// Dirty state is evaluated at most once per frame, and only that tab row updates.
+// Dirty state runs after paint when the renderer has idle time.
 const dirtyFrame = new FrameCoalescer<DocumentRecord>({
   requestFrame: (callback) => {
-    requestAnimationFrame(callback);
+    requestAnimationFrame(() => window.requestIdleCallback(() => callback(), {
+      timeout: 32,
+    }));
   },
   apply: (document) => {
-    if (!registry.get(document.id)) {
-      return;
+    performance.mark("dirty-state-start");
+    if (registry.get(document.id)) {
+      document.dirty = isDocumentDirty(document);
+      if (document.dirty) {
+        drafts.documentChanged(document.id, document.state.doc.length);
+      } else {
+        drafts.documentSaved(document.id);
+      }
+      syncDirty(document);
     }
-    document.dirty = isDocumentDirty(document);
-    if (document.dirty) {
-      drafts.documentChanged(document.id, document.state.doc.length);
-    } else {
-      drafts.documentSaved(document.id);
-    }
-    syncDirty(document);
+    performance.mark("dirty-state-end");
   },
 });
 
@@ -443,12 +449,16 @@ documentCommands = new DocumentCommands({
       },
     }),
   ),
+  featureCommand: (commandId) => installedFeatures.runCommand(commandId),
   onError: showUnexpectedError,
   onResult: (result) => {
     valueOrStatus(result);
   },
   open: () => lifecycle.open(),
   save: (saveAs) => lifecycle.saveActive(saveAs),
+  toggleFullScreen: async () => {
+    valueOrStatus(await toggleFullScreen());
+  },
 });
 
 async function openCompare(): Promise<void> {
@@ -511,14 +521,14 @@ window.addEventListener("drop", (event) => {
 async function loadBackgroundSettings(): Promise<void> {
   const settingsResult = await loadSettings();
   const applyTheme = (theme: ResolvedTheme): void => {
-    if (settingsResult.ok) {
-      applyBackgrounds(
+    const editorText = settingsResult.ok
+      ? applyBackgrounds(
         { editor: settingsResult.value.editor.background, preview: settingsResult.value.preview.background },
         theme,
-      );
-    } else {
-      resetToThemeDefaults(theme);
-    }
+      )
+      : resetToThemeDefaults(theme);
+    const colour = parseHexColor(editorText);
+    setEditorDarkTheme(editor, colour !== null && relativeLuminance(colour) > 0.5);
   };
   applyTheme(resolveSystemTheme());
   watchSystemTheme(applyTheme);

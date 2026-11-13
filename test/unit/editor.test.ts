@@ -11,7 +11,6 @@ function editorLanguage(document: string) {
   return createEditorState(document, createDocumentState(), {
     onDocumentChanged: vi.fn(),
     onChanges: vi.fn(),
-    updateTitle: vi.fn(),
   }).facet(language)?.name ?? null;
 }
 

@@ -131,6 +131,10 @@ export function contributeMenu(
   return api.contributeMenu(request);
 }
 
+export function toggleFullScreen(): Promise<Result<void>> {
+  return api.toggleFullScreen();
+}
+
 export function onOpenRequest(
   listener: (request: Result<DocumentReference>) => void,
 ): () => void {

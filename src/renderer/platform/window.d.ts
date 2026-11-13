@@ -66,6 +66,7 @@ interface Api {
   openWorkspaceFile(request: WorkspacePathRequest): Promise<
     Result<OpenWorkspaceFileResponse>
   >;
+  toggleFullScreen(): Promise<Result<void>>;
 }
 
 declare global {

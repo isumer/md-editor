@@ -5,4 +5,10 @@ export const menuMessages = {
   "menu.saveAs": "Save As",
   "menu.undo": "Undo",
   "menu.redo": "Redo",
+  "menu.view": "View",
+  "menu.viewSplit": "Split View",
+  "menu.viewEditor": "Editor Only",
+  "menu.viewPreview": "Preview Only",
+  "menu.focusMode": "Focus Mode",
+  "menu.viewFullScreen": "Full Screen",
 } as const;

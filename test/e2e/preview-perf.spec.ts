@@ -100,6 +100,81 @@ interface LongAnimationScript {
   sourceURL: string;
 }
 
+const KEYSTROKE_MARKS = [
+  "keystroke-start",
+  "editor-update-start",
+  "editor-state-hooks-start",
+  "editor-state-hooks-end",
+  "editor-change-hooks-start",
+  "editor-change-hooks-end",
+  "editor-document-hooks-start",
+  "editor-document-hooks-end",
+  "editor-update-end",
+  "dirty-state-start",
+  "dirty-state-end",
+  "preview-scheduled",
+  "preview-dispatch",
+  "preview-response",
+  "preview-apply-start",
+  "preview-apply-end",
+] as const;
+
+type KeystrokeMark = typeof KEYSTROKE_MARKS[number];
+type KeystrokeTimeline = Partial<Record<KeystrokeMark, number>>;
+
+interface KeystrokeDiagnostics {
+  readonly frames: LongAnimationFrame[];
+  readonly timelines: KeystrokeTimeline[];
+}
+
+async function installKeystrokeMarkProbe(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.addEventListener("keydown", () => {
+      performance.mark("keystroke-start");
+    }, { capture: true });
+  });
+}
+
+function phaseDurations(
+  timelines: readonly KeystrokeTimeline[],
+  start: KeystrokeMark,
+  end: KeystrokeMark,
+): number[] {
+  return timelines.flatMap((timeline) => {
+    const phaseStart = timeline[start];
+    const phaseEnd = timeline[end];
+    return phaseStart === undefined || phaseEnd === undefined
+      ? []
+      : [Math.max(0, phaseEnd - phaseStart)];
+  });
+}
+
+function reportKeystrokeDiagnostics(diagnostics: KeystrokeDiagnostics): void {
+  const phases = [
+    ["editor-transaction", "keystroke-start", "editor-update-start"],
+    ["state-hooks", "editor-state-hooks-start", "editor-state-hooks-end"],
+    ["change-hooks", "editor-change-hooks-start", "editor-change-hooks-end"],
+    ["document-hooks", "editor-document-hooks-start", "editor-document-hooks-end"],
+    ["deferred-dirty-state", "dirty-state-start", "dirty-state-end"],
+    ["preview-schedule", "preview-scheduled", "preview-dispatch"],
+    ["render-worker", "preview-dispatch", "preview-response"],
+    ["preview-apply", "preview-apply-start", "preview-apply-end"],
+  ] as const;
+  for (const [label, start, end] of phases) {
+    report(`AC-PERF-02 phase ${label}`, phaseDurations(diagnostics.timelines, start, end));
+  }
+  const windows = diagnostics.timelines.flatMap((timeline) => {
+    const start = timeline["keystroke-start"];
+    const end = timeline["preview-apply-end"];
+    return start === undefined || end === undefined ? [] : [{ start, duration: end - start }];
+  });
+  const frames = diagnostics.frames.filter((frame) => windows.some((window) =>
+    frame.start < window.start + window.duration &&
+    frame.start + frame.duration > window.start));
+  const frameText = frames.map((frame) => frameDiagnostics(frame, [frame])).join("; ");
+  console.log(`AC-PERF-02 LoAF: n=${String(frames.length)} frames=[${frameText}]`);
+}
+
 interface KeystrokeProbe {
   renders: { id: number; start: number }[];
   responses: { id: number; start: number }[];
@@ -244,7 +319,6 @@ async function installKeystrokeProbe(page: Page): Promise<void> {
     }).observe({ entryTypes: ["longtask", "long-animation-frame"] });
   });
 }
-
 async function installLongTaskProbe(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const probe: LongTaskProbe = { longtasks: [], marks: [], frames: [] };
@@ -418,6 +492,7 @@ async function placeCaretInFirstLine(page: Page): Promise<void> {
 async function measureKeystrokes(
   page: Page,
   measureName: "preview-latency" | "preview-patch",
+  diagnostics?: KeystrokeDiagnostics,
   diagnoseSlowSamples = false,
 ): Promise<number[]> {
   const heading = page.getByTestId("preview").locator("h1").first();
@@ -429,27 +504,71 @@ async function measureKeystrokes(
     await page.keyboard.type(character);
     await expect(heading).toContainText(suffix, { timeout: 10_000 });
   }
-  await page.evaluate((name) => performance.clearMeasures(name), measureName);
+  await page.evaluate(({ name, names }) => {
+    performance.clearMeasures(name);
+    for (const markName of names) performance.clearMarks(markName);
+  }, { name: measureName, names: KEYSTROKE_MARKS });
 
   const samples: number[] = [];
   for (let index = 0; index < SAMPLES; index += 1) {
     const character = String.fromCharCode(97 + (index % 26));
     suffix += character;
-    await page.evaluate((name) => performance.clearMeasures(name), measureName);
+    await page.evaluate(({ name, names }) => {
+      performance.clearMeasures(name);
+      for (const markName of names) performance.clearMarks(markName);
+    }, { name: measureName, names: KEYSTROKE_MARKS });
     if (diagnoseSlowSamples) {
       await resetKeystrokeProbe(page);
     }
     await page.keyboard.type(character);
     await expect(heading).toContainText(suffix, { timeout: 10_000 });
-    const durations = await page.evaluate((name) =>
-      performance.getEntriesByName(name, "measure").map((entry) => entry.duration),
-    measureName);
+    const result = await page.evaluate(({ collect, name, names }) => ({
+      durations: performance.getEntriesByName(name, "measure")
+        .map((entry) => entry.duration),
+      timeline: collect ? Object.fromEntries(names.flatMap((markName) => {
+        const entry = performance.getEntriesByName(markName, "mark").at(-1);
+        return entry === undefined ? [] : [[markName, entry.startTime]];
+      })) : {},
+    }), {
+      collect: diagnostics !== undefined,
+      name: measureName,
+      names: KEYSTROKE_MARKS,
+    });
+    const { durations } = result;
     expect(durations.length).toBeGreaterThanOrEqual(1);
     const duration = durations.at(-1) ?? 0;
     samples.push(duration);
+    if (diagnostics !== undefined) {
+      diagnostics.timelines.push(result.timeline);
+    }
     if (diagnoseSlowSamples && duration >= 50) {
       await reportSlowKeystroke(page, index + 1);
     }
+  }
+  if (diagnostics !== undefined) {
+    diagnostics.frames.push(...await page.evaluate(() =>
+      performance.getEntriesByType("long-animation-frame").map((entry) => {
+        const frame = entry as PerformanceEntry & {
+          blockingDuration: number;
+          renderStart: number;
+          styleAndLayoutStart: number;
+          scripts: LongAnimationScript[];
+        };
+        return {
+          start: frame.startTime,
+          duration: frame.duration,
+          blockingDuration: frame.blockingDuration,
+          renderStart: frame.renderStart,
+          styleAndLayoutStart: frame.styleAndLayoutStart,
+          scripts: frame.scripts.map((script) => ({
+            duration: script.duration,
+            forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+            invoker: script.invoker,
+            sourceFunctionName: script.sourceFunctionName,
+            sourceURL: script.sourceURL,
+          })),
+        };
+      })));
   }
   return samples;
 }
@@ -523,10 +642,18 @@ test("AC-PERF-02: 50 KB document keystroke latency p95 stays under 50 ms", {
   try {
     // Diagnostics only; the measurement works without the probe.
     await probeInstalled.catch(() => undefined);
+    await installKeystrokeMarkProbe(page);
     await openPreview(page, await fs.readFile(large50, "utf8").then((text) =>
       text.split("\n")[0] ?? ""));
-    const samples = await measureKeystrokes(page, "preview-latency", true);
+    const diagnostics: KeystrokeDiagnostics = { frames: [], timelines: [] };
+    const samples = await measureKeystrokes(
+      page,
+      "preview-latency",
+      diagnostics,
+      true,
+    );
     report("AC-PERF-02 preview-latency", samples);
+    reportKeystrokeDiagnostics(diagnostics);
     expect(samples).toHaveLength(SAMPLES);
     expect(percentile(samples, 0.95)).toBeLessThan(50);
   } finally {
