@@ -24,6 +24,14 @@ export function platformName(platform: string): "darwin" | "linux" | "win32" {
   return platform.startsWith("Win") ? "win32" : "linux";
 }
 
+export function selectFocusedDocument<T>(
+  primary: T,
+  secondary: T,
+  secondaryHasFocus: boolean,
+): T {
+  return secondaryHasFocus ? secondary : primary;
+}
+
 // The renderer composes its own item list; main composes the same list
 // from the same declaration files (test/unit/tabsDocumentCommands.test.ts).
 export const menuItems = composeMenuItems([
@@ -57,14 +65,17 @@ export function menuContribution(
 }
 
 export interface DocumentCommandsOptions {
-  editor: EditorView;
+  editor(): EditorView;
   onError(error: unknown): void;
   onResult(result: Result<void>): void;
   compare(): void;
   featureCommand(commandId: string): void;
   merge(): void;
   open(): Promise<void>;
+  otherView?(target: string, action: "clone" | "move"): void;
+  redo?(): void;
   save(saveAs: boolean): Promise<void>;
+  undo?(): void;
   toggleFullScreen(): Promise<void>;
 }
 
@@ -81,20 +92,23 @@ export class DocumentCommands {
       platform: platformName(navigator.platform),
     });
     this.refresh();
-    options.editor.contentDOM.addEventListener("focus", () => this.refresh());
-    options.editor.contentDOM.addEventListener("blur", () => this.refresh());
     void this.publish().catch(options.onError);
   }
 
   refresh(): void {
+    const editor = this.editor();
     const keys = new Set<string>();
-    if (this.options.editor.hasFocus) {
+    if (editor.hasFocus) {
       keys.add("editorFocus");
     }
-    if (this.options.editor.state.selection.ranges.some((range) => !range.empty)) {
+    if (editor.state.selection.ranges.some((range) => !range.empty)) {
       keys.add("hasSelection");
     }
     this.contextKeys.set(keys);
+  }
+
+  run(id: string, target: string): void {
+    void this.commands.run(id, this.commandContext, undefined, target);
   }
 
   private register(): void {
@@ -122,12 +136,22 @@ export class DocumentCommands {
     this.commands.register({
       id: "undo",
       titleKey: "menu.undo",
-      run: () => dispatchUndo(this.options.editor),
+      run: () => this.runUndo(),
     });
     this.commands.register({
       id: "redo",
       titleKey: "menu.redo",
-      run: () => dispatchRedo(this.options.editor),
+      run: () => this.runRedo(),
+    });
+    this.commands.register({
+      id: "tab.moveToOtherView",
+      titleKey: "tab.moveToOtherView",
+      run: (_context, _args, target) => this.runOtherView(target, "move"),
+    });
+    this.commands.register({
+      id: "tab.cloneToOtherView",
+      titleKey: "tab.cloneToOtherView",
+      run: (_context, _args, target) => this.runOtherView(target, "clone"),
     });
     for (const item of viewMenu.items) {
       this.commands.register({
@@ -137,6 +161,29 @@ export class DocumentCommands {
           ? this.options.toggleFullScreen
           : () => this.options.featureCommand(item.commandId),
       });
+    }
+  }
+
+  private editor(): EditorView {
+    return this.options.editor();
+  }
+
+  private runUndo(): void {
+    if (this.options.undo) this.options.undo();
+    else dispatchUndo(this.editor());
+  }
+
+  private runRedo(): void {
+    if (this.options.redo) this.options.redo();
+    else dispatchRedo(this.editor());
+  }
+
+  private runOtherView(
+    target: string | undefined,
+    action: "clone" | "move",
+  ): void {
+    if (target !== undefined) {
+      this.options.otherView?.(target, action);
     }
   }
 

@@ -178,6 +178,14 @@ body {
   background: var(--surface-muted-background);
 }
 
+#tabs-two {
+  display: flex;
+  min-height: 34px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-muted-background);
+}
+
 .tab {
   display: inline-flex;
   gap: 6px;
@@ -296,6 +304,40 @@ body {
   margin: 8px;
   color: var(--muted-text);
   font-size: 12px;
+}
+
+#workspace.has-document-view-two #preview {
+  display: none;
+}
+
+#document-view-two {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-left: 1px solid #d0d7de;
+}
+
+#document-view-two[hidden] {
+  display: none;
+}
+
+.tab-context-menu {
+  position: absolute;
+  z-index: 10;
+  display: grid;
+  padding: 4px;
+  border: 1px solid #d0d7de;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
+}
+
+.tab-context-menu button {
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
 }
 
 #workspace[data-view-mode="editor"],
@@ -429,6 +471,7 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 }
 
 #editor,
+#editor-two,
 #preview {
   min-width: 0;
   min-height: 0;
@@ -439,7 +482,8 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
   margin: 0 auto;
 }
 
-#editor {
+#editor,
+#editor-two {
   border-right: 1px solid var(--border-color);
   overflow: hidden;
   background: var(--editor-background);
@@ -447,7 +491,9 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 }
 
 #editor .cm-editor,
-#editor .cm-scroller {
+#editor .cm-scroller,
+#editor-two .cm-editor,
+#editor-two .cm-scroller {
   height: 100%;
   background: var(--editor-background);
   color: var(--editor-text-color);
@@ -458,7 +504,8 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
   color: var(--custom-text-color, var(--editor-text-color));
 }
 
-#editor .cm-editor.cm-focused {
+#editor .cm-editor.cm-focused,
+#editor-two .cm-editor.cm-focused {
   outline: none;
 }
 
@@ -476,6 +523,8 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 #preview {
   padding: 24px 32px;
   overflow: auto;
+  contain: layout paint;
+  will-change: scroll-position;
   line-height: 1.55;
   background: var(--custom-background, var(--preview-background));
   color: var(--custom-text-color, var(--preview-text-color));
@@ -489,8 +538,8 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 /* Off-screen regions skip layout and paint but keep their space. Blocks are
    grouped into pages and pages into sections: content-visibility checks scale
    with the number of contained elements, so one wrapper per block makes
-   scrolling worse as the document grows. A section holds 5 pages of 20
-   blocks, so its estimate is 12,000px and a page's is 2,400px. */
+   scrolling worse as the document grows. A section holds 20 pages of 20
+   blocks, so its estimate is 48,000px and a page's is 2,400px. */
 .preview-page {
   content-visibility: auto;
   contain-intrinsic-size: auto 2400px;
@@ -498,7 +547,7 @@ body.focus-mode #workspace[data-divider-custom="true"] #divider {
 
 .preview-section {
   content-visibility: auto;
-  contain-intrinsic-size: auto 12000px;
+  contain-intrinsic-size: auto 48000px;
 }
 
 #preview pre {

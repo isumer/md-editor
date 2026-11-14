@@ -18,10 +18,11 @@ import {
 import { lintKeymap } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import {
-  EditorState,
   Compartment,
+  EditorState,
   type ChangeSet,
   type Extension,
+  type StateEffect,
   type Text,
 } from "@codemirror/state";
 import {
@@ -41,6 +42,7 @@ import {
 import type { DocumentState } from "../core/document";
 
 export interface EditorCallbacks {
+  deferDirtyState?: boolean;
   onDocumentChanged(): void;
   onChanges(changes: ChangeSet, state: EditorState): void;
   onStateChanged?(state: EditorState): void;
@@ -76,6 +78,38 @@ const editorSetup = [
     ...lintKeymap,
   ]),
 ];
+const callbacksCompartment = new Compartment();
+
+const markdownSupport = markdown({
+  extensions: {
+    // Plain word runs contain no Markdown delimiters, so parse them in one step.
+    parseInline: [{
+      name: "PlainTextRun",
+      before: "Escape",
+      parse: (context, _next, position) => {
+        const start = position - context.offset;
+        const end = plainTextRunEnd(context.text, start);
+        return end === start ? -1 : context.offset + end;
+      },
+    }],
+  },
+});
+
+function callbacksExtension(
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): Extension {
+  return EditorView.updateListener.of((update) => {
+    handleDocumentUpdate(update, documentState, callbacks);
+  });
+}
+
+export function editorCallbacksEffect(
+  documentState: DocumentState,
+  callbacks: EditorCallbacks,
+): StateEffect<unknown> {
+  return callbacksCompartment.reconfigure(callbacksExtension(documentState, callbacks));
+}
 
 function plainTextRunEnd(text: string, start: number): number {
   let end = start;
@@ -100,28 +134,9 @@ function highlightExtension(): Extension {
 }
 
 export function setEditorDarkTheme(view: EditorView, dark: boolean): void {
-  if (darkHighlight === dark) {
-    return;
-  }
   darkHighlight = dark;
   view.dispatch({ effects: highlightCompartment.reconfigure(highlightExtension()) });
 }
-
-// Plain word runs contain no Markdown delimiters, so parse them in one step.
-const markdownSupport = markdown({
-  extensions: {
-    parseInline: [{
-      name: "PlainTextRun",
-      before: "Escape",
-      parse: (context, _next, position) => {
-        const start = position - context.offset;
-        const end = plainTextRunEnd(context.text, start);
-        return end === start ? -1 : context.offset + end;
-      },
-    }],
-  },
-});
-
 // Four MiB keeps 500 KiB highlighted and gives 20 MiB documents ample separation.
 export const MARKDOWN_LANGUAGE_MAX_LENGTH = 4 * 1024 * 1024;
 
@@ -141,21 +156,27 @@ export function handleDocumentUpdate(
   callbacks: EditorCallbacks,
 ): void {
   performance.mark("editor-update-start");
-  performance.mark("editor-state-hooks-start");
-  callbacks.onStateChanged?.(update.state);
-  performance.mark("editor-state-hooks-end");
-  if (!update.docChanged) {
+  if (documentState.applyingDocument) {
     performance.mark("editor-update-end");
     return;
   }
-  if (!documentState.applyingDocument) {
-    performance.mark("editor-change-hooks-start");
-    callbacks.onChanges(update.changes, update.state);
-    performance.mark("editor-change-hooks-end");
+  if (!update.docChanged) {
+    performance.mark("editor-state-hooks-start");
+    callbacks.onStateChanged?.(update.state);
+    performance.mark("editor-state-hooks-end");
+    performance.mark("editor-update-end");
+    return;
   }
+  performance.mark("editor-change-hooks-start");
+  callbacks.onChanges(update.changes, update.state);
+  performance.mark("editor-change-hooks-end");
   performance.mark("editor-document-hooks-start");
   callbacks.onDocumentChanged();
   performance.mark("editor-document-hooks-end");
+  // Document clones must catch the change before state observers read the view.
+  performance.mark("editor-state-hooks-start");
+  callbacks.onStateChanged?.(update.state);
+  performance.mark("editor-state-hooks-end");
   performance.mark("editor-update-end");
 }
 
@@ -173,9 +194,7 @@ export function createEditorState(
       extension,
       ...(document.length <= MARKDOWN_LANGUAGE_MAX_LENGTH ? [markdownSupport] : []),
       EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        handleDocumentUpdate(update, documentState, callbacks);
-      }),
+      callbacksCompartment.of(callbacksExtension(documentState, callbacks)),
     ],
   });
 }

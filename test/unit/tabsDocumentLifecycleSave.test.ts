@@ -374,7 +374,7 @@ describe("document lifecycle saves", () => {
     expect(api.saveDocument).toHaveBeenCalledTimes(2);
   });
 
-  it("AC-R5-03: an edit during close save keeps the dirty tab open", async () => {
+  it("AC-R5-03 AC-R5-14: an edit during close save keeps the dirty tab open", async () => {
     const dirty = record({ grant: "one", name: "one.md", text: "changed" });
     const { DocumentLifecycle } = await import("../../src/renderer/tabs/documentLifecycle");
     const context = fixture([dirty]);

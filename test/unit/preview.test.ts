@@ -178,8 +178,9 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(["b1", "b2", "b3"]);
-    expect(preview.dataset["renderComplete"]).toBe("true");
+    expect(preview.dataset["renderComplete"]).toBe("false");
     frames.forEach((frame) => frame(16));
+    expect(preview.dataset["renderComplete"]).toBe("true");
     vi.runOnlyPendingTimers();
     expect(worker.postMessage).not.toHaveBeenCalled();
     vi.useRealTimers();
@@ -871,9 +872,9 @@ describe("preview render flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("AC-PERF-09: limits each visibility section to 100 preview blocks", () => {
+  it("AC-PERF-09: limits each visibility section to 400 preview blocks", () => {
     const { worker, preview } = wiring();
-    const renderedBlocks = Array.from({ length: 101 }, (_, index) => ({
+    const renderedBlocks = Array.from({ length: 401 }, (_, index) => ({
       id: `b${String(index)}`,
       startLine: index,
       endLine: index + 1,
@@ -894,12 +895,12 @@ describe("preview render flow", () => {
     const sections = [...preview.querySelectorAll(".preview-section")];
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.querySelectorAll(".preview-block").length))
-      .toEqual([100, 1]);
+      .toEqual([400, 1]);
     expect(sections.map((section) => section.querySelectorAll(".preview-page").length))
-      .toEqual([5, 1]);
+      .toEqual([20, 1]);
     expect([...sections[0]?.querySelectorAll(".preview-page") ?? []]
       .map((page) => page.querySelectorAll(".preview-block").length))
-      .toEqual(Array.from({ length: 5 }, () => 20));
+      .toEqual(Array.from({ length: 20 }, () => 20));
   });
 
   it("AC-R1-07: ignores a render result from an older document epoch", () => {
@@ -1074,7 +1075,7 @@ describe("preview render flow", () => {
     expect(showError).toHaveBeenLastCalledWith();
   });
 
-  it("AC-R1-09: patches only the changed block and keeps other blocks' DOM nodes", () => {
+  it("AC-R1-09 AC-R1-11: patches only the changed block and keeps other blocks' DOM nodes", () => {
     const { worker, preview } = wiring();
 
     send(worker, {

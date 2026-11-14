@@ -154,10 +154,10 @@ test("three open files start a base-centred merge with apply and navigation", {
     await expect(page.getByTestId("editor")).toContainText("every merge");
 
     await page.keyboard.press("F7");
-    await expect(page.locator(".cm-activeLine")).toContainText("shared runner");
+    await expect(page.getByTestId("editor").locator(".cm-activeLine")).toContainText("shared runner");
     await page.keyboard.press("F7");
     await page.keyboard.press("Shift+F7");
-    await expect(page.locator(".cm-activeLine")).toContainText("shared runner");
+    await expect(page.getByTestId("editor").locator(".cm-activeLine")).toContainText("shared runner");
   } finally {
     await closeEditor(application, page);
   }

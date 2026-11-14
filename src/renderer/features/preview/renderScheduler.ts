@@ -113,15 +113,7 @@ export class RenderScheduler {
   }
 
   private schedulePending(): void {
-    if (this.options.dispatchImmediately) {
-      this.dispatch();
-      return;
-    }
-    this.frame = this.options.requestFrame(() => this.dispatch());
-    this.timer = this.options.setTimer(
-      () => this.dispatch(),
-      this.options.maximumWaitMilliseconds,
-    );
+    this.dispatch();
   }
 
   private finishRequest(id: number): void {

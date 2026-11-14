@@ -29,6 +29,22 @@ beforeEach(() => {
 });
 
 describe("document commands", () => {
+  it("selects the primary document when the second editor is not focused", async () => {
+    const { selectFocusedDocument } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(selectFocusedDocument("primary", "secondary", false)).toBe("primary");
+  });
+
+  it("selects the secondary document when the second editor is focused", async () => {
+    const { selectFocusedDocument } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+
+    expect(selectFocusedDocument("primary", "secondary", true)).toBe("secondary");
+  });
+
   it("AC-R5-08 AC-R5-15: publishes fixed menu ids and dispatches each command", async () => {
     const { DocumentCommands } = await import(
       "../../src/renderer/tabs/documentCommands"
@@ -43,14 +59,16 @@ describe("document commands", () => {
     const merge = vi.fn();
     const toggleFullScreen = vi.fn(async () => undefined);
     const onResult = vi.fn();
+    const otherView = vi.fn();
     const commands = new DocumentCommands({
       compare,
       merge,
-      editor,
+      editor: () => editor,
       featureCommand,
       onError: vi.fn(),
       onResult,
       open,
+      otherView,
       save,
       toggleFullScreen,
     });
@@ -120,6 +138,13 @@ describe("document commands", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
       bubbles: true, ctrlKey: true, key: "y",
     }));
+    commands.run("tab.moveToOtherView", "2:document-one");
+    commands.run("tab.cloneToOtherView", "1:document-two");
+    await Promise.resolve();
+    expect(otherView.mock.calls).toEqual([
+      ["2:document-one", "move"],
+      ["1:document-two", "clone"],
+    ]);
     editor.contentDOM.blur();
     editor.destroy();
   });
@@ -154,7 +179,7 @@ describe("document commands", () => {
     const onError = vi.fn();
     new DocumentCommands({
       compare: vi.fn(),
-      editor,
+      editor: () => editor,
       featureCommand: vi.fn(),
       merge: vi.fn(),
       onError,
@@ -172,6 +197,38 @@ describe("document commands", () => {
     await vi.waitFor(() => {
       expect(onError).toHaveBeenCalledWith(new Error("save stopped"));
     });
+    editor.destroy();
+  });
+
+  it("uses the active document history handlers for undo and redo", async () => {
+    const { DocumentCommands } = await import(
+      "../../src/renderer/tabs/documentCommands"
+    );
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new EditorView({ state: EditorState.create({ doc: "note" }), parent });
+    const undo = vi.fn();
+    const redo = vi.fn();
+    const commands = new DocumentCommands({
+      compare: vi.fn(),
+      editor: () => editor,
+      featureCommand: vi.fn(),
+      merge: vi.fn(),
+      onError: vi.fn(),
+      onResult: vi.fn(),
+      open: vi.fn(async () => undefined),
+      redo,
+      save: vi.fn(async () => undefined),
+      toggleFullScreen: vi.fn(async () => undefined),
+      undo,
+    });
+
+    commands.run("undo", "keyboard");
+    commands.run("redo", "keyboard");
+    await Promise.resolve();
+
+    expect(undo).toHaveBeenCalledOnce();
+    expect(redo).toHaveBeenCalledOnce();
     editor.destroy();
   });
 });
