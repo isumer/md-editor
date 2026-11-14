@@ -288,7 +288,7 @@ describe("preview render flow", () => {
     vi.useRealTimers();
   });
 
-  it("AC-PERF-10: a large preview acknowledges without another frame", () => {
+  it("AC-PERF-10: a large preview keeps the time budget and acknowledges once", () => {
     vi.useFakeTimers();
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -336,7 +336,9 @@ describe("preview render flow", () => {
     vi.runOnlyPendingTimers();
     expect(blocks(preview).map((block) => block.dataset["blockId"]))
       .toEqual(["new-1", "new-2", "new-3"]);
-    expect(frames).toHaveLength(0);
+    expect(frames).toHaveLength(1);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    frames[0]?.(16);
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({
       op: "fill-ready", docId: "doc", epoch: 1, version: 1, token: 5,
     });

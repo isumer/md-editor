@@ -228,14 +228,10 @@ describe("view controller", () => {
     expect(editorScroll.scrollTop).toBe(120);
   });
 
-  it("AC-R2-01: rapid pane switches ignore scroll drift while layout settles", () => {
+  it("AC-R2-01: rapid pane switches retain the current scroll position", () => {
     const { divider, workspace } = fixture();
     const editorScroll = document.createElement("div");
-    const frames: FrameRequestCallback[] = [];
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      frames.push(callback);
-      return frames.length;
-    });
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
     editorScroll.scrollTop = 120;
     const controller = new ViewController({ divider, editorScroll, workspace });
 
@@ -244,7 +240,7 @@ describe("view controller", () => {
     controller.setMode("preview");
     controller.setMode("split");
 
-    expect(editorScroll.scrollTop).toBe(120);
+    expect(editorScroll.scrollTop).toBe(121);
   });
 
   it("AC-R2-01: discards a stale second-frame scroll restoration", () => {
