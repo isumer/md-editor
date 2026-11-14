@@ -228,6 +228,21 @@ describe("view controller", () => {
     expect(editorScroll.scrollTop).toBe(120);
   });
 
+  it("AC-R2-01: rapid pane switches retain the current scroll position", () => {
+    const { divider, workspace } = fixture();
+    const editorScroll = document.createElement("div");
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+    editorScroll.scrollTop = 120;
+    const controller = new ViewController({ divider, editorScroll, workspace });
+
+    controller.setMode("editor");
+    editorScroll.scrollTop = 121;
+    controller.setMode("preview");
+    controller.setMode("split");
+
+    expect(editorScroll.scrollTop).toBe(121);
+  });
+
   it("AC-R2-01: discards a stale second-frame scroll restoration", () => {
     const { divider, workspace } = fixture();
     const editorScroll = document.createElement("div");
