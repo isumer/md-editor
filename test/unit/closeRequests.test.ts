@@ -93,6 +93,44 @@ describe("close request broker", () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
+  it("AC-R4-06: a busy renderer can reply after four seconds without losing dirty data", async () => {
+    const persist = vi.fn(async () => undefined);
+    const timers = new Map<TimerHandle, { callback: () => void; due: number }>();
+    let now = 0;
+    let nextHandle = 1;
+    const instance = new CloseRequestBroker(vi.fn(), persist, {
+      setTimer: (callback, milliseconds) => {
+        const handle = nextHandle;
+        nextHandle += 1;
+        timers.set(handle, { callback, due: now + milliseconds });
+        return handle;
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle);
+      },
+    });
+    const pending = instance.request(7);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+
+    now = 4_001;
+    for (const [handle, timer] of timers) {
+      if (timer.due <= now) {
+        timers.delete(handle);
+        timer.callback();
+      }
+    }
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    await instance.settle(result, 7);
+    expect(persist).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith(result, 7);
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("AC-R4-06: an acknowledged open prompt stays pending after 15 seconds", async () => {
     const { instance, persist, timers, fireTimeout } = broker();
     const pending = instance.request(7);
